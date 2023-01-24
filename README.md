@@ -6,7 +6,7 @@ This JavaScript and HTML file allows you to easily interact with the OpenAI API 
 
 ## Getting Started
 
-1. Add your OpenAI API key and AWS Keys to the "OPENAI_API_KEY" variable and "AWS.config.credentials" resctively. 
+1. Add your OpenAI API key and AWS Keys to the "OPENAI_API_KEY" variable and "AWS.config.credentials" in config.json. 
 2. Add the file to your project and trigger the Send() function on an event (such as a button press).
 3. The response from the OpenAI API will be displayed in a text area and also converted to speech using Amazon Polly. 
 
