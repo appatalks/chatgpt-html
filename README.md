@@ -1,4 +1,4 @@
-# OpenAI API and Amazon Polly integration
+# OpenAI API and Amazon Polly integration for Webpage
 
 v.0.1
 
