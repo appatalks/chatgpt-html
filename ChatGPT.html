@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Chat GPT</title>
+    <script src="ChatGPT.js"></script>
+    <script src="https://sdk.amazonaws.com/js/aws-sdk-2.410.0.min.js"></script>
+    <style>
+        body {
+            width: 650px;
+            height: 800px;
+            overflow: hidden;
+        }
+    </style>
+</head>
+
+<body onload="OnLoad()">
+    <div id="idContainer">
+        <textarea id="txtOutput" rows="10" style="margin-top: 10px; width: 100%;" placeholder="Output"></textarea>
+
+	<div id="textToSynth">
+	<input autofocus size="23" type="text" id="textEntry" value=""/>
+	<button class="btn default" onClick="speakText()">Speak This</button>
+	<p id="result"></p>
+	</div>
+
+<script>
+    document.getElementById("txtOutput").addEventListener("input", function(){
+    document.getElementById("textEntry").value = this.value;
+    });
+</script>
+
+<audio id="audioPlayback" controls>
+<source id="audioSource" type="audio/mp3" src="">
+</audio>
+
+<script>
+    // Initialize the Amazon Cognito credentials provider
+    AWS.config.region = 'us-east-1';
+    AWS.config.credentials = new AWS.Credentials('secret', 'secret');
+    // Function invoked by button click
+    function speakText() {
+        // Create the JSON parameters for getSynthesizeSpeechUrl
+        var speechParams = {
+            OutputFormat: "mp3",
+            SampleRate: "16000",
+            Text: "",
+            TextType: "text",
+            VoiceId: ""
+        };
+        speechParams.Text = document.getElementById("textEntry").value;
+	speechParams.VoiceId = document.getElementById("selVoice").value;
+        // Create the Polly service object and presigner object
+        var polly = new AWS.Polly({apiVersion: '2016-06-10'});
+        var signer = new AWS.Polly.Presigner(speechParams, polly);
+        // Create presigned URL of synthesized speech file
+	signer.getSynthesizeSpeechUrl(speechParams, function(error, url) {
+    if (error) {
+        document.getElementById('result').innerHTML = error;
+    } else {
+        document.getElementById('audioSource').src = url;
+        document.getElementById('audioPlayback').load();
+        document.getElementById('result').innerHTML = "Speech ready to play.";
+    }
+});
+}
+</script>
+<p>
+
+<textarea id="txtMsg" rows="5" wrap="soft" style="width: 98%; margin-left: 3px; margin-top: 6px" placeholder="Input Text"></textarea>
+        <div>
+            <button type="button" onclick="Send()" id="btnSend">Send</button>
+            <select id="selModel">
+                <option value="text-davinci-003">text-davinci-003</option>
+                <option value="text-davinci-002">text-davinci-002</option>
+                <option value="code-davinci-002">code-davinci-002</option>
+            </select>
+	    <select id="selLang" onchange="ChangeLang(this)"> 
+		<!-- >
+                <option value="en-US">English</option>
+		<option value="ko-KR">Korean</option> 
+		-->
+       </select> 
+                <select id="selVoice" onchange="ChangeLang(this)">
+                <option value="Seoyeon">Korean</option>
+                <option value="Salli">English</option>
+            </select>
+
+	</div>
+
+<div id="idText"></div>
+</div>
+
+</body>
+</html>
