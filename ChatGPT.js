@@ -1,4 +1,4 @@
-var OPENAI_API_KEY = "API_KEY";
+// JavaScript code
 
 function OnLoad() {
 }
