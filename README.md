@@ -16,3 +16,6 @@ This JavaScript and HTML file allows you to easily interact with the OpenAI API 
 - Select the model, language, and voice for the response.
 - Convert the response to speech using Amazon Polly's Text-to-Speech service.
 - Error handling for issues that may occur during the API call and speech conversion.
+
+Grabbed the idea from here https://www.codeproject.com/Articles/5350454/Chat-GPT-in-JavaScript
+I also replaced speech to use Polly and removed other parts to fit my needs. I had also modifed the code to use with Korean Language.
