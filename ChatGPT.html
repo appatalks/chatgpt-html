@@ -2,6 +2,13 @@
 <html>
 <head>
     <title>Chat GPT</title>
+ <script>   
+ fetch('./config.json')
+  .then(response => response.json())
+  .then(config => {
+    OPENAI_API_KEY = config.OPENAI_API_KEY;
+  }); 
+ </script>
     <script src="ChatGPT.js"></script>
     <script src="https://sdk.amazonaws.com/js/aws-sdk-2.410.0.min.js"></script>
     <style>
@@ -34,9 +41,15 @@
 </audio>
 
 <script>
+// Initialize the Amazon Cognito credentials provider
+fetch('./config.json')
+  .then(response => response.json())
+  .then(config => {
     // Initialize the Amazon Cognito credentials provider
-    AWS.config.region = 'us-east-1';
-    AWS.config.credentials = new AWS.Credentials('secret', 'secret');
+    AWS.config.region = config.AWS_REGION;
+    AWS.config.credentials = new AWS.Credentials(config.AWS_ACCESS_KEY_ID, config.AWS_SECRET_ACCESS_KEY);
+  });
+
     // Function invoked by button click
     function speakText() {
         // Create the JSON parameters for getSynthesizeSpeechUrl
