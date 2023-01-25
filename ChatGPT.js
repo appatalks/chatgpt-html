@@ -42,12 +42,12 @@ function Send() {
             } else if (oJson.choices && oJson.choices[0].text) {
                 var s = oJson.choices[0].text;
 
-                if (selLang.value != "en-US") {
-                    var a = s.split("?\n");
-                    if (a.length == 2) {
-                        s = a[1];
-                    }
-                }
+        //        if (selLang.value != "en-US") {
+        //            var a = s.split("?\n");
+        //            if (a.length == 2) {
+        //                s = a[1];
+        //            }
+        //        }
 
                 if (s == "") s = "No response";
 		txtOutput.value += "AI: " + s.trim();
