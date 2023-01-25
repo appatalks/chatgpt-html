@@ -16,12 +16,16 @@
             width: ;
             height: 800px;
             overflow: hidden;
+	    background-image: url(background.jpg);		
             background-color: rgba(68,70,84);
             color: #fff;
 	    margin: 0; /* remove default margins */
 	    display: flex; /* enable flexbox layout */
 	    align-items: center; /* center elements vertically */
 	    justify-content: center; /* center elements horizontally */
+	    background-repeat: no-repeat; /* make image not repeat */
+	    background-position: center center; /* center image */
+	    background-size: auto 90%; /* set width and height of image */
     	}
     </style>
 </head>
@@ -87,12 +91,12 @@ fetch('./config.json')
                 <option value="text-davinci-002">text-davinci-002</option>
                 <option value="code-davinci-002">code-davinci-002</option>
             </select>
+	    <!--
 	    <select id="selLang" onchange="ChangeLang(this)"> 
-		<!-- >
                 <option value="en-US">English</option>
 		<option value="ko-KR">Korean</option> 
-		-->
             </select> 
+ 	    -->
             <select id="selVoice" onchange="ChangeLang(this)">
                 <option value="Salli">English</option>
                 <option value="Seoyeon">Korean</option>
