@@ -4,6 +4,10 @@ function OnLoad() {
 // Place Holder
 }
 
+function clearText(){
+  document.getElementById("txtOutput").value = "";
+}
+
 function Send() {
 
     var sQuestion = txtMsg.value;
