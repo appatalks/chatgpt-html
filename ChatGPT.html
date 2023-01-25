@@ -22,10 +22,8 @@
 
 <body onload="OnLoad()">
     <div id="idContainer">
+        <div id="textToSynth">
         <textarea id="txtOutput" rows="10" style="margin-top: 10px; width: 100%;" placeholder="Output"></textarea>
-
-	<div id="textToSynth">
-	<input autofocus size="23" type="text" id="textEntry" value=""/>
 	<button class="btn default" onClick="speakText()">Speak This</button>
 	<p id="result"></p>
 	</div>
@@ -60,7 +58,7 @@ fetch('./config.json')
             TextType: "text",
             VoiceId: ""
         };
-        speechParams.Text = document.getElementById("textEntry").value;
+        speechParams.Text = document.getElementById("txtOutput").value;
 	speechParams.VoiceId = document.getElementById("selVoice").value;
         // Create the Polly service object and presigner object
         var polly = new AWS.Polly({apiVersion: '2016-06-10'});
