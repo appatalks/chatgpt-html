@@ -1,8 +1,4 @@
-1) Memory
-    # Concatenate the prompt with the previous question and response
-    user_input = input("\033[92m\nYou: \033[0m")
-    prompt = f"{initial_prompt} {text} {user_input}"
-    initial_prompt = user_input
+
     
 2) Personalities 
 
