@@ -1,5 +1,7 @@
 // JavaScript code
 
+var lastResponse = "";
+
 function OnLoad() {
 // Place Holder
 }
@@ -49,6 +51,7 @@ function Send() {
 
                 if (s == "") s = "No response";
 		txtOutput.value += "AI: " + s.trim();
+		lastResponse = s;
                 SpeechToText;
             }            
         }
@@ -61,7 +64,7 @@ function Send() {
 
     var data = {
         model: sModel,
-        prompt: "ChatGPT is a large language model trained by OpenAI. Browsing: enabled. Instructions: Answer factual questions concisely." + sQuestion,
+        prompt: "ChatGPT is a large language model trained by OpenAI. Browsing: enabled. Instructions: Answer factual questions concisely." + lastResponse + sQuestion,
         max_tokens: iMaxTokens,
         user: sUserId,
         temperature:  dTemperature,
