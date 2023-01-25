@@ -80,7 +80,8 @@ fetch('./config.json')
 
 <textarea id="txtMsg" rows="5" wrap="soft" style="width: 750px; margin-left: 3px; margin-top: 6px" placeholder="Input Text"></textarea>
         <div>
-            <button type="button" onclick="Send()" id="btnSend">Send</button>
+           <!-- <button type="button" onclick="Send()" id="btnSend">Send</button> -->
+	    <button type="button" onclick="clearText(); Send();" id="btnSend">Send</button>
             <select id="selModel">
                 <option value="text-davinci-003">text-davinci-003</option>
                 <option value="text-davinci-002">text-davinci-002</option>
