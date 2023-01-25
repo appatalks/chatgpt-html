@@ -1,6 +1,7 @@
 // JavaScript code
 
 function OnLoad() {
+// Place Holder
 }
 
 function Send() {
@@ -43,20 +44,20 @@ function Send() {
                 }
 
                 if (s == "") s = "No response";
-                txtOutput.value += "AI: " + s;
+		txtOutput.value += "AI: " + s.trim();
                 SpeechToText;
             }            
         }
     };
 
     var sModel = selModel.value;// "text-davinci-003";
-    var iMaxTokens = 2048;
+    var iMaxTokens = 600;
     var sUserId = "1";
     var dTemperature = 0.7;    
 
     var data = {
         model: sModel,
-        prompt: sQuestion,
+        prompt: "ChatGPT is a large language model trained by OpenAI. Browsing: enabled. Instructions: Answer factual questions concisely." + sQuestion,
         max_tokens: iMaxTokens,
         user: sUserId,
         temperature:  dTemperature,
@@ -70,6 +71,10 @@ function Send() {
     if (txtOutput.value != "") txtOutput.value += "\n";
     txtOutput.value += "You: " + sQuestion;
     txtMsg.value = "";
+}
+
+function ChangeLang() {
+// Place Holder
 }
 
 function SpeechToText() {
