@@ -68,14 +68,12 @@ function Send() {
 
     var sModel = selModel.value;// "text-davinci-003";
     var iMaxTokens = 600;
-    var sUserId = "1";
     var dTemperature = 0.7;    
 
     var data = {
         model: sModel,
         prompt: selPers.value + lastResponse + sQuestion,
         max_tokens: iMaxTokens,
-        user: sUserId,
         temperature:  dTemperature,
         frequency_penalty: 0.0, //Number between -2.0 and 2.0  Positive value decrease the model's likelihood to repeat the same line verbatim.
         presence_penalty: 0.0,  //Number between -2.0 and 2.0. Positive values increase the model's likelihood to talk about new topics.
