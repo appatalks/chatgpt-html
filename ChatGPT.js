@@ -41,15 +41,19 @@ function Send() {
             }
 
             if (oJson.error && oJson.error.message) {
+		if (oJson.error.message == "Too busy" && retryCount < maxRetries) {
+                    retryCount++;
+                    var retryDelay = Math.pow(2, retryCount) * 1000;
+                    console.log("Too busy. Retrying in " + retryDelay + "ms");
+                    setTimeout(Send, retryDelay);
+                    return;
+                }
                 txtOutput.value += "Error: " + oJson.error.message;
+                retryCount = 0;	  
             } else if (oJson.choices && oJson.choices[0].text) {
                 var s = oJson.choices[0].text;
 
         //        if (selLang.value != "en-US") {
-        //            var a = s.split("?\n");
-        //            if (a.length == 2) {
-        //                s = a[1];
-        //            }
         //        }
 
                 if (s == "") s = "No response";
