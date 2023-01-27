@@ -48,6 +48,7 @@ function Send() {
                     setTimeout(Send, retryDelay);
                     return;
                 }
+		    
                 txtOutput.value += "Error: " + oJson.error.message;
                 retryCount = 0;	  
             } else if (oJson.choices && oJson.choices[0].text) {
@@ -85,19 +86,6 @@ function Send() {
     if (txtOutput.value != "") txtOutput.value += "\n";
     txtOutput.value += "You: " + sQuestion;
     txtMsg.value = "";
-}
-
-function onError(oJson) {
-    if (oJson.error && oJson.error.message) {
-        txtOutput.value += "Error: " + oJson.error.message;
-    } else if (retryCount < maxRetries) {
-        retryCount++;
-        txtOutput.value += "Error: too busy, retrying in " + retryDelay / 1000 + " seconds";
-        setTimeout(Send, retryDelay);
-        retryDelay = retryDelay * 2; // increase delay by a power of 2
-    } else {
-        txtOutput.value += "Error: too busy, giving up after " + maxRetries + " attempts";
-    }
 }
 
 function ChangeLang() {
