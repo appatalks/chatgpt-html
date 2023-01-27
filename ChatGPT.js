@@ -41,6 +41,7 @@ function Send() {
             }
 
             if (oJson.error && oJson.error.message) {
+        //        txtOutput.value += "Error: " + oJson.error.message;
 		if (oJson.error.message == "Too busy" && retryCount < maxRetries) {
                     retryCount++;
                     var retryDelay = Math.pow(2, retryCount) * 1000;
@@ -48,7 +49,7 @@ function Send() {
                     setTimeout(Send, retryDelay);
                     return;
                 }
-		    
+
                 txtOutput.value += "Error: " + oJson.error.message;
                 retryCount = 0;	  
             } else if (oJson.choices && oJson.choices[0].text) {
@@ -72,7 +73,7 @@ function Send() {
 
     var data = {
         model: sModel,
-        prompt: "ChatGPT is a large language model trained by OpenAI. Browsing: enabled. Instructions: Answer factual questions concisely." + lastResponse + sQuestion,
+        prompt: selPers.value + lastResponse + sQuestion,
         max_tokens: iMaxTokens,
         user: sUserId,
         temperature:  dTemperature,
