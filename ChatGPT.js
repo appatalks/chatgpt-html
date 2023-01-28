@@ -74,7 +74,6 @@ function Send() {
 
                 if (s == "") s = "No response";
 		txtOutput.value += "AI: " + s.trim();
-		// masterOutput += "AI: " + s.trim() + "\n";
 		masterOutput += "\n" + txtOutput.value + "\n";
 		localStorage.setItem("masterOutput", masterOutput);
 		lastResponse = s;
@@ -92,7 +91,8 @@ function Send() {
 
     var data = {
         model: sModel,
-        prompt: selPers.value + lastResponse + sQuestion,
+        // prompt: selPers.value + lastResponse + sQuestion,
+	prompt: selPers.value.replace(/\s+/g, '') + lastResponse + sQuestion.replace(/\s+/g, ''),
         max_tokens: iMaxTokens,
         temperature:  dTemperature,
         frequency_penalty: 0.0, //Number between -2.0 and 2.0  Positive value decrease the model's likelihood to repeat the same line verbatim.
