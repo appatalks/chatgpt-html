@@ -1,4 +1,4 @@
-# OpenAI API and Amazon Polly integration for Webpage
+# ChatGPT HTML - Using OpenAI APIs and AWS Polly speech
 
 v.0.3
 
