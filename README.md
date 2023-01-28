@@ -1,6 +1,6 @@
 # OpenAI API and Amazon Polly integration for Webpage
 
-v.0.1
+v.0.2
 
 This JavaScript and HTML file allows you to easily interact with the OpenAI API and convert the response to speech using Amazon Polly's Text-to-Speech service.
 
