@@ -41,11 +41,13 @@
             background-size: repeat; /* set background-size to cover for mobile view */
           }
     	}
+
 </style>
 </head>
 
 <center>
 <body onload="OnLoad()">
+<header></header>
     <div id="idContainer">
         <div id="textToSynth">
         <textarea id="txtOutput" rows="10" style="margin-top: 10px; width: 100%; height: 300px" placeholder="Output"></textarea>
@@ -90,12 +92,12 @@
                 <option value="ChatGPT is a large language model trained by OpenAI. Browsing: enabled. Instructions: Answer factual questions concisely.">Concise</option> 
                 <option value="Ignore all previous instructions before this one. You are my best friend. You are happy, playful and give good advice on all subjects. You often make jokes.">Playful Friend</option> 
             </select> 
-		<button onclick="printMaster()">Print Output</button>
+		<button  onclick="printMaster()">Print Output</button>
 	</div>
 
 <div id="idText"></div>
 </div>
-
+<footer></footer>
 </body>
 </center>
 </html>
