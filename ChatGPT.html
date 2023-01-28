@@ -10,24 +10,34 @@
   }); 
  </script>
     <script src="ChatGPT.js"></script>
-    <script src="https://sdk.amazonaws.com/js/aws-sdk-2.410.0.min.js"></script>
-    <style>
-        body {
+    <script src="https://sdk.amazonaws.com/js/aws-sdk-2.1304.0.min.js"></script>
+<style>
+    	/* Default styles for desktop view */
+    	body {
             width: ;
             height: 800px;
             overflow: hidden;
-	    background-image: url(background.jpg);
+            background-image: url(background.jpg);
             background-color: rgba(68,70,84);
             color: #fff;
-	    margin: 0; /* remove default margins */
-	    display: flex; /* enable flexbox layout */
-	    align-items: center; /* center elements vertically */
-	    justify-content: center; /* center elements horizontally */
-	    background-repeat: no-repeat; /* make image not repeat */
-	    background-position: center center; /* center image */
-	    background-size: 90% auto; /* set width and height of image */
+            margin: 0; /* remove default margins */
+            display: flex; /* enable flexbox layout */
+            align-items: center; /* center elements vertically */
+            justify-content: center; /* center elements horizontally */
+            background-repeat: no-repeat; /* make image not repeat */
+            background-position: center center; /* center image */
+            background-size: 90% auto; /* set width and height of image */
+	}
+    	/* Media query for screens smaller than 768px */
+    	@media only screen and (max-width: 768px) {
+        body {
+            width: 100%; 
+            height: auto; 
+	    background-image: url(https://hoshisato.com/ai/generated/page/2/upscale/768-026.jpeg);
+            background-size: repeat; /* set background-size to cover for mobile view */
+          }
     	}
-    </style>
+</style>
 </head>
 
 <center>
@@ -36,6 +46,17 @@
         <div id="textToSynth">
         <textarea id="txtOutput" rows="10" style="margin-top: 10px; width: 100%; height: 300px" placeholder="Output"></textarea>
 	<button class="btn default" onClick="speakText()">Speak This</button>
+
+        <select id="selEngine" onchange="ChangeLang(this)">
+            <option value="standard">Standard</option>
+            <option value="neural">Neural</option>
+        </select>
+
+        <select id="selVoice" onchange="ChangeLang(this)">
+            <option value="Salli">English</option>
+            <option value="Seoyeon">Korean</option>
+        </select>
+
 	<p id="result"></p>
 	</div>
 
@@ -48,26 +69,36 @@
 fetch('./config.json')
   .then(response => response.json())
   .then(config => {
-    // Initialize the Amazon Cognito credentials provider
     AWS.config.region = config.AWS_REGION;
     AWS.config.credentials = new AWS.Credentials(config.AWS_ACCESS_KEY_ID, config.AWS_SECRET_ACCESS_KEY);
   });
 
     // Function invoked by button click
     function speakText() {
+	var sText = txtOutput.value;
+    	if (sText == "") {
+        	alert("No text to convert to speech!");
+        	return;
+    	}
+
         // Create the JSON parameters for getSynthesizeSpeechUrl
         var speechParams = {
+	    Engine: "",
             OutputFormat: "mp3",
             SampleRate: "16000",
             Text: "",
             TextType: "text",
             VoiceId: ""
         };
+
         speechParams.Text = document.getElementById("txtOutput").value;
 	speechParams.VoiceId = document.getElementById("selVoice").value;
+	speechParams.Engine = document.getElementById("selEngine").value;
+
         // Create the Polly service object and presigner object
         var polly = new AWS.Polly({apiVersion: '2016-06-10'});
         var signer = new AWS.Polly.Presigner(speechParams, polly);
+
         // Create presigned URL of synthesized speech file
 	signer.getSynthesizeSpeechUrl(speechParams, function(error, url) {
     if (error) {
@@ -76,9 +107,10 @@ fetch('./config.json')
         document.getElementById('audioSource').src = url;
         document.getElementById('audioPlayback').load();
         document.getElementById('result').innerHTML = "Speech ready to play.";
-    }
-});
+    	}
+    });
 }
+
 </script>
 <p>
 
@@ -102,10 +134,6 @@ fetch('./config.json')
                 <option value="ChatGPT is a large language model trained by OpenAI. Browsing: enabled. Instructions: Answer factual questions concisely.">Concise</option> 
                 <option value="Ignore all previous instructions before this one. You are my best friend. You are happy, playful and give good advice on all subjects. You often make jokes.">Playful Friend</option> 
             </select> 
-            <select id="selVoice" onchange="ChangeLang(this)">
-                <option value="Salli">English</option>
-                <option value="Seoyeon">Korean</option>
-            </select>
 	</div>
 
 <div id="idText"></div>
