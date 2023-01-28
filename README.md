@@ -15,5 +15,5 @@ This allows you to easily interact with the OpenAI API and convert the response 
 - Convert to Speech using Amazon Polly's Text-to-Speech service.
 - Error handling for issues that may occur during the API call and speech conversion.
 
-Grabbed the inital idea from here https://www.codeproject.com/Articles/5350454/Chat-GPT-in-JavaScript
+Grabbed the inital idea from here https://www.codeproject.com/Articles/5350454/Chat-GPT-in-JavaScript <br>
 Complete overhaul of the code base.
