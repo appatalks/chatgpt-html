@@ -12,12 +12,16 @@ function OnLoad() {
 }
 
 function clearText(){
-  document.getElementById("txtOutput").value = "";
+    document.getElementById("txtOutput").value = "";
 }
 
 function printMaster() {
-  document.getElementById("txtOutput").value = masterOutput;
+    // Get the content of the textarea masterOutput
+    var textareaContent = document.getElementById("txtOutput").value = masterOutput;
     console.log(masterOutput);
+    var printWindow = window.open();
+    printWindow.document.write(txtOutput.value.replace(/\n/g, "<br>"));
+    printWindow.print();
 }
 
 function Send() {
@@ -72,8 +76,11 @@ function Send() {
 		txtOutput.value += "AI: " + s.trim();
 		// masterOutput += "AI: " + s.trim() + "\n";
 		masterOutput += "\n" + txtOutput.value + "\n";
+		localStorage.setItem("masterOutput", masterOutput);
 		lastResponse = s;
-                //SpeechToText;
+	        // Retrieve the local storage masterOutput content
+	        	// var storedContent = localStorage.getItem("textareaContent");
+			// Place Holder
             	}            
         }
     };
@@ -90,7 +97,7 @@ function Send() {
         temperature:  dTemperature,
         frequency_penalty: 0.0, //Number between -2.0 and 2.0  Positive value decrease the model's likelihood to repeat the same line verbatim.
         presence_penalty: 0.0,  //Number between -2.0 and 2.0. Positive values increase the model's likelihood to talk about new topics.
-        // stop: ["#", ";"] //Up to 4 sequences where the API will stop generating further tokens. The returned text will not contain the stop sequence.
+        // stop: ["#", ";"] //Up to 4 sequences where the API will stop generating further tokens.
     }
 
     oHttp.send(JSON.stringify(data));
