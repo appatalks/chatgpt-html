@@ -40,6 +40,7 @@ function Send() {
                 txtOutput.value += "Error: " + ex.message
             }
 
+	    // Backend Error Exponetial Backoff - Needs more testing
             if (oJson.error && oJson.error.message) {
         //        txtOutput.value += "Error: " + oJson.error.message;
 		if (oJson.error.message == "Too busy" && retryCount < maxRetries) {
@@ -49,24 +50,26 @@ function Send() {
                     setTimeout(Send, retryDelay);
                     return;
                 }
-
                 txtOutput.value += "Error: " + oJson.error.message;
                 retryCount = 0;	  
-            } else if (oJson.choices && oJson.choices[0].text) {
+            	}
+ 
+		else if (oJson.choices && oJson.choices[0].text) {
                 var s = oJson.choices[0].text;
 
         //        if (selLang.value != "en-US") {
+		  // Place Holder
         //        }
 
                 if (s == "") s = "No response";
 		txtOutput.value += "AI: " + s.trim();
 		lastResponse = s;
                 SpeechToText;
-            }            
+            	}            
         }
     };
 
-    var sModel = selModel.value;// "text-davinci-003";
+    var sModel = selModel.value; // "text-davinci-003|text-davinci-002|code-davinci-002";
     var iMaxTokens = 600;
     var dTemperature = 0.7;    
 
