@@ -90,34 +90,3 @@ function Send() {
 function ChangeLang() {
 // Place Holder
 }
-
-function SpeechToText() {
-    if (!bTextToSpeechSupported) return;
-    var sText = txtOutput.value;
-    if (sText == "") {
-        alert("No text to convert to speech!");
-        return;
-    }
-
-    // Create a new Polly client
-    const polly = new AWS.Polly();
-
-    // Define the parameters for the Polly request
-    const params = {
-        OutputFormat: 'mp3',
-        Text: sText,
-	Engine: standard,    
-        VoiceId: selVoices.value
-    };
-
-    // Call the Polly service to convert the text to speech
-    polly.synthesizeSpeech(params, (err, data) => {
-        if (err) {
-          console.log(err);
-        } else {
-            var oAudio = new Audio();
-            oAudio.src = URL.createObjectURL(new Blob([data.AudioStream], { type: "audio/mpeg" }));
-            oAudio.play();
-        }
-    });
-}
