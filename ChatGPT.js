@@ -1,6 +1,8 @@
-// JavaScript code
+// Javascript
+// For OpenAI API
 
 var lastResponse = "";
+var masterOutput = "";
 var retryCount = 0;
 var maxRetries = 5;
 var retryDelay = 1000; // initial delay in milliseconds
@@ -11,6 +13,11 @@ function OnLoad() {
 
 function clearText(){
   document.getElementById("txtOutput").value = "";
+}
+
+function printMaster() {
+  document.getElementById("txtOutput").value = masterOutput;
+    console.log(masterOutput);
 }
 
 function Send() {
@@ -63,11 +70,14 @@ function Send() {
 
                 if (s == "") s = "No response";
 		txtOutput.value += "AI: " + s.trim();
+		// masterOutput += "AI: " + s.trim() + "\n";
+		masterOutput += "\n" + txtOutput.value + "\n";
 		lastResponse = s;
-                SpeechToText;
+                //SpeechToText;
             	}            
         }
     };
+
 
     var sModel = selModel.value; // "text-davinci-003|text-davinci-002|code-davinci-002";
     var iMaxTokens = 600;
@@ -80,7 +90,7 @@ function Send() {
         temperature:  dTemperature,
         frequency_penalty: 0.0, //Number between -2.0 and 2.0  Positive value decrease the model's likelihood to repeat the same line verbatim.
         presence_penalty: 0.0,  //Number between -2.0 and 2.0. Positive values increase the model's likelihood to talk about new topics.
-        stop: ["#", ";"] //Up to 4 sequences where the API will stop generating further tokens. The returned text will not contain the stop sequence.
+        // stop: ["#", ";"] //Up to 4 sequences where the API will stop generating further tokens. The returned text will not contain the stop sequence.
     }
 
     oHttp.send(JSON.stringify(data));
