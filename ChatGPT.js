@@ -85,7 +85,6 @@ function Send() {
         }
     };
 
-
     var sModel = selModel.value; // "text-davinci-003|text-davinci-002|code-davinci-002";
     var iMaxTokens = 600;
     var dTemperature = 0.7;    
