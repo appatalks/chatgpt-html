@@ -53,7 +53,7 @@ function Send() {
 
 	    // Backend Error Exponetial Backoff - Needs more testing
             if (oJson.error && oJson.error.message) {
-        //        txtOutput.value += "Error: " + oJson.error.message;
+        	// txtOutput.value += "Error: " + oJson.error.message;
 		if (oJson.error.message == "Too busy" && retryCount < maxRetries) {
                     retryCount++;
                     var retryDelay = Math.pow(2, retryCount) * 1000;
@@ -68,15 +68,16 @@ function Send() {
 		else if (oJson.choices && oJson.choices[0].text) {
                 var s = oJson.choices[0].text;
 
-        //        if (selLang.value != "en-US") {
-		  // Place Holder
-        //        }
+        	// if (selLang.value != "en-US") {
+			// Place Holder
+        	// }
 
                 if (s == "") s = "No response";
 		txtOutput.value += "AI: " + s.trim();
 		masterOutput += "\n" + txtOutput.value + "\n";
 		localStorage.setItem("masterOutput", masterOutput);
 		lastResponse = s;
+
 	        // Retrieve the local storage masterOutput content
 	        	// var storedContent = localStorage.getItem("textareaContent");
 			// Place Holder
@@ -95,8 +96,8 @@ function Send() {
         prompt: selPers.value.replace(/@/g, " ") + lastResponse.replace(/\n/g, '') + " " + sQuestion.replace(/\n/g, ''),
         max_tokens: iMaxTokens,
         temperature:  dTemperature,
-        frequency_penalty: 0.0, //Number between -2.0 and 2.0  Positive value decrease the model's likelihood to repeat the same line verbatim.
-        presence_penalty: 0.0,  //Number between -2.0 and 2.0. Positive values increase the model's likelihood to talk about new topics.
+        frequency_penalty: 0.0, // Between -2.0 and 2.0  Positive values decreases repeat responses.
+        presence_penalty: 0.0,  // Between -2.0 and 2.0. Positive values increases new topic probability.
 	stop: stop
     }
 
@@ -108,5 +109,5 @@ function Send() {
 }
 
 function ChangeLang() {
-// Place Holder
+  // Place Holder
 }
