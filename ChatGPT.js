@@ -88,16 +88,16 @@ function Send() {
     var sModel = selModel.value; // "text-davinci-003|text-davinci-002|code-davinci-002";
     var iMaxTokens = 600;
     var dTemperature = 0.7;    
+    var stop = "&*&";
 
     var data = {
         model: sModel,
-        // prompt: selPers.value + lastResponse + sQuestion,
-	prompt: selPers.value.replace(/\s+/g, '') + lastResponse + sQuestion.replace(/\s+/g, ''),
+        prompt: selPers.value.replace(/@/g, " ") + lastResponse.replace(/\n/g, '') + " " + sQuestion.replace(/\n/g, ''),
         max_tokens: iMaxTokens,
         temperature:  dTemperature,
         frequency_penalty: 0.0, //Number between -2.0 and 2.0  Positive value decrease the model's likelihood to repeat the same line verbatim.
         presence_penalty: 0.0,  //Number between -2.0 and 2.0. Positive values increase the model's likelihood to talk about new topics.
-        // stop: ["#", ";"] //Up to 4 sequences where the API will stop generating further tokens.
+	stop: stop
     }
 
     oHttp.send(JSON.stringify(data));
