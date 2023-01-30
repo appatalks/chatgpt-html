@@ -1,7 +1,9 @@
 <!DOCTYPE html>
 <html>
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, minimum-scale=1.0, maximum-scale=1.0">
 <head>
     <title>Chat GPT</title>
+ <script src="mobile.js"></script>
  <script src="polly.js"></script>
  <script src="ChatGPT.js"></script>
  <script src="https://sdk.amazonaws.com/js/aws-sdk-2.1304.0.min.js"></script>
@@ -15,6 +17,11 @@
     AWS.config.credentials = new AWS.Credentials(config.AWS_ACCESS_KEY_ID, config.AWS_SECRET_ACCESS_KEY);
   }); 
  </script>
+ <script>
+  // Adjust for Mobile User Agents
+  mobile_txtout();
+  mobile_txtmsd();
+</script>
 <style>
     	/* Default styles for desktop view */
     	body {
@@ -35,18 +42,25 @@
     	/* Media query for screens smaller than 768px */
     	@media only screen and (max-width: 768px) {
         body {
-            width: 100%; 
-            height: auto; 
-	    background-image: url(https://hoshisato.com/ai/generated/page/2/upscale/768-026.jpeg);
-            background-size: repeat; /* set background-size to cover for mobile view */
+            width: ; 
+            height: ; 
+	    display: flex;
+	    background-color: blue;
+	    background-image: url(background.jpg);
+            background-size: ; /* set background-size to cover for mobile view */
           }
     	}
-
 </style>
 </head>
 
 <center>
 <body onload="OnLoad()">
+
+ <script>
+   // Adjust for Mobile User Agents
+   useragent_adjust();
+ </script>
+
 <header></header>
     <div id="idContainer">
         <div id="textToSynth">
@@ -97,7 +111,7 @@
 
 <div id="idText"></div>
 </div>
-<footer></footer>
 </body>
+<footer></footer>
 </center>
 </html>
