@@ -39,6 +39,7 @@ function Send() {
     oHttp.setRequestHeader("Content-Type", "application/json");
     oHttp.setRequestHeader("Authorization", "Bearer " + OPENAI_API_KEY)
 
+    // Error Handling
     oHttp.onreadystatechange = function () {
         if (oHttp.readyState === 4) {
             //console.log(oHttp.status);
@@ -48,25 +49,33 @@ function Send() {
             try {
                 oJson = JSON.parse(oHttp.responseText);
             } catch (ex) {
-                txtOutput.value += "Error: " + ex.message
+                txtOutput.value += "Error: " + ex.message;
+		return;
             }
 
+        if (oHttp.status === 500) {
+            // handle internal server error
+            txtOutput.value += "Error 500: Internal Server Error";
+            // potentially log the error or take other action
+            return;
+        }
 	    // Backend Error Exponetial Backoff - Needs more testing
-            if (oJson.error && oJson.error.message) {
+        if (oJson.error && oJson.error.message) {
         	// txtOutput.value += "Error: " + oJson.error.message;
-		if (oJson.error.message == "Too busy" && retryCount < maxRetries) {
-                    retryCount++;
-                    var retryDelay = Math.pow(2, retryCount) * 1000;
-                    console.log("Too busy. Retrying in " + retryDelay + "ms");
-                    setTimeout(Send, retryDelay);
-                    return;
-                }
-                txtOutput.value += "Error: " + oJson.error.message;
-                retryCount = 0;	  
-            	}
- 
-		else if (oJson.choices && oJson.choices[0].text) {
-                var s = oJson.choices[0].text;
+	    if (oJson.error.message == "Too busy" && retryCount < maxRetries) {
+                retryCount++;
+                var retryDelay = Math.pow(2, retryCount) * 1000;
+                console.log("Too busy. Retrying in " + retryDelay + "ms");
+                setTimeout(Send, retryDelay);
+                return;
+            }
+            txtOutput.value += "Error Other: " + oJson.error.message;
+            retryCount = 0;	  
+       	}
+	
+	// Contine after Error Handling
+	else if (oJson.choices && oJson.choices[0].text) {
+            var s = oJson.choices[0].text;
 
         	// if (selLang.value != "en-US") {
 			// Place Holder
