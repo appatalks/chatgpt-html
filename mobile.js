@@ -31,7 +31,7 @@ function mobile_txtmsd() {
 
 function useragent_adjust() {
       	var userAgent = navigator.userAgent;
-      	if (userAgent.match(/Android|iPhone|Mobile)) {
+      	if (userAgent.match(/Android|iPhone|Mobile/)) {
             var style = document.createElement("style");
             style.innerHTML = "body { overflow: scroll; background-color: ; width: auto; height: 90%; background-image: url(https://hoshisato.com/ai/generated/page/2/upscale/768-026.jpeg); margin: ; display: grid; align-items: center; justify-content: center; background-repeat: repeat; background-position: center center; background-size: initial; }";
             document.head.appendChild(style);
