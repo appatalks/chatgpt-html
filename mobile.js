@@ -2,7 +2,6 @@
 // Get the user agent string and adjust for Mobile
 
 function mobile_txtout() {
-	// Adjust txtOutput for Mobile based on UserAgent
 	window.addEventListener("load", function() {
 	let textarea = document.getElementById("txtOutput");
 	let userAgent = navigator.userAgent;
@@ -17,7 +16,6 @@ function mobile_txtout() {
 };
 
 function mobile_txtmsd() {
- 	// Adjust txtMsg for Mobile based on UserAgent
  	window.addEventListener("load", function() {
   	let textarea2 = document.getElementById("txtMsg");
   	let userAgent = navigator.userAgent;
