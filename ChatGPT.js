@@ -80,7 +80,6 @@ function Send() {
 
 	        // Retrieve the local storage masterOutput content
 	        	// var storedContent = localStorage.getItem("textareaContent");
-			// Place Holder
             	}            
         }
     };
