@@ -1,0 +1,36 @@
+/* Default styles for desktop view */
+body {
+  width: ;
+  height: 800px;
+  overflow: hidden;
+  background-image: url(background.jpg);
+  background-color: rgba(68,70,84);
+  color: #fff;
+  margin: 0; /* remove default margins */
+  display: flex; /* enable flexbox layout */
+  align-items: center; /* center elements vertically */
+  justify-content: center; /* center elements horizontally */
+  background-repeat: no-repeat; /* make image not repeat */
+  background-position: center center; /* center image */
+  background-size: 90% auto; /* set width and height of image */
+}
+
+#eEgg {
+  transition: opacity 0.5s ease-in-out;
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+}
+
+/* Media query for screens smaller than 768px */
+@media only screen and (max-width: 768px) {
+  body {
+    width: ;
+    height: ;
+    display: flex;
+    background-color: blue;
+    background-image: url(background.jpg);
+    background-size: ; /* set background-size to cover for mobile view */
+  }
+}
