@@ -18,6 +18,7 @@ This allows you to easily interact with the OpenAI API and convert the response 
 
 ## Bugs
 - actively on the look out for these
+- Response with "usage":{"completion_tokens":420} causes weird display bug on-screen.
 
 Grabbed the inital idea from here https://www.codeproject.com/Articles/5350454/Chat-GPT-in-JavaScript <br>
 Complete overhaul of the code base.
