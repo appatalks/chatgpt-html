@@ -1,6 +1,6 @@
 # ChatGPT HTML - Using OpenAI APIs and AWS Polly speech
 
-v.0.4
+v.0.5
 
 This allows you to easily interact with the OpenAI API and convert the response to speech using Amazon Polly's Text-to-Speech service.
 
@@ -13,6 +13,7 @@ This allows you to easily interact with the OpenAI API and convert the response 
 
 - Model Selection, Multiple languages, and Print Conversation.
 - Convert to Speech using Amazon Polly's Text-to-Speech service.
+  - Auto Speak! Now avail w00t w00t
 - Error handling for issues that may occur during the API call and speech conversion.
 
 ## Bugs
