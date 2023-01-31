@@ -94,6 +94,14 @@ function Send() {
 	    lastResponse = s;
             }            
         }
+
+  	// Check the state of the checkbox and have fun
+	  const checkbox = document.getElementById("autoSpeak");
+	  if (checkbox.checked) {
+	    speakText();
+    	    const audio = document.getElementById("audioPlayback");
+	    audio.setAttribute("autoplay", true);
+	  }
     };
 
     var sModel = selModel.value; // "text-davinci-003|text-davinci-002|code-davinci-002";
