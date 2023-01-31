@@ -78,7 +78,8 @@ function Send() {
        	}
 	
 	// Contine after Error Handling
-	else if (oJson.choices && oJson.choices[0].text) 
+	else if (oJson.choices && oJson.choices[0].text);
+	// console.log("Line 82" + oJson.choices + "" +oJson.choices[0].text);
 	{
             var s = oJson.choices[0].text;
 	    // Empty Response Handling	     
