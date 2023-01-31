@@ -7,7 +7,7 @@ This allows you to easily interact with the OpenAI API and convert the response 
 ## Getting Started
 
 1. Add your OpenAI API key and AWS Keys to the "OPENAI_API_KEY" variable and "AWS.config.credentials" in config.json. 
-2. Open ChatGPT.html and have fun!
+2. Open chatgpt.html and have fun!
 
 ## Features
 
