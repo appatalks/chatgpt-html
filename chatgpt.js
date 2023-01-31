@@ -54,6 +54,25 @@ function Send() {
 		return;
               }
 	
+	// EasterEgg
+	if (oJson.usage.completion_tokens === 420) {
+          function displayImage() {
+            // code to display image
+	      var image = document.getElementById("eEgg");
+	      image.style.display = "flex";
+	      setTimeout(function() {
+	        image.style.opacity = 1;
+  	      }, 50);
+  	      setTimeout(function() {
+    		image.style.opacity = 0;
+  	      }, 2420);
+  	      setTimeout(function() {
+    		image.style.display = "none";
+  	      }, 2920);
+           }
+          displayImage();
+        }
+	
 	// Catch 500 Internal Server Error
         if (oHttp.status === 500) {
             txtOutput.value += "Error 500: Internal Server Error";
@@ -65,7 +84,8 @@ function Send() {
 	// Timeout Error Exponetial Backoff
         if (oJson.error && oJson.error.message) {
         	// txtOutput.value += "Error: " + oJson.error.message;
-	    if (oJson.error.message == "Too busy" && retryCount < maxRetries) {
+	    // 503 "Error That model is currently overloaded with other requests."
+	    if (oJson.error.message == "overloaded" && retryCount < maxRetries) {
                 retryCount++;
                 var retryDelay = Math.pow(2, retryCount) * 1000;
                 console.log("Too busy. Retrying in " + retryDelay + "ms");
@@ -105,7 +125,7 @@ function Send() {
     };
 
     var sModel = selModel.value; // "text-davinci-003|text-davinci-002|code-davinci-002";
-    var iMaxTokens = 600;
+    var iMaxTokens = 750;
     var dTemperature = 0.7;    
     var stop = "&*&";
 
