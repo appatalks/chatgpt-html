@@ -111,7 +111,7 @@ function Send() {
 
     var data = {
         model: sModel,
-        prompt: selPers.value.replace + lastResponse.replace(/\n/g, '') + " " + sQuestion.replace(/\n/g, ''),
+        prompt: selPers.value + lastResponse.replace(/\n/g, '') + " " + sQuestion.replace(/\n/g, ''),
         max_tokens: iMaxTokens,
         temperature:  dTemperature,
         frequency_penalty: 0.0, // Between -2.0 and 2.0  Positive values decreases repeat responses.
