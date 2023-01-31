@@ -24,6 +24,7 @@ function printMaster() {
     printWindow.print();
 }
 
+// Sending
 function Send() {
 
     var sQuestion = txtMsg.value;
@@ -39,27 +40,29 @@ function Send() {
     oHttp.setRequestHeader("Content-Type", "application/json");
     oHttp.setRequestHeader("Authorization", "Bearer " + OPENAI_API_KEY)
 
-    // Error Handling
+    // Error Handling - Needs more testing
     oHttp.onreadystatechange = function () {
         if (oHttp.readyState === 4) {
             //console.log(oHttp.status);
             var oJson = {}
-            if (txtOutput.value != "") txtOutput.value += "\n";
-
+            if (txtOutput.value != "") txtOutput.value += "\n"; // User Send Data
             try {
-                oJson = JSON.parse(oHttp.responseText);
+                oJson = JSON.parse(oHttp.responseText);  // API Response Data
             } catch (ex) {
                 txtOutput.value += "Error: " + ex.message;
+		console.log("Error: ChatGPT.js Line 53");
 		return;
-            }
-
+              }
+	
+	// Catch 500 Internal Server Error
         if (oHttp.status === 500) {
-            // handle internal server error
             txtOutput.value += "Error 500: Internal Server Error";
             // potentially log the error or take other action
+	    console.log("Error 500: Internal Server Error ChatGPT.js Line 62");
             return;
-        }
-	    // Backend Error Exponetial Backoff - Needs more testing
+        } 
+
+	// Timeout Error Exponetial Backoff
         if (oJson.error && oJson.error.message) {
         	// txtOutput.value += "Error: " + oJson.error.message;
 	    if (oJson.error.message == "Too busy" && retryCount < maxRetries) {
@@ -70,26 +73,24 @@ function Send() {
                 return;
             }
             txtOutput.value += "Error Other: " + oJson.error.message;
+	    console.log("Error Other: ChatGPT.js Line 75");
             retryCount = 0;	  
        	}
 	
 	// Contine after Error Handling
-	else if (oJson.choices && oJson.choices[0].text) {
+	else if (oJson.choices && oJson.choices[0].text) 
+	{
             var s = oJson.choices[0].text;
-
-        	// if (selLang.value != "en-US") {
-			// Place Holder
-        	// }
-
-                if (s == "") s = "No response";
-		txtOutput.value += "AI: " + s.trim();
-		masterOutput += "\n" + txtOutput.value + "\n";
-		localStorage.setItem("masterOutput", masterOutput);
-		lastResponse = s;
-
-	        // Retrieve the local storage masterOutput content
-	        	// var storedContent = localStorage.getItem("textareaContent");
-            	}            
+	    // Empty Response Handling	     
+	    if (s == "") {
+        	txtOutput.value += "AI: I'm sorry can you please ask me in another way?";
+    	    } else {
+        	txtOutput.value += "AI: " + s.trim();
+    	    }
+	    masterOutput += "\n" + txtOutput.value + "\n";
+	    localStorage.setItem("masterOutput", masterOutput);
+	    lastResponse = s;
+            }            
         }
     };
 
