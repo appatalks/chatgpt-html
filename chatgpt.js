@@ -24,6 +24,32 @@ function printMaster() {
     printWindow.print();
 }
 
+function ctrlBreak() {
+  // Capture CTRL + Enter Keys for new line
+  document.querySelector("#txtMsg").addEventListener("keydown", function(event) {
+    if (event.ctrlKey && event.keyCode === 13) {
+      var newLine = "\n";
+      var currentValue = document.querySelector("#txtMsg").value;
+      document.querySelector("#txtMsg").value = currentValue + newLine;
+      event.preventDefault();
+    }
+  });
+
+  // Capture Enter Key to Send Message and Backspace to reset position
+  document.querySelector("#txtMsg").addEventListener("keydown", function(event) {
+    if (event.keyCode === 13 && !event.ctrlKey) {
+      document.querySelector("#btnSend").click();
+      event.preventDefault();
+      var backspace = new KeyboardEvent("keydown", {
+        bubbles: true,
+        cancelable: true,
+        keyCode: 8
+      });
+      document.querySelector("#txtMsg").dispatchEvent(backspace);
+    }
+  });
+}
+
 // Sending
 function Send() {
 
