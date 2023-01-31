@@ -22,35 +22,7 @@
   mobile_txtout();
   mobile_txtmsd();
 </script>
-<style>
-    	/* Default styles for desktop view */
-    	body {
-            width: ;
-            height: 800px;
-            overflow: hidden;
-            background-image: url(background.jpg);
-            background-color: rgba(68,70,84);
-            color: #fff;
-            margin: 0; /* remove default margins */
-            display: flex; /* enable flexbox layout */
-            align-items: center; /* center elements vertically */
-            justify-content: center; /* center elements horizontally */
-            background-repeat: no-repeat; /* make image not repeat */
-            background-position: center center; /* center image */
-            background-size: 90% auto; /* set width and height of image */
-	}
-    	/* Media query for screens smaller than 768px */
-    	@media only screen and (max-width: 768px) {
-        body {
-            width: ; 
-            height: ; 
-	    display: flex;
-	    background-color: blue;
-	    background-image: url(background.jpg);
-            background-size: ; /* set background-size to cover for mobile view */
-          }
-    	}
-</style>
+<link rel="stylesheet" type="text/css" href="style.css">
 </head>
 
 <center>
@@ -104,25 +76,37 @@
 		<button  onclick="printMaster()">Print Output</button>
 	</div>
 
-  <script>
-    // Capture Enter Key to Send Message and Backspace to reset position
-    document.querySelector("#txtMsg").addEventListener("keydown", function(event) {
-      if (event.keyCode === 13) {
-        document.querySelector("#btnSend").click();
-        event.preventDefault();
-        var backspace = new KeyboardEvent("keydown", {
-          bubbles: true,
-          cancelable: true,
-          keyCode: 8
-        });
-        document.querySelector("#txtMsg").dispatchEvent(backspace);
-      }
-    });
-  </script>
+<script>
+  // Capture CTRL + Enter Keys for new line
+  document.querySelector("#txtMsg").addEventListener("keydown", function(event) {
+    if (event.ctrlKey && event.keyCode === 13) {
+      var newLine = "\n";
+      var currentValue = document.querySelector("#txtMsg").value;
+      document.querySelector("#txtMsg").value = currentValue + newLine;
+      event.preventDefault();
+    }
+  });
+
+  // Capture Enter Key to Send Message and Backspace to reset position
+  document.querySelector("#txtMsg").addEventListener("keydown", function(event) {
+    if (event.keyCode === 13 && !event.ctrlKey) {
+      document.querySelector("#btnSend").click();
+      event.preventDefault();
+      var backspace = new KeyboardEvent("keydown", {
+        bubbles: true,
+        cancelable: true,
+        keyCode: 8
+      });
+      document.querySelector("#txtMsg").dispatchEvent(backspace);
+    }
+  });
+</script>
 
 <div id="idText"></div>
 </div>
 </body>
-<footer></footer>
+<footer>
+  <img id="eEgg" src="eEgg.gif" alt="Image" style="display:none;">
+</footer>
 </center>
 </html>
