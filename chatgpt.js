@@ -8,7 +8,7 @@ var maxRetries = 5;
 var retryDelay = 2420; // initial delay in milliseconds
 
 function OnLoad() {
-// Place Holder
+// Prompt tips
     document.getElementById("txtOutput").placeholder = "\n" +
     "		Here are some general prompt tips to help me understand:\n\n\n" +
     "   #1 Be specific: The more specific your prompt, the more targeted the response will be.\n\n" +
