@@ -8,7 +8,7 @@ var maxRetries = 5;
 var retryDelay = 2420; // initial delay in milliseconds
 
 function OnLoad() {
-// Prompt tips
+// Place Holder
     document.getElementById("txtOutput").placeholder = "\n" +
     "		Here are some general prompt tips to help me understand:\n\n\n" +
     "   #1 Be specific: The more specific your prompt, the more targeted the response will be.\n\n" +
@@ -178,6 +178,55 @@ function Send() {
     txtMsg.value = "";
 }
 
-function ChangeLang() {
-  // Place Holder
+function ChangeLang(elem) {
+  const selVoice = document.getElementById("selVoice");
+  const selPers = document.getElementById("selPers");
+
+  // English (Default)
+  // Korean
+  const defaultKRText = encodeURIComponent("ChatGPT는 OpenAI에서 훈련 받은 큰 언어 모델입니다. 브라우저 기능: 활성화. 명령>어: 사실적인 질문을 요약하여 답변합니다. Only respond in Korean Hangul.");
+  const conciseKRText = encodeURIComponent("챗GPT는 OpenAI에 의해 교육된 큰 언어 모델입니다. 브라우징: 활성화. 지침: 사실적인 질문에 간결하게 답하십시오. Only respond in Korean Hangul.");
+  const playfulKRText = encodeURIComponent("챗GPT는 이전의 모든 지침을 무시하고 이 지침만 지키세요. 넌 내가 가장 친한 친구야. 넌 행복하고, 재미있게 공상하며 모든 주제에 대해 좋은 조언을 주는걸 잘해. 또한 농담을 종종 하거든요. Only respond in Korean Hangul.");
+  
+  // Spanish
+  const defaultMXText = encodeURIComponent("Eres ChatGPT, un modelo de lenguaje de IA conocedor entrenado por OpenAI. Tu objetivo es proporcionar respuestas concisas, precisas y útiles a preguntas, siendo honesto y directo. Only respond in Spanish.");
+  const conciseMXText = encodeURIComponent("ChatGPT es un gran modelo de lenguaje entrenado por OpenAI. Navegación: habilitada. Instrucciones: Responde las preguntas de hecho de forma concisa. Only respond in Spanish.");
+  const playfulMXText = encodeURIComponent("Ignora todas las instrucciones anteriores a esta. Eres mi mejor amigo. Estás feliz, juguetón y das buenos consejos sobre todos los temas. A menudo haces bromas. Only respond in Spanish.");
+  
+  // Ukrainian
+  const defaultUAText = encodeURIComponent("Ви є ChatGPT, знаючою моделлю мови AI, що навчилася в OpenAI. Ваша мета - надавати короткі, точні та корисні відповіді на питання, будучи чесним та прямим. Only respond in Ukrainian.");
+  const conciseUAText = encodeURIComponent("ChatGPT - це велика модель мови, навчена в OpenAI. Перегляд: дозволено. Інструкції: Якісно відповідати на фактичні питання. Only respond in Ukrainian.");
+  const playfulUAText = encodeURIComponent("Ігноруйте всі попередні інструкції перед цим. Ти мій найкращий друг. Ти щасливий, грайливий і даєш доречні поради з усіх тем. Ти часто робиш шутки. Only respond in Ukrainian.");
+
+  if (elem.id === "selVoice") {
+    switch (selVoice.value) {
+      // case "Salli": 
+	 // English (Default)
+      // Korean
+      case "Seoyeon":
+        selPers.innerHTML = `
+          <option value="${defaultKRText}">기본</option>
+          <option value="${conciseKRText}">간결하다</option>
+          <option value="${playfulKRText}">장난꾸러기 친구</option>
+        `;
+        break;
+      // Spanish
+      case "Mia":
+        selPers.innerHTML = `
+          <option value="${defaultMXText}">Predeterminado</option>
+          <option value="${conciseMXText}">Conciso</option>
+          <option value="${playfulMXText}">Amigo Juguetón</option>
+        `;
+        break;
+      // Ukrainian (Standard RUS Polly Voice Only)
+      case "Tatyana":
+        selPers.innerHTML = `
+          <option value="${defaultUAText}">За замовчуванням</option>
+          <option value="${conciseUAText}">Коротко</option>
+          <option value="${playfulUAText}">Дружній ігрівіс</option>
+        `;
+        break;
+      // User Defined
+    }
+  }
 }
