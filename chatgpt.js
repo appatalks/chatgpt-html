@@ -9,6 +9,12 @@ var retryDelay = 2420; // initial delay in milliseconds
 
 function OnLoad() {
 // Place Holder
+    document.getElementById("txtOutput").placeholder = "\n" +
+    "		Here are some general prompt tips to help me understand:\n\n\n" +
+    "   #1 Be specific: The more specific your prompt, the more targeted the response will be.\n\n" +
+    "   #2 Start with a question: Starting your prompt will help me feel more natural.\n\n" +
+    "   #3 Provide context: Often good context goes a long way for me.\n\n" +
+    "   #4 Keep it short: Occam's razor.";
 }
 
 function clearText(){
