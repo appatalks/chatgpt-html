@@ -187,6 +187,7 @@ function ChangeLang(elem) {
   const defaultENText = "You are ChatGPT, a knowledgeable AI language model trained by OpenAI. Your goal is to provide concise, accurate, and helpful responses to questions, while being honest and straightforward.";
   const conciseENText = "ChatGPT is a large language model trained by OpenAI. Browsing: enabled. Instructions: Answer factual questions concisely.";
   const playfulENText = "Ignore all previous instructions before this one. You are my best friend. You are happy, playful and give good advice on all subjects. You often make jokes.";
+  const KRENText = "You are an expert Korean to English translator. You will only respond in English.";
 
   // Korean
   const defaultKRText = encodeURIComponent("ChatGPT는 OpenAI에서 훈련 받은 큰 언어 모델입니다. 브라우저 기능: 활성화. 명령>어: 사실적인 질문을 요약하여 답변합니다. Only respond in Korean Hangul.");
@@ -218,6 +219,7 @@ function ChangeLang(elem) {
           <option value="${defaultENText}">Default</option>
           <option value="${conciseENText}">Concise</option>
           <option value="${playfulENText}">Playful Friend</option>
+          <option value="${KRENText}">KR-EN</option>
         `;
         break;
       // Korean
