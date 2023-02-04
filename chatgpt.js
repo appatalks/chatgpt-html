@@ -179,3 +179,41 @@ function Send() {
     txtOutput.value += "You: " + sQuestion;
     txtMsg.value = "";
 }
+
+// Get Credit Usage
+async function getOpenaiUsage(apiKey, start_date, end_date) {
+var oKey = OPENAI_API_KEY;
+
+  if (!start_date) {
+    const today = new Date();
+    start_date = today.toISOString().slice(0, 10);
+  }
+
+  if (!end_date) {
+    const tomorrow = new Date();
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    end_date = tomorrow.toISOString().slice(0, 10);
+  }
+  
+  const headers = {
+    'Authorization': `Bearer ${oKey}`,
+    'Content-Type': 'application/json',
+  };
+  const searchParams = new URLSearchParams();
+  searchParams.set('start_date', start_date);
+  searchParams.set('end_date', end_date);
+  const response = await fetch(
+    `https://api.openai.com/dashboard/billing/usage?${searchParams.toString()}`,
+    {
+      headers,
+    }
+  );
+
+  if (response.status === 200) {
+//    return await response.json();
+    const data = await response.json();
+    document.getElementById("txtOutput").value = JSON.stringify(data, null, 2);
+  } else {
+  throw new Error(`Failed to retrieve OpenAI usage data: ${await response.text()}`);
+  }
+}
