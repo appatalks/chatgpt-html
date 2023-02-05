@@ -111,7 +111,7 @@ function Send() {
         if (oHttp.status === 500) {
             txtOutput.value += "Error 500: Internal Server Error";
             // potentially log the error or take other action
-	    console.log("Error 500: Internal Server Error ChatGPT.js Line 62");
+	    console.log("Error 500: Internal Server Error ChatGPT.js Line 114");
             return;
         } 
 
@@ -127,7 +127,7 @@ function Send() {
                 return;
             }
             txtOutput.value += "Error Other: " + oJson.error.message;
-	    console.log("Error Other: ChatGPT.js Line 75");
+	    console.log("Error Other: ChatGPT.js Line 130");
             retryCount = 0;	  
        	}
 	
