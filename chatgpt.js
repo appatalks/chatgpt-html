@@ -33,9 +33,9 @@ function printMaster() {
 }
 
 function ctrlBreak() {
-  // Capture CTRL + Enter Keys for new line
+  // Capture Shift + Enter Keys for new line
   document.querySelector("#txtMsg").addEventListener("keydown", function(event) {
-    if (event.ctrlKey && event.keyCode === 13) {
+    if (event.shiftKey && event.keyCode === 13) {
       var newLine = "\n";
       var currentValue = document.querySelector("#txtMsg").value;
       document.querySelector("#txtMsg").value = currentValue + newLine;
@@ -45,7 +45,7 @@ function ctrlBreak() {
 
   // Capture Enter Key to Send Message and Backspace to reset position
   document.querySelector("#txtMsg").addEventListener("keydown", function(event) {
-    if (event.keyCode === 13 && !event.ctrlKey) {
+    if (event.keyCode === 13 && !event.shiftKey) {
       document.querySelector("#btnSend").click();
       event.preventDefault();
       var backspace = new KeyboardEvent("keydown", {
@@ -180,19 +180,22 @@ function Send() {
     txtMsg.value = "";
 }
 
+// Detailed Information
+//
 // Get Credit Usage
-async function getOpenaiUsage(apiKey, start_date, end_date) {
+async function getOpenaiBillUsage(apiKey, start_date, end_date) {
 var oKey = OPENAI_API_KEY;
 
   if (!start_date) {
     const today = new Date();
-    start_date = today.toISOString().slice(0, 10);
+    const year = today.getFullYear();
+    const month = today.getMonth();
+    start_date = new Date(year, month, 1).toISOString().slice(0, 10);
   }
 
   if (!end_date) {
-    const tomorrow = new Date();
-    tomorrow.setDate(tomorrow.getDate() + 1);
-    end_date = tomorrow.toISOString().slice(0, 10);
+    const today = new Date();
+    end_date = today.toISOString().slice(0, 10);
   }
   
   const headers = {
@@ -210,10 +213,59 @@ var oKey = OPENAI_API_KEY;
   );
 
   if (response.status === 200) {
-//    return await response.json();
     const data = await response.json();
-    document.getElementById("txtOutput").value = JSON.stringify(data, null, 2);
+    // console.log(data);
+    const totalUsage = data.total_usage;
+    // Rounded up the 0.01
+    const formattedUsage = (totalUsage / 100 + 0.01).toFixed(2);
+    document.getElementById("txtOutput").value = "\n\n\n  Month's Current Spend: $" + formattedUsage;
   } else {
   throw new Error(`Failed to retrieve OpenAI usage data: ${await response.text()}`);
   }
+}
+
+// Get Token Usage // Disabled
+async function getOpenaiUsage(apiKey, start_date, end_date) {
+var oKey = OPENAI_API_KEY;
+
+  if (!start_date) {
+    const today = new Date();
+    const year = today.getFullYear();
+    const month = today.getMonth();
+    start_date = new Date(year, month, 1).toISOString().slice(0, 10);
+  }
+
+  if (!end_date) {
+    const today = new Date();
+    end_date = today.toISOString().slice(0, 10);
+  }
+
+  const headers = {
+    'Authorization': `Bearer ${oKey}`,
+    'Content-Type': 'application/json',
+  };
+  const searchParams = new URLSearchParams();
+  searchParams.set('start_date', start_date);
+  searchParams.set('end_date', end_date);
+//  const response = await fetch(
+//    `https://api.openai.com/v1/usage?${searchParams.toString()}`,
+//    {
+//      headers,
+//    }
+//  );
+//
+//  if (response.status === 200) {
+//    const data = await response.json();
+//    console.log(data);
+//    //  document.getElementById("txtOutput").value = "\n\n\n" + data ;
+//  } else {
+//  throw new Error(`Failed to retrieve OpenAI usage data: ${await response.text()}`);
+//  }
+}
+
+// Tied the Get OpenAI Usage API together
+function getOpenaiUsageNested() {
+  getOpenaiBillUsage();
+  // getOpenaiUsage(); Not very useful information to show here. maybe "current_usage_usd": 0.0
+  // Placer
 }
