@@ -32,7 +32,7 @@ function printMaster() {
     printWindow.print();
 }
 
-function ctrlBreak() {
+function shiftBreak() {
   // Capture Shift + Enter Keys for new line
   document.querySelector("#txtMsg").addEventListener("keydown", function(event) {
     if (event.shiftKey && event.keyCode === 13) {
@@ -58,7 +58,7 @@ function ctrlBreak() {
   });
 }
 
-// Sending
+// Send API Call
 function Send() {
 
     var sQuestion = txtMsg.value;
@@ -131,9 +131,9 @@ function Send() {
             retryCount = 0;	  
        	}
 	
-	// Contine after Error Handling
+	// Contine Send after Error Handling
 	else if (oJson.choices && oJson.choices[0].text);
-	// console.log("Line 82" + oJson.choices + "" +oJson.choices[0].text);
+	// console.log("Line 136" + oJson.choices + "" +oJson.choices[0].text);
 	    // Always Run Response 
 	    {
             var s = oJson.choices[0].text;
@@ -150,19 +150,21 @@ function Send() {
         }
 
   	// Check the state of the checkbox and have fun
-	  const checkbox = document.getElementById("autoSpeak");
-	  if (checkbox.checked) {
-	    speakText();
-    	    const audio = document.getElementById("audioPlayback");
-	    audio.setAttribute("autoplay", true);
-	  }
+	   const checkbox = document.getElementById("autoSpeak");
+	   if (checkbox.checked) {
+	     speakText();
+    	     const audio = document.getElementById("audioPlayback");
+	     audio.setAttribute("autoplay", true);
+	   }
     };
 
-    var sModel = selModel.value; // "text-davinci-003|text-davinci-002|code-davinci-002";
+    // payload parameters
+    var sModel = selModel.value; 
     var iMaxTokens = 750;
     var dTemperature = 0.7;    
     var stop = "&*&";
 
+    // API Payload
     var data = {
         model: sModel,
         prompt: selPers.value + lastResponse.replace(/\n/g, '') + " " + sQuestion.replace(/\n/g, ''),
@@ -173,18 +175,25 @@ function Send() {
 	stop: stop
     }
 
+    // Sending API Payload
     oHttp.send(JSON.stringify(data));
 
+    // Relay Send to Screen
     if (txtOutput.value != "") txtOutput.value += "\n";
     txtOutput.value += "You: " + sQuestion;
     txtMsg.value = "";
 }
 
-// Detailed Information
+// Get Account Usage Information 
 //
-// Get Credit Usage
+// Billing
 async function getOpenaiBillUsage(apiKey, start_date, end_date) {
 var oKey = OPENAI_API_KEY;
+
+  const headers = {
+    'Authorization': `Bearer ${oKey}`,
+    'Content-Type': 'application/json',
+  };
 
   if (!start_date) {
     const today = new Date();
@@ -198,10 +207,6 @@ var oKey = OPENAI_API_KEY;
     end_date = today.toISOString().slice(0, 10);
   }
   
-  const headers = {
-    'Authorization': `Bearer ${oKey}`,
-    'Content-Type': 'application/json',
-  };
   const searchParams = new URLSearchParams();
   searchParams.set('start_date', start_date);
   searchParams.set('end_date', end_date);
@@ -224,9 +229,14 @@ var oKey = OPENAI_API_KEY;
   }
 }
 
-// Get Token Usage // Disabled
+// Token Usage // Disabled
 async function getOpenaiUsage(apiKey, start_date, end_date) {
 var oKey = OPENAI_API_KEY;
+
+  const headers = {
+    'Authorization': `Bearer ${oKey}`,
+    'Content-Type': 'application/json',
+  };
 
   if (!start_date) {
     const today = new Date();
@@ -240,10 +250,6 @@ var oKey = OPENAI_API_KEY;
     end_date = today.toISOString().slice(0, 10);
   }
 
-  const headers = {
-    'Authorization': `Bearer ${oKey}`,
-    'Content-Type': 'application/json',
-  };
   const searchParams = new URLSearchParams();
   searchParams.set('start_date', start_date);
   searchParams.set('end_date', end_date);
@@ -263,7 +269,7 @@ var oKey = OPENAI_API_KEY;
 //  }
 }
 
-// Tied the Get OpenAI Usage API together
+// Tie the API together
 function getOpenaiUsageNested() {
   getOpenaiBillUsage();
   // getOpenaiUsage(); Not very useful information to show here. maybe "current_usage_usd": 0.0
