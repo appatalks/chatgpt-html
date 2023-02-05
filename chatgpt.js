@@ -204,6 +204,7 @@ var oKey = OPENAI_API_KEY;
 
   if (!end_date) {
     const today = new Date();
+	  today.setDate(today.getDate() + 1);
     end_date = today.toISOString().slice(0, 10);
   }
   
