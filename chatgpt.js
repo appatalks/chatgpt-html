@@ -26,36 +26,36 @@ function clearText(){
 function printMaster() {
     // Get the content of the textarea masterOutput
     var textareaContent = document.getElementById("txtOutput").value = masterOutput;
-    console.log(masterOutput);
+    	console.log(masterOutput);
     var printWindow = window.open();
-    printWindow.document.write(txtOutput.value.replace(/\n/g, "<br>"));
-    printWindow.print();
+    	printWindow.document.write(txtOutput.value.replace(/\n/g, "<br>"));
+    	printWindow.print();
 }
 
 function shiftBreak() {
   // Capture Shift + Enter Keys for new line
-  document.querySelector("#txtMsg").addEventListener("keydown", function(event) {
-    if (event.shiftKey && event.keyCode === 13) {
-      var newLine = "\n";
-      var currentValue = document.querySelector("#txtMsg").value;
-      document.querySelector("#txtMsg").value = currentValue + newLine;
-      event.preventDefault();
-    }
-  });
+    document.querySelector("#txtMsg").addEventListener("keydown", function(event) {
+      if (event.shiftKey && event.keyCode === 13) {
+        var newLine = "\n";
+        var currentValue = document.querySelector("#txtMsg").value;
+        document.querySelector("#txtMsg").value = currentValue + newLine;
+        event.preventDefault();
+      }
+    });
 
   // Capture Enter Key to Send Message and Backspace to reset position
-  document.querySelector("#txtMsg").addEventListener("keydown", function(event) {
-    if (event.keyCode === 13 && !event.shiftKey) {
-      document.querySelector("#btnSend").click();
-      event.preventDefault();
-      var backspace = new KeyboardEvent("keydown", {
-        bubbles: true,
-        cancelable: true,
-        keyCode: 8
-      });
-      document.querySelector("#txtMsg").dispatchEvent(backspace);
-    }
-  });
+    document.querySelector("#txtMsg").addEventListener("keydown", function(event) {
+      if (event.keyCode === 13 && !event.shiftKey) {
+        document.querySelector("#btnSend").click();
+        event.preventDefault();
+        var backspace = new KeyboardEvent("keydown", {
+          bubbles: true,
+          cancelable: true,
+          keyCode: 8
+        });
+        document.querySelector("#txtMsg").dispatchEvent(backspace);
+      }
+    });
 }
 
 // Send API Call
@@ -204,7 +204,7 @@ var oKey = OPENAI_API_KEY;
 
   if (!end_date) {
     const today = new Date();
-	  today.setDate(today.getDate() + 1);
+   	  today.setDate(today.getDate() + 1);
     end_date = today.toISOString().slice(0, 10);
   }
   
