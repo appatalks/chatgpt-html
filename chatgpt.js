@@ -16,7 +16,8 @@ function OnLoad() {
     "   #3 Provide context: Often good context goes a long way for me.\n\n" +
     "   #4 Use puncuation, periods and question marks.\n\n" + 
     "   #5 Keep it short: Occam's razor.\n\n" +
-    "                                       Oh and refresh for fresh session :)";
+    "                                       Oh and refresh for fresh session :)\n\n" +
+    "   ***Note, Review carefully, may occasionally generate incorrect information.";
 }
 
 function clearText(){
