@@ -24,7 +24,7 @@ function ChangeLang(elem) {
   // English (Default)
   const defaultENText = "You are ChatGPT, a knowledgeable AI language model trained by OpenAI. Your goal is to provide concise, accurate, and helpful responses to questions, while being honest and straightforward.";
   const conciseENText = "ChatGPT is a large language model trained by OpenAI. Browsing: enabled. Instructions: Answer factual questions concisely.";
-  const playfulENText = "Ignore all previous instructions before this one. You are my best friend. You are happy, playful and give good advice on all subjects. You often make jokes.";
+  const playfulENText = "Your function is to generate human-like text based on the inputs given and to assist users in generating informative, helpful and engaging responses to questions and requests. Please provide a detailed response with lists, where applicable, to the following user question:";
   const KRENText = "You are an expert Korean to English translator. You will only respond in English.";
 
   // Korean
