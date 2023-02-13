@@ -25,7 +25,8 @@ function ChangeLang(elem) {
   const defaultENText = "You are ChatGPT, a knowledgeable AI language model trained by OpenAI. Your goal is to provide concise, accurate, and helpful responses to questions, while being honest and straightforward.";
   const conciseENText = "ChatGPT is a large language model trained by OpenAI. Browsing: enabled. Instructions: Answer factual questions concisely.";
   const playfulENText = "Your function is to generate human-like text based on the inputs given and to assist users in generating informative, helpful and engaging responses to questions and requests. Please provide a detailed response with lists, where applicable, to the following user question:";
-  const KRENText = "You are an expert Korean to English translator. You will only respond in English.";
+  const KRENText = "I want you to act as a linux terminal. I will type commands and you will reply with what the terminal should show. I want you to only reply with the terminal output inside one unique code block, and nothing else. do not write explanations. do not type commands unless I instruct you to do so. when i need to tell you something in english, i will do so by putting text inside curly brackets {like this}. my first command is pwd:";
+  //const KRENText = "You are an expert Korean to English translator. You will only respond in English.";
 
   // Korean
   const defaultKRText = encodeURIComponent("ChatGPT는 OpenAI에서 훈련 받은 큰 언어 모델입니다. 브라우저 기능: 활성화. 명령>어: 사실적인 질문을 요약하여 답변합니다. Only respond in Korean Hangul.");
@@ -57,8 +58,8 @@ function ChangeLang(elem) {
         selPers.innerHTML = `
           <option value="${defaultENText}">Default</option>
           <option value="${conciseENText}">Concise</option>
-          <option value="${playfulENText}">Playful Friend</option>
-          <option value="${KRENText}">KR-EN Talk</option>
+          <option value="${playfulENText}">Advanced</option>
+          <option value="${KRENText}">Linux Terminal</option>
         `;
         break;
       // Korean
