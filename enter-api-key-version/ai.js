@@ -104,7 +104,7 @@ function Send() {
                 oJson = JSON.parse(oHttp.responseText);  // API Response Data
             } catch (ex) {
                 txtOutput.value += "Error: " + ex.message;
-		console.log("Error: ChatGPT.js Line 53");
+		console.log("Error: ChatGPT.js Line 107");
 		return;
               }
 	
@@ -112,7 +112,7 @@ function Send() {
         if (oHttp.status === 500) {
             txtOutput.value += "Error 500: Internal Server Error";
             // potentially log the error or take other action
-	    console.log("Error 500: Internal Server Error ChatGPT.js Line 114");
+	    console.log("Error 500: Internal Server Error ChatGPT.js Line 115");
             return;
         } 
 
