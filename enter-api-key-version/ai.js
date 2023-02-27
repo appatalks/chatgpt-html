@@ -104,7 +104,7 @@ function Send() {
                 oJson = JSON.parse(oHttp.responseText);  // API Response Data
             } catch (ex) {
                 txtOutput.value += "Error: " + ex.message;
-		console.log("Error: ChatGPT.js Line 107");
+		console.log("Error: ai.js Line 107");
 		return;
               }
 	
@@ -128,13 +128,13 @@ function Send() {
                 return;
             }
             txtOutput.value += "Error Other: " + oJson.error.message;
-	    console.log("Error Other: ChatGPT.js Line 130");
+	    console.log("Error Other: ai.js Line 131");
             retryCount = 0;	  
        	}
 	
 	// Contine Send after Error Handling
 	else if (oJson.choices && oJson.choices[0].text);
-	// console.log("Line 136" + oJson.choices + "" +oJson.choices[0].text);
+	// console.log("Line 137" + oJson.choices + "" +oJson.choices[0].text);
 	    // Always Run Response 
 	    {
             var s = oJson.choices[0].text;
