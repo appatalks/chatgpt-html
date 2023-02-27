@@ -140,9 +140,9 @@ function Send() {
             var s = oJson.choices[0].text;
 	    // Empty Response Handling	     
 	    if (s == "") {
-        	txtOutput.value += "RaxAI: I'm sorry can you please ask me in another way?";
+        	txtOutput.value += "AI: I'm sorry can you please ask me in another way?";
     	    } else {
-        	txtOutput.value += "RaxAI: " + s.trim();
+        	txtOutput.value += "AI: " + s.trim();
     	    }
 	    masterOutput += "\n" + txtOutput.value + "\n";
 	    localStorage.setItem("masterOutput", masterOutput);
