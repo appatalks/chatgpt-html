@@ -2,9 +2,10 @@
 <html>
 <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, minimum-scale=1.0, maximum-scale=1.0">
 <head>
-    <title>ChatGPT - Eva</title>
+    <title>Chat GPT</title>
 <script src="options.js"></script>
 <script src="chatgpt.js"></script>
+<script src="chatgpt-turbo.js"></script>
 <script src="aws-sdk-2.1304.0.min.js"></script>
  <script>
   auth();
@@ -54,12 +55,15 @@
 
 <textarea id="txtMsg" rows="5" wrap="soft" style="width: 750px; margin-left: 3px; margin-top: 6px" placeholder="Input Text"></textarea>
         <div>
-	    <button type="button" onclick="clearText(); Send();" id="btnSend">Send</button> 
-            <select id="selModel">
+
+	<button type="button" onclick="sendData()" id="btnSend">Send</button>
+	    <select id="selModel" onchange="updateButton()">
+                <option value="gpt-3.5-turbo">gpt-3.5-turbo</option>
                 <option value="text-davinci-003">text-davinci-003</option>
                 <option value="text-davinci-002">text-davinci-002</option>
                 <option value="code-davinci-002">code-davinci-002</option>
             </select>
+
             <select id="selPers" onchange="ChangeLang(this)"> 
                 <option value="You are Eva, a knowledgeable AI language model trained by OpenAI. Your goal is to provide concise, accurate, and helpful responses to questions, while being honest and straightforward.">Default</option>
                 <option value="Eva is a large language model trained by OpenAI. Browsing: enabled. Instructions: Answer factual questions concisely.">Concise</option> 
