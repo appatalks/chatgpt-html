@@ -16,6 +16,35 @@ fetch('./config.json')
  });
 }
 
+// Select Engine Completion Endpoint
+function updateButton() {
+    var selModel = document.getElementById("selModel");
+    var btnSend = document.getElementById("btnSend");
+
+    if (selModel.value == "gpt-3.5-turbo") {
+        btnSend.onclick = function() {
+            clearText();
+            trboSend();
+        };
+    } else {
+        btnSend.onclick = function() {
+            clearText();
+            Send();
+        };
+    }
+}
+
+function sendData() {
+    var selModel = document.getElementById("selModel");
+    if (selModel.value == "gpt-3.5-turbo") {
+        clearText();
+        trboSend();
+    } else {
+        clearText();
+        Send();
+    }
+}
+
 // Languages
 function ChangeLang(elem) {
   const selVoice = document.getElementById("selVoice");
@@ -153,7 +182,7 @@ function speakText() {
 
 	// Let's speak only the response.
 	let text = document.getElementById("txtOutput").value;
-	let textArr = text.split('AI:');
+	let textArr = text.split('Eva:');
 	if(textArr.length > 1){
    	   speechParams.Text = textArr[1];
 	}else{
