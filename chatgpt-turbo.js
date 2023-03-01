@@ -118,7 +118,7 @@ function trboSend() {
     // API Payload
     var data = {
         model: sModel,
-        messages: [{ role: 'user', content: selPers.value + lastResponse.replace(/\n/g, '') + " " + sQuestion.replace(/\n/g, '') }],
+        messages: [{ role: 'user', content: selPers.value + " " + lastResponse.replace(/\n/g, '') + " " + sQuestion.replace(/\n/g, '') }],
         max_tokens: iMaxTokens,
         temperature:  dTemperature,
         frequency_penalty: 0.0, // Between -2 and 2, Positive values decreases repeat responses.
