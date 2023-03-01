@@ -16,8 +16,7 @@ function OnLoad() {
     "   #3 Provide context: Often good context goes a long way for me.\n\n" +
     "   #4 Use puncuation, periods and question marks.\n\n" + 
     "   #5 Keep it short: Occam's razor.\n\n" +
-    "                                       Oh and refresh for fresh session :)\n\n" +
-    "   ***Note, Review carefully, may occasionally generate incorrect information.";
+    "                                       Oh and refresh for fresh session :)";
 }
 
 function clearText(){
@@ -140,9 +139,9 @@ function Send() {
             var s = oJson.choices[0].text;
 	    // Empty Response Handling	     
 	    if (s == "") {
-        	txtOutput.value += "AI: I'm sorry can you please ask me in another way?";
+        	txtOutput.value += "Eva: I'm sorry can you please ask me in another way?";
     	    } else {
-        	txtOutput.value += "AI: " + s.trim();
+        	txtOutput.value += "Eva: " + s.trim();
     	    }
 	    masterOutput += "\n" + txtOutput.value + "\n";
 	    localStorage.setItem("masterOutput", masterOutput);
