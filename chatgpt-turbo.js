@@ -27,7 +27,7 @@ function trboSend() {
                 oJson = JSON.parse(oHttp.responseText);  // API Response Data
             } catch (ex) {
                 txtOutput.value += "Error: " + ex.message;
-		console.log("Error: chatgpt-turbo.js Line 36");
+		console.log("Error: chatgpt-turbo.js Line 30");
 		return;
               }
 	
@@ -54,7 +54,7 @@ function trboSend() {
         if (oHttp.status === 500) {
             txtOutput.value += "Error 500: Internal Server Error";
             // potentially log the error or take other action
-	    console.log("Error 500: Internal Server Error chatgpt-turbo.js Line 63");
+	    console.log("Error 500: Internal Server Error chatgpt-turbo.js Line 57");
             return;
         } 
 
@@ -70,13 +70,13 @@ function trboSend() {
                 return;
             }
             txtOutput.value += "Error Other: " + oJson.error.message;
-	    console.log("Error Other: chatgpt-turbo.js Line 79");
+	    console.log("Error Other: chatgpt-turbo.js Line 73");
             retryCount = 0;	  
        	}
 	
 	// Contine Send after Error Handling
 	else if (oJson.choices && oJson.choices[0].message);
-	 // console.log("chatgpt-turbo.js Line 85" + oJson.choices + "" + oJson.choices[0].message);
+	 // console.log("chatgpt-turbo.js Line 79" + oJson.choices + "" + oJson.choices[0].message);
 	    // Always Run Response 
 	    {
             var s = oJson.choices[0].message;
@@ -90,7 +90,7 @@ function trboSend() {
 	    masterOutput += "\n" + txtOutput.value + "\n";
 	    localStorage.setItem("masterOutput", masterOutput);
 	    lastResponse = s.content;
-            // console.log("chatgpt-turbo.js Line 99" + lastResponse);
+            // console.log("chatgpt-turbo.js Line 93" + lastResponse);
             }            
         }
 
@@ -122,7 +122,7 @@ function trboSend() {
 
     // Sending API Payload
     oHttp.send(JSON.stringify(data));
-    // console.log("chatgpt-turbo.js Line 131" + JSON.stringify(data));
+    // console.log("chatgpt-turbo.js Line 125" + JSON.stringify(data));
 
     // Relay Send to Screen
     if (txtOutput.value != "") txtOutput.value += "\n";
