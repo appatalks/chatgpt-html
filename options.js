@@ -181,7 +181,6 @@ function useragent_adjust() {
 };
 
 // AWS Polly
-    // Function invoked by button click
 function speakText() {
 	var sText = txtOutput.value;
     	if (sText == "") {
@@ -269,7 +268,6 @@ function shiftBreak() {
 }
 
 // Get Account Usage Information 
-//
 // Billing
 async function getOpenaiBillUsage(apiKey, start_date, end_date) {
 var oKey = OPENAI_API_KEY;
@@ -315,42 +313,7 @@ var oKey = OPENAI_API_KEY;
 
 // Token Usage // Disabled
 async function getOpenaiUsage(apiKey, start_date, end_date) {
-var oKey = OPENAI_API_KEY;
-
-  const headers = {
-    'Authorization': `Bearer ${oKey}`,
-    'Content-Type': 'application/json',
-  };
-
-  if (!start_date) {
-    const today = new Date();
-    const year = today.getFullYear();
-    const month = today.getMonth();
-    start_date = new Date(year, month, 1).toISOString().slice(0, 10);
-  }
-
-  if (!end_date) {
-    const today = new Date();
-    end_date = today.toISOString().slice(0, 10);
-  }
-
-  const searchParams = new URLSearchParams();
-  searchParams.set('start_date', start_date);
-  searchParams.set('end_date', end_date);
-//  const response = await fetch(
-//    `https://api.openai.com/v1/usage?${searchParams.toString()}`,
-//    {
-//      headers,
-//    }
-//  );
-//
-//  if (response.status === 200) {
-//    const data = await response.json();
-//    console.log(data);
-//    //  document.getElementById("txtOutput").value = "\n\n\n" + data ;
-//  } else {
-//  throw new Error(`Failed to retrieve OpenAI usage data: ${await response.text()}`);
-//  }
+// Place Holder 
 }
 
 // Tie the API together
