@@ -17,9 +17,19 @@ function trboSend() {
     oHttp.setRequestHeader("Content-Type", "application/json");
     oHttp.setRequestHeader("Authorization", "Bearer " + OPENAI_API_KEY)
 
-    // Error Handling - Needs more testing
     oHttp.onreadystatechange = function () {
         if (oHttp.readyState === 4) {
+    	  // Check for errors
+    	  if (oHttp.status === 500) {
+      	    txtOutput.value += "Error 500: Internal Server Error";
+      	    console.log("Error 500: Internal Server Error chatgpt-turbo.js Line 25");
+      	    return;
+    	  }
+    	  if (oHttp.status === 429) {
+      	    txtOutput.value += "Error 429: Too Many Requests";
+            console.log("Error 429: Too Many Requests chatgpt-turbo.js Line 30");
+      	    return;
+    	  }
             //console.log(oHttp.status);
             var oJson = {}
             if (txtOutput.value != "") txtOutput.value += "\n"; // User Send Data
@@ -27,7 +37,7 @@ function trboSend() {
                 oJson = JSON.parse(oHttp.responseText);  // API Response Data
             } catch (ex) {
                 txtOutput.value += "Error: " + ex.message;
-		console.log("Error: chatgpt-turbo.js Line 30");
+		console.log("Error: chatgpt-turbo.js Line 40");
 		return;
               }
 	
@@ -50,21 +60,6 @@ function trboSend() {
           displayImage();
         }
 	
-	// Catch 500 Internal Server Error - Needs more testing.
-	if (oHttp.status === 500) {
-    	   txtOutput.value += "Error 500: Internal Server Error";
-    	   // potentially log the error or take other action
-    	   console.log("Error 500: Internal Server Error chatgpt-turbo.js Line 57");
-    	   return;
-	} 
-
-	if (oHttp.status === 429) {
-    	   txtOutput.value += "Error 429: Too Many Requests";
-    	   // potentially log the error or take other action
-    	   console.log("Error 429: Too Many Requests chatgpt-turbo.js Line 58");
-    	   return;
-	}
-
 	// Timeout Error Exponetial Backoff
         if (oJson.error && oJson.error.message) {
         	// txtOutput.value += "Error: " + oJson.error.message;
@@ -98,6 +93,10 @@ function trboSend() {
 	    masterOutput += "\n" + txtOutput.value + "\n";
 	    localStorage.setItem("masterOutput", masterOutput);
 	    lastResponse = s.content + "\n";
+
+	    userMasterResponse += sQuestion + "\n";
+	    localStorage.setItem("userMasterResponse", userMasterResponse);
+
             aiMasterResponse += lastResponse;
             localStorage.setItem("aiMasterResponse", aiMasterResponse);
             // console.log("chatgpt-turbo.js Line 93" + lastResponse);
@@ -122,12 +121,11 @@ function trboSend() {
     // API Payload
     var data = {
         model: sModel,
-        // messages: [{ role: 'user', content: selPers.value + " " + lastResponse.replace(/\n/g, '') + " " + sQuestion.replace(/\n/g, '') }],
-	// // Will Revist after some time, need this to mature. Does not respond as expected.
+	// Need Revist after some time, need this to mature. Does not respond as expected with assistant. Not sure how to pass previous responses.
 	messages: [
 	      { role: 'system', content: selPers.value },  // Doesn't seem to stick well.
 	      { role: 'user', content: selPers.value + " " + lastResponse.replace(/\n/g, '') + " " + sQuestion.replace(/\n/g, '') },
-	//      { role: 'assistant', content: aiMasterResponse }, // Read all ai responses, get's very confused.
+	//      { role: 'assistant', content: userMasterResponse.replace(/\n/g, '') + sQuestion.replace(/\n/g, '') }, // Read all user responses, get's very confused.
 	],
         max_tokens: iMaxTokens,
         temperature:  dTemperature,
