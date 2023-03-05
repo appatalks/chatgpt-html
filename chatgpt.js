@@ -1,63 +1,6 @@
 // Javascript
 // For OpenAI API
 
-var lastResponse = "";
-var masterOutput = "";
-var retryCount = 0;
-var maxRetries = 5;
-var retryDelay = 2420; // initial delay in milliseconds
-
-function OnLoad() {
-// Place Holder
-    document.getElementById("txtOutput").placeholder = "\n" +
-    "		Here are some general prompt tips to help me understand:\n\n\n" +
-    "   #1 Be specific: The more specific your prompt, the more targeted the response will be.\n\n" +
-    "   #2 Start with a question: Starting your prompt will help me feel more natural.\n\n" +
-    "   #3 Provide context: Often good context goes a long way for me.\n\n" +
-    "   #4 Use puncuation, periods and question marks.\n\n" + 
-    "   #5 Keep it short: Occam's razor.\n\n" +
-    "                                       Oh and refresh for fresh session :)";
-}
-
-function clearText(){
-    document.getElementById("txtOutput").value = "";
-}
-
-function printMaster() {
-    // Get the content of the textarea masterOutput
-    var textareaContent = document.getElementById("txtOutput").value = masterOutput;
-    	console.log(masterOutput);
-    var printWindow = window.open();
-    	printWindow.document.write(txtOutput.value.replace(/\n/g, "<br>"));
-    	printWindow.print();
-}
-
-function shiftBreak() {
-  // Capture Shift + Enter Keys for new line
-    document.querySelector("#txtMsg").addEventListener("keydown", function(event) {
-      if (event.shiftKey && event.keyCode === 13) {
-        var newLine = "\n";
-        var currentValue = document.querySelector("#txtMsg").value;
-        document.querySelector("#txtMsg").value = currentValue + newLine;
-        event.preventDefault();
-      }
-    });
-
-  // Capture Enter Key to Send Message and Backspace to reset position
-    document.querySelector("#txtMsg").addEventListener("keydown", function(event) {
-      if (event.keyCode === 13 && !event.shiftKey) {
-        document.querySelector("#btnSend").click();
-        event.preventDefault();
-        var backspace = new KeyboardEvent("keydown", {
-          bubbles: true,
-          cancelable: true,
-          keyCode: 8
-        });
-        document.querySelector("#txtMsg").dispatchEvent(backspace);
-      }
-    });
-}
-
 // Send API Call
 function Send() {
 
@@ -167,7 +110,7 @@ function Send() {
     // API Payload
     var data = {
         model: sModel,
-        prompt: selPers.value + " " + lastResponse.replace(/\n/g, '') + " " + sQuestion.replace(/\n/g, ''),
+        prompt: selPers.value + " " +lastResponse.replace(/\n/g, '') + " " + sQuestion.replace(/\n/g, ''),
         max_tokens: iMaxTokens,
         temperature:  dTemperature,
         frequency_penalty: 0.0, // Between -2 and 2, Positive values decreases repeat responses.
@@ -182,97 +125,4 @@ function Send() {
     if (txtOutput.value != "") txtOutput.value += "\n";
     txtOutput.value += "You: " + sQuestion;
     txtMsg.value = "";
-}
-
-// Get Account Usage Information 
-//
-// Billing
-async function getOpenaiBillUsage(apiKey, start_date, end_date) {
-var oKey = OPENAI_API_KEY;
-
-  const headers = {
-    'Authorization': `Bearer ${oKey}`,
-    'Content-Type': 'application/json',
-  };
-
-  if (!start_date) {
-    const today = new Date();
-    const year = today.getFullYear();
-    const month = today.getMonth();
-    start_date = new Date(year, month, 1).toISOString().slice(0, 10);
-  }
-
-  if (!end_date) {
-    const today = new Date();
-   	  today.setDate(today.getDate() + 1);
-    end_date = today.toISOString().slice(0, 10);
-  }
-  
-  const searchParams = new URLSearchParams();
-  searchParams.set('start_date', start_date);
-  searchParams.set('end_date', end_date);
-  const response = await fetch(
-    `https://api.openai.com/dashboard/billing/usage?${searchParams.toString()}`,
-    {
-      headers,
-    }
-  );
-
-  if (response.status === 200) {
-    const data = await response.json();
-    // console.log(data);
-    const totalUsage = data.total_usage;
-    // Rounded up the 0.01
-    const formattedUsage = (totalUsage / 100 + 0.01).toFixed(2);
-    document.getElementById("txtOutput").value = "\n\n\n  Month's Current Spend: $" + formattedUsage;
-  } else {
-  throw new Error(`Failed to retrieve OpenAI usage data: ${await response.text()}`);
-  }
-}
-
-// Token Usage // Disabled
-async function getOpenaiUsage(apiKey, start_date, end_date) {
-var oKey = OPENAI_API_KEY;
-
-  const headers = {
-    'Authorization': `Bearer ${oKey}`,
-    'Content-Type': 'application/json',
-  };
-
-  if (!start_date) {
-    const today = new Date();
-    const year = today.getFullYear();
-    const month = today.getMonth();
-    start_date = new Date(year, month, 1).toISOString().slice(0, 10);
-  }
-
-  if (!end_date) {
-    const today = new Date();
-    end_date = today.toISOString().slice(0, 10);
-  }
-
-  const searchParams = new URLSearchParams();
-  searchParams.set('start_date', start_date);
-  searchParams.set('end_date', end_date);
-//  const response = await fetch(
-//    `https://api.openai.com/v1/usage?${searchParams.toString()}`,
-//    {
-//      headers,
-//    }
-//  );
-//
-//  if (response.status === 200) {
-//    const data = await response.json();
-//    console.log(data);
-//    //  document.getElementById("txtOutput").value = "\n\n\n" + data ;
-//  } else {
-//  throw new Error(`Failed to retrieve OpenAI usage data: ${await response.text()}`);
-//  }
-}
-
-// Tie the API together
-function getOpenaiUsageNested() {
-  getOpenaiBillUsage();
-  // getOpenaiUsage(); Not very useful information to show here. maybe "current_usage_usd": 0.0
-  // Placer
 }
