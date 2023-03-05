@@ -1,12 +1,6 @@
 // Javascript
 // For OpenAI API
 
-var lastResponse = "";
-var masterOutput = "";
-var retryCount = 0;
-var maxRetries = 5;
-var retryDelay = 2420; // initial delay in milliseconds
-
 // Send API Call
 function trboSend() {
 
