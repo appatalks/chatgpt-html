@@ -58,6 +58,14 @@ function trboSend() {
             return;
         } 
 
+	// Catch 429 Rate Limit Error
+        if (oHttp.status === 429) {
+            txtOutput.value += "Error 429: Rate Limited";
+            // potentially log the error or take other action
+            console.log("Error 429: Rate Limited chatgpt-turbo.js Line 65");
+            return;
+        }
+
 	// Timeout Error Exponetial Backoff
         if (oJson.error && oJson.error.message) {
         	// txtOutput.value += "Error: " + oJson.error.message;
@@ -70,7 +78,7 @@ function trboSend() {
                 return;
             }
             txtOutput.value += "Error Other: " + oJson.error.message;
-	    console.log("Error Other: chatgpt-turbo.js Line 73");
+	    console.log("Error Other: chatgpt-turbo.js Line 81");
             retryCount = 0;	  
        	}
 	
@@ -113,6 +121,12 @@ function trboSend() {
     var data = {
         model: sModel,
         messages: [{ role: 'user', content: selPers.value + " " + lastResponse.replace(/\n/g, '') + " " + sQuestion.replace(/\n/g, '') }],
+	// // Will Revist after some time, need this to mature. Does not respond as expected.
+	// messages: [
+	//       { role: 'system', content: selPers.value },  // Doesn't seem to stick.
+	//       { role: 'user', content: sQuestion.replace(/\n/g, '') },
+	//       { role: 'assistant', content: lastResponse.replace(/\n/g, '') }, // Doesn't seem to care.
+	// ],
         max_tokens: iMaxTokens,
         temperature:  dTemperature,
         frequency_penalty: 0.0, // Between -2 and 2, Positive values decreases repeat responses.
@@ -122,7 +136,7 @@ function trboSend() {
 
     // Sending API Payload
     oHttp.send(JSON.stringify(data));
-    // console.log("chatgpt-turbo.js Line 125" + JSON.stringify(data));
+    // console.log("chatgpt-turbo.js Line 139" + JSON.stringify(data));
 
     // Relay Send to Screen
     if (txtOutput.value != "") txtOutput.value += "\n";
