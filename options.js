@@ -7,6 +7,7 @@
 
 // Error Handling Variables
 var lastResponse = "";
+var aiMasterResponse = "";
 var masterOutput = "";
 var retryCount = 0;
 var maxRetries = 5;
