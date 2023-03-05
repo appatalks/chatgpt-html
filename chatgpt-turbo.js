@@ -51,25 +51,23 @@ function trboSend() {
         }
 	
 	// Catch 500 Internal Server Error - Needs more testing.
-        if (oHttp.status === 500) {
-            txtOutput.value += "Error 500: Internal Server Error";
-            // potentially log the error or take other action
-	    console.log("Error 500: Internal Server Error chatgpt-turbo.js Line 57");
-            return;
-        } 
+	if (oHttp.status === 500) {
+    	   txtOutput.value += "Error 500: Internal Server Error";
+    	   // potentially log the error or take other action
+    	   console.log("Error 500: Internal Server Error chatgpt-turbo.js Line 57");
+    	   return;
+	} 
 
-	// Catch 429 Rate Limit Error
-        if (oHttp.status === 429) {
-            txtOutput.value += "Error 429: Rate Limited";
-            // potentially log the error or take other action
-            console.log("Error 429: Rate Limited chatgpt-turbo.js Line 65");
-            return;
-        }
+	if (oHttp.status === 429) {
+    	   txtOutput.value += "Error 429: Too Many Requests";
+    	   // potentially log the error or take other action
+    	   console.log("Error 429: Too Many Requests chatgpt-turbo.js Line 58");
+    	   return;
+	}
 
 	// Timeout Error Exponetial Backoff
         if (oJson.error && oJson.error.message) {
         	// txtOutput.value += "Error: " + oJson.error.message;
-	    // 503 "Error That model is currently overloaded with other requests."
 	    if (oJson.error.message == "overloaded" && retryCount < maxRetries) {
                 retryCount++;
                 var retryDelay = Math.pow(2, retryCount) * 1000;
@@ -77,9 +75,11 @@ function trboSend() {
                 setTimeout(trboSend, retryDelay);
                 return;
             }
-            txtOutput.value += "Error Other: " + oJson.error.message;
-	    console.log("Error Other: chatgpt-turbo.js Line 81");
-            retryCount = 0;	  
+	    else {
+                txtOutput.value += "Error Other: " + oJson.error.message;
+	        console.log("Error Other: chatgpt-turbo.js Line 81");
+                retryCount = 0;	  
+	    }
        	}
 	
 	// Contine Send after Error Handling
@@ -89,7 +89,7 @@ function trboSend() {
 	    {
             var s = oJson.choices[0].message;
 	    // Empty Response Handling	     
-	    if (s == "") {
+	    if (s.content == "") {
         	txtOutput.value += "Eva: I'm sorry can you please ask me in another way?";
     	    } else {
 		// console.log("chatgpt-turbo.js line 93" + typeof s, s);
@@ -97,7 +97,9 @@ function trboSend() {
     	    }
 	    masterOutput += "\n" + txtOutput.value + "\n";
 	    localStorage.setItem("masterOutput", masterOutput);
-	    lastResponse = s.content;
+	    lastResponse = s.content + "\n";
+            aiMasterResponse += lastResponse;
+            localStorage.setItem("aiMasterResponse", aiMasterResponse);
             // console.log("chatgpt-turbo.js Line 93" + lastResponse);
             }            
         }
@@ -120,13 +122,13 @@ function trboSend() {
     // API Payload
     var data = {
         model: sModel,
-        messages: [{ role: 'user', content: selPers.value + " " + lastResponse.replace(/\n/g, '') + " " + sQuestion.replace(/\n/g, '') }],
+        // messages: [{ role: 'user', content: selPers.value + " " + lastResponse.replace(/\n/g, '') + " " + sQuestion.replace(/\n/g, '') }],
 	// // Will Revist after some time, need this to mature. Does not respond as expected.
-	// messages: [
-	//       { role: 'system', content: selPers.value },  // Doesn't seem to stick.
-	//       { role: 'user', content: sQuestion.replace(/\n/g, '') },
-	//       { role: 'assistant', content: lastResponse.replace(/\n/g, '') }, // Doesn't seem to care.
-	// ],
+	messages: [
+	      { role: 'system', content: selPers.value },  // Doesn't seem to stick well.
+	      { role: 'user', content: selPers.value + " " + lastResponse.replace(/\n/g, '') + " " + sQuestion.replace(/\n/g, '') },
+	//      { role: 'assistant', content: aiMasterResponse }, // Read all ai responses, get's very confused.
+	],
         max_tokens: iMaxTokens,
         temperature:  dTemperature,
         frequency_penalty: 0.0, // Between -2 and 2, Positive values decreases repeat responses.
