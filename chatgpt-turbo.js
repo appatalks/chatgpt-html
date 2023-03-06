@@ -131,7 +131,7 @@ function trboSend() {
 	messages: [
 	      { role: 'system', content: "You are Eva. You have access to previous chats and responses. You will keep conversation to a minimum and answer to the best of your abilities." },  // Doesn't seem to stick well.
 	      { role: 'user', content: selPers.value + "My next question is: " + sQuestion.replace(/\n/g, '') }, 
-              { role: 'assistant', content: " Here are all my previous responses for you to analyze: " + userMasterResponse.replace(/\n/g, ' ') }, 
+              { role: 'assistant', content: "Here are all my previous responses for you to remember: " + userMasterResponse.replace(/\n/g, ' ') }, 
 	      // { role: 'user', content: selPers.value + " Here are all my previous responses for you to analyze: " + userMasterResponse.replace(/\n/g, ' ') + "My next question is: " + sQuestion.replace(/\n/g, '') }, // Seems to be best method so far. Not perfect.
 	      // { role: 'user', content: selPers.value + " " + lastResponse.replace(/\n/g, '') + " " + sQuestion.replace(/\n/g, '') }, // Okay'ish
 	      // { role: 'assistant', content: aiMasterResponse.replace(/\n/g, '') }, // Read ai responses, get's very confused.
@@ -145,7 +145,7 @@ function trboSend() {
 
     // Sending API Payload
     oHttp.send(JSON.stringify(data));
-    // console.log("chatgpt-turbo.js Line 146" + JSON.stringify(data));
+    // console.log("chatgpt-turbo.js Line 148" + JSON.stringify(data));
 
     // Relay Send to Screen
     if (txtOutput.value != "") txtOutput.value += "\n";
