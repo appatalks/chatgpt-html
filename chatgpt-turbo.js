@@ -72,7 +72,7 @@ function trboSend() {
             }
 	    else {
                 txtOutput.value += "Error Other: " + oJson.error.message;
-	        console.log("Error Other: chatgpt-turbo.js Line 81");
+	        console.log("Error Other: chatgpt-turbo.js Line 75");
                 retryCount = 0;	  
 	    }
        	}
