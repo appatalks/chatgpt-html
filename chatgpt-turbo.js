@@ -22,12 +22,12 @@ function trboSend() {
     	  // Check for errors
     	  if (oHttp.status === 500) {
       	    txtOutput.value += "Error 500: Internal Server Error";
-      	    console.log("Error 500: Internal Server Error chatgpt-turbo.js Line 25");
+      	    console.log(" Error 500: Internal Server Error chatgpt-turbo.js Line 25");
       	    return;
     	  }
     	  if (oHttp.status === 429) {
       	    txtOutput.value += "Error 429: Too Many Requests";
-            console.log("Error 429: Too Many Requests chatgpt-turbo.js Line 30");
+            console.log(" Error 429: Too Many Requests chatgpt-turbo.js Line 30");
       	    return;
     	  }
             //console.log(oHttp.status);
@@ -127,7 +127,8 @@ function trboSend() {
 	// Need Revist after some time, need this to mature. Does not respond as expected with assistant. Not sure how to pass previous responses.
 	messages: [
 	      { role: 'system', content: selPers.value },  // Doesn't seem to stick well.
-	      { role: 'user', content: selPers.value + " " + lastResponse.replace(/\n/g, '') + " " + sQuestion.replace(/\n/g, '') },
+	      { role: 'user', content: selPers.value + "In our previous chat, we talked about all of this: " + masterOutput.replace(/\n/g, ' ') + "My next question is: " + sQuestion.replace(/\n/g, '') },
+	      // { role: 'user', content: selPers.value + " " + lastResponse.replace(/\n/g, '') + " " + sQuestion.replace(/\n/g, '') },
 	      // { role: 'assistant', content: aiMasterResponse.replace(/\n/g, '') }, // Read ai responses, get's very confused.
 	],
         max_tokens: iMaxTokens,
