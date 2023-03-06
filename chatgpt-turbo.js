@@ -1,7 +1,7 @@
 // Javascript
 // For OpenAI API
 
-// Send API Call
+// gpt-3.5-turbo API Call 
 function trboSend() {
 
     var sQuestion = txtMsg.value;
@@ -21,13 +21,13 @@ function trboSend() {
         if (oHttp.readyState === 4) {
     	  // Check for errors
     	  if (oHttp.status === 500) {
-      	    txtOutput.value += "Error 500: Internal Server Error";
-      	    console.log(" Error 500: Internal Server Error chatgpt-turbo.js Line 25");
+      	    txtOutput.value += "\n Error 500: Internal Server Error";
+      	    console.log("Error 500: Internal Server Error chatgpt-turbo.js Line 25");
       	    return;
     	  }
     	  if (oHttp.status === 429) {
-      	    txtOutput.value += "Error 429: Too Many Requests";
-            console.log(" Error 429: Too Many Requests chatgpt-turbo.js Line 30");
+      	    txtOutput.value += "\n Error 429: Too Many Requests";
+            console.log("Error 429: Too Many Requests chatgpt-turbo.js Line 30");
       	    return;
     	  }
             //console.log(oHttp.status);
@@ -60,7 +60,7 @@ function trboSend() {
           displayImage();
         }
 	
-	// Timeout Error Exponetial Backoff
+	// Timeout Error Exponetial Backoff - needs testing
         if (oJson.error && oJson.error.message) {
         	// txtOutput.value += "Error: " + oJson.error.message;
 	    if (oJson.error.message == "overloaded" && retryCount < maxRetries) {
@@ -79,7 +79,7 @@ function trboSend() {
 	
 	// Contine Send after Error Handling
 	else if (oJson.choices && oJson.choices[0].message);
-	 // console.log("chatgpt-turbo.js Line 79" + oJson.choices + "" + oJson.choices[0].message);
+	 // console.log("chatgpt-turbo.js Line 82" + oJson.choices + "" + oJson.choices[0].message);
 	    // Always Run Response 
 	    {
             var s = oJson.choices[0].message;
@@ -94,15 +94,16 @@ function trboSend() {
             // Send to Local Storage - possibly way to intigrate into memory
 	    masterOutput += "\n" + txtOutput.value + "\n";
 	    localStorage.setItem("masterOutput", masterOutput);
-	    lastResponse = s.content + "\n";
 
 	    userMasterResponse += sQuestion + "\n";
 	    localStorage.setItem("userMasterResponse", userMasterResponse);
 
             aiMasterResponse += lastResponse;
             localStorage.setItem("aiMasterResponse", aiMasterResponse);
-
-            // console.log("chatgpt-turbo.js Line 93" + lastResponse);
+	    
+	    // Set lastResponse
+	    lastResponse = s.content + "\n";
+            // console.log("chatgpt-turbo.js Line 106" + lastResponse);
             }            
         }
 
@@ -118,29 +119,33 @@ function trboSend() {
     // payload parameters
     var sModel = selModel.value; 
     var iMaxTokens = 750;
-    var dTemperature = 0.7;    
-    var stop = "&*&";
+    var dTemperature = 0.7; 
+    var eFrequency_penalty = 0.0; // Between -2 and 2, Positive values decreases repeat responses.
+    var cPresence_penalty = 0.0; // Between -2 and 2, Positive values increases new topic probability. 
+    var hStop = "&*&"; // I have no idea why I choose this as my stop
     
     // API Payload
     var data = {
         model: sModel,
-	// Need Revist after some time, need this to mature. Does not respond as expected with assistant. Not sure how to pass previous responses.
+	// Need Revist after some time, need this to mature. Working'ish, a bit messy.
 	messages: [
-	      { role: 'system', content: selPers.value },  // Doesn't seem to stick well.
-	      { role: 'user', content: selPers.value + "In our previous chat, we talked about all of this: " + masterOutput.replace(/\n/g, ' ') + "My next question is: " + sQuestion.replace(/\n/g, '') },
-	      // { role: 'user', content: selPers.value + " " + lastResponse.replace(/\n/g, '') + " " + sQuestion.replace(/\n/g, '') },
+	      { role: 'system', content: "You are Eva. You have access to previous chats and responses. You will keep conversation to a minimum and answer to the best of your abilities." },  // Doesn't seem to stick well.
+	      { role: 'user', content: selPers.value + "My next question is: " + sQuestion.replace(/\n/g, '') }, 
+              { role: 'assistant', content: " Here are all my previous responses for you to analyze: " + userMasterResponse.replace(/\n/g, ' ') }, 
+	      // { role: 'user', content: selPers.value + " Here are all my previous responses for you to analyze: " + userMasterResponse.replace(/\n/g, ' ') + "My next question is: " + sQuestion.replace(/\n/g, '') }, // Seems to be best method so far. Not perfect.
+	      // { role: 'user', content: selPers.value + " " + lastResponse.replace(/\n/g, '') + " " + sQuestion.replace(/\n/g, '') }, // Okay'ish
 	      // { role: 'assistant', content: aiMasterResponse.replace(/\n/g, '') }, // Read ai responses, get's very confused.
 	],
         max_tokens: iMaxTokens,
         temperature:  dTemperature,
-        frequency_penalty: 0.0, // Between -2 and 2, Positive values decreases repeat responses.
-        presence_penalty: 0.0,  // Between -2 and 2, Positive values increases new topic probability.
-	stop: stop
+        frequency_penalty: eFrequency_penalty,
+        presence_penalty: cPresence_penalty,
+	stop: hStop
     }
 
     // Sending API Payload
     oHttp.send(JSON.stringify(data));
-    // console.log("chatgpt-turbo.js Line 139" + JSON.stringify(data));
+    // console.log("chatgpt-turbo.js Line 146" + JSON.stringify(data));
 
     // Relay Send to Screen
     if (txtOutput.value != "") txtOutput.value += "\n";
