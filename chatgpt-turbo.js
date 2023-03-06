@@ -90,6 +90,8 @@ function trboSend() {
 		// console.log("chatgpt-turbo.js line 93" + typeof s, s);
         	txtOutput.value += "Eva: " + s.content.trim();
     	    }
+
+            // Send to Local Storage - possibly way to intigrate into memory
 	    masterOutput += "\n" + txtOutput.value + "\n";
 	    localStorage.setItem("masterOutput", masterOutput);
 	    lastResponse = s.content + "\n";
@@ -99,6 +101,7 @@ function trboSend() {
 
             aiMasterResponse += lastResponse;
             localStorage.setItem("aiMasterResponse", aiMasterResponse);
+
             // console.log("chatgpt-turbo.js Line 93" + lastResponse);
             }            
         }
@@ -117,7 +120,7 @@ function trboSend() {
     var iMaxTokens = 750;
     var dTemperature = 0.7;    
     var stop = "&*&";
-
+    
     // API Payload
     var data = {
         model: sModel,
@@ -125,7 +128,7 @@ function trboSend() {
 	messages: [
 	      { role: 'system', content: selPers.value },  // Doesn't seem to stick well.
 	      { role: 'user', content: selPers.value + " " + lastResponse.replace(/\n/g, '') + " " + sQuestion.replace(/\n/g, '') },
-	//      { role: 'assistant', content: userMasterResponse.replace(/\n/g, '') + sQuestion.replace(/\n/g, '') }, // Read all user responses, get's very confused.
+	      // { role: 'assistant', content: aiMasterResponse.replace(/\n/g, '') }, // Read ai responses, get's very confused.
 	],
         max_tokens: iMaxTokens,
         temperature:  dTemperature,
