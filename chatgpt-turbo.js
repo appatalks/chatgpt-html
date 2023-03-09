@@ -86,6 +86,14 @@ function trboSend() {
 	    // Empty Response Handling	     
 	    if (s.content == "") {
         	txtOutput.value += "Eva: I'm sorry can you please ask me in another way?";
+	    } // Switch to text-davinci-003 in event of AI fumbled response
+	      else if (s.content.includes("AI") || s.content.includes("sorry")) { 
+		var selectElement = document.getElementById("selModel");
+		selectElement.value = "text-davinci-003";
+		document.getElementById("txtMsg").value = sQuestion;
+		clearText();
+    		Send();
+		selectElement.value = "gpt-3.5-turbo";
     	    } else {
 		// console.log("chatgpt-turbo.js line 93" + typeof s, s);
         	txtOutput.value += "Eva: " + s.content.trim();
