@@ -2,6 +2,7 @@
 
 ![Screenshot](Screenshot.png)
 
+v.0.8 - March 9th, 2023: Added fallback to text-davinci-003 in case of fumbled AI response i.e. feelings or sorry.
 v.0.7 - March 1st, 2023: Now with gpt-3.5-turbo support.
 
 This allows you to easily interact with the OpenAI API and convert the response to speech using Amazon Polly's Text-to-Speech service.
