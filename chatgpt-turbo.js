@@ -107,8 +107,8 @@ function trboSend() {
 	    userMasterResponse += sQuestion + "\n";
 	    localStorage.setItem("userMasterResponse", userMasterResponse);
 
-            aiMasterResponse += lastResponse;
-            localStorage.setItem("aiMasterResponse", aiMasterResponse);
+            // aiMasterResponse += lastResponse;
+            // localStorage.setItem("aiMasterResponse", aiMasterResponse);
 	    
 	    // Set lastResponse
 	    lastResponse = s.content + "\n";
