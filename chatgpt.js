@@ -23,12 +23,12 @@ function Send() {
           // Check for errors
           if (oHttp.status === 500) {
             txtOutput.value += "\n Error 500: Internal Server Error";
-            console.log("Error 500: Internal Server Error chatgpt-turbo.js Line 26");
+            console.log("Error 500: Internal Server Error chatgpt.js Line 26");
             return;
           }
           if (oHttp.status === 429) {
             txtOutput.value += "\n Error 429: Too Many Requests";
-            console.log("Error 429: Too Many Requests chatgpt-turbo.js Line 31");
+            console.log("Error 429: Too Many Requests chatgpt.js Line 31");
             return;
           }
             //console.log(oHttp.status);
@@ -38,7 +38,7 @@ function Send() {
                 oJson = JSON.parse(oHttp.responseText);  // API Response Data
             } catch (ex) {
                 txtOutput.value += "Error: " + ex.message;
-                console.log("Error: chatgpt-turbo.js Line 41");
+                console.log("Error: chatgpt.js Line 41");
                 return;
               }
 
