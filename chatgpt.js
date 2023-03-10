@@ -97,8 +97,18 @@ function Send() {
     	    } else {
         	txtOutput.value += "Eva: " + s.trim();
     	    }
-	    masterOutput += "\n" + txtOutput.value + "\n";
-	    localStorage.setItem("masterOutput", masterOutput);
+
+            // Send to Local Storage - possibly way to intigrate into memory
+            masterOutput += "\n" + txtOutput.value + "\n";
+            localStorage.setItem("masterOutput", masterOutput);
+
+            userMasterResponse += sQuestion + "\n";
+            localStorage.setItem("userMasterResponse", userMasterResponse);
+
+            // aiMasterResponse += lastResponse + "\n";
+            // localStorage.setItem("aiMasterResponse", aiMasterResponse);
+
+            // Set lastResponse
 	    lastResponse = s;
             }            
         }
