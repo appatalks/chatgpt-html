@@ -17,9 +17,20 @@ function Send() {
     oHttp.setRequestHeader("Content-Type", "application/json");
     oHttp.setRequestHeader("Authorization", "Bearer " + OPENAI_API_KEY)
 
-    // Error Handling - Needs more testing
+    // Error Handling 
     oHttp.onreadystatechange = function () {
         if (oHttp.readyState === 4) {
+          // Check for errors
+          if (oHttp.status === 500) {
+            txtOutput.value += "\n Error 500: Internal Server Error";
+            console.log("Error 500: Internal Server Error chatgpt-turbo.js Line 26");
+            return;
+          }
+          if (oHttp.status === 429) {
+            txtOutput.value += "\n Error 429: Too Many Requests";
+            console.log("Error 429: Too Many Requests chatgpt-turbo.js Line 31");
+            return;
+          }
             //console.log(oHttp.status);
             var oJson = {}
             if (txtOutput.value != "") txtOutput.value += "\n"; // User Send Data
@@ -27,13 +38,13 @@ function Send() {
                 oJson = JSON.parse(oHttp.responseText);  // API Response Data
             } catch (ex) {
                 txtOutput.value += "Error: " + ex.message;
-		console.log("Error: chatgpt.js Line 30");
-		return;
+                console.log("Error: chatgpt-turbo.js Line 41");
+                return;
               }
-	
-	// EasterEgg
-	if (oJson.usage.completion_tokens === 420) {
-          function displayImage() {
+
+        // EasterEgg
+        if ((oJson.usage.completion_tokens === 420) || (oJson.usage.total_tokens === 420)) {       
+	function displayImage() {
             // code to display image
 	      var image = document.getElementById("eEgg");
 	      image.style.display = "flex";
@@ -54,7 +65,7 @@ function Send() {
         if (oHttp.status === 500) {
             txtOutput.value += "Error 500: Internal Server Error";
             // potentially log the error or take other action
-	    console.log("Error 500: Internal Server Error chatgpt.js Line 57");
+	    console.log("Error 500: Internal Server Error chatgpt.js Line 68");
             return;
         } 
 
@@ -70,7 +81,7 @@ function Send() {
                 return;
             }
             txtOutput.value += "Error Other: " + oJson.error.message;
-	    console.log("Error Other: chatgpt.js Line 73");
+	    console.log("Error Other: chatgpt.js Line 84");
             retryCount = 0;	  
        	}
 	
