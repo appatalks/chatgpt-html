@@ -60,14 +60,6 @@ function Send() {
            }
           displayImage();
         }
-	
-	// Catch 500 Internal Server Error
-        if (oHttp.status === 500) {
-            txtOutput.value += "Error 500: Internal Server Error";
-            // potentially log the error or take other action
-	    console.log("Error 500: Internal Server Error chatgpt.js Line 68");
-            return;
-        } 
 
 	// Timeout Error Exponetial Backoff
         if (oJson.error && oJson.error.message) {
@@ -81,7 +73,7 @@ function Send() {
                 return;
             }
             txtOutput.value += "Error Other: " + oJson.error.message;
-	    console.log("Error Other: chatgpt.js Line 84");
+	    console.log("Error Other: chatgpt.js Line 76");
             retryCount = 0;	  
        	}
 	
