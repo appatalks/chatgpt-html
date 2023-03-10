@@ -17,17 +17,18 @@ function trboSend() {
     oHttp.setRequestHeader("Content-Type", "application/json");
     oHttp.setRequestHeader("Authorization", "Bearer " + OPENAI_API_KEY)
 
+    // Error Handling - Needs more testing
     oHttp.onreadystatechange = function () {
         if (oHttp.readyState === 4) {
     	  // Check for errors
     	  if (oHttp.status === 500) {
       	    txtOutput.value += "\n Error 500: Internal Server Error";
-      	    console.log("Error 500: Internal Server Error chatgpt-turbo.js Line 25");
+      	    console.log("Error 500: Internal Server Error chatgpt-turbo.js Line 26");
       	    return;
     	  }
     	  if (oHttp.status === 429) {
       	    txtOutput.value += "\n Error 429: Too Many Requests";
-            console.log("Error 429: Too Many Requests chatgpt-turbo.js Line 30");
+            console.log("Error 429: Too Many Requests chatgpt-turbo.js Line 31");
       	    return;
     	  }
             //console.log(oHttp.status);
@@ -37,12 +38,12 @@ function trboSend() {
                 oJson = JSON.parse(oHttp.responseText);  // API Response Data
             } catch (ex) {
                 txtOutput.value += "Error: " + ex.message;
-		console.log("Error: chatgpt-turbo.js Line 40");
+		console.log("Error: chatgpt-turbo.js Line 41");
 		return;
               }
 	
 	// EasterEgg
-	if (oJson.usage.completion_tokens === 420) {
+	if ((oJson.usage.completion_tokens === 420) || (oJson.usage.total_tokens === 420)) {
           function displayImage() {
             // code to display image
 	      var image = document.getElementById("eEgg");
@@ -72,7 +73,7 @@ function trboSend() {
             }
 	    else {
                 txtOutput.value += "Error Other: " + oJson.error.message;
-	        console.log("Error Other: chatgpt-turbo.js Line 75");
+	        console.log("Error Other: chatgpt-turbo.js Line 76");
                 retryCount = 0;	  
 	    }
        	}
@@ -137,13 +138,10 @@ function trboSend() {
         model: sModel,
 	// Need Revist after some time, need this to mature. Working'ish, a bit messy.
 	messages: [
-	      { role: 'system', content: "You are Eva. You have access to previous chats and responses. You will keep conversation to a minimum and answer to the best of your abilities." },  // Doesn't seem to stick well.
+	      { role: 'system', content: "You are Eva. You have access to previous chats and responses. You will keep conversation to a minimum and answer to the best of your abilities." }, 
 	      { role: 'user', content: selPers.value }, 
               { role: 'assistant', content: "Here are all my previous responses for you to remember: " + userMasterResponse.replace(/\n/g, ' ') }, 
 	      { role: 'user', content: "My next response is: " + sQuestion.replace(/\n/g, '') }, 
-	      // { role: 'user', content: selPers.value + " Here are all my previous responses for you to analyze: " + userMasterResponse.replace(/\n/g, ' ') + "My next question is: " + sQuestion.replace(/\n/g, '') }, // Seems to be best method so far. Not perfect.
-	      // { role: 'user', content: selPers.value + " " + lastResponse.replace(/\n/g, '') + " " + sQuestion.replace(/\n/g, '') }, // Okay'ish
-	      // { role: 'assistant', content: aiMasterResponse.replace(/\n/g, '') }, // Read ai responses, get's very confused.
 	],
         max_tokens: iMaxTokens,
         temperature:  dTemperature,
@@ -154,7 +152,7 @@ function trboSend() {
 
     // Sending API Payload
     oHttp.send(JSON.stringify(data));
-    // console.log("chatgpt-turbo.js Line 149" + JSON.stringify(data));
+    // console.log("chatgpt-turbo.js Line 155" + JSON.stringify(data));
 
     // Relay Send to Screen
     if (txtOutput.value != "") txtOutput.value += "\n";
