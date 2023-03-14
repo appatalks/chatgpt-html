@@ -42,7 +42,7 @@ function updateButton() {
     var selModel = document.getElementById("selModel");
     var btnSend = document.getElementById("btnSend");
 
-    if (selModel.value == "gpt-3.5-turbo") {
+    if (selModel.value == "gpt-3.5-turbo" || selModel.value == "gpt-4" || selModel.value == "gpt-4-32k") {
         btnSend.onclick = function() {
             clearText();
             trboSend();
@@ -57,7 +57,7 @@ function updateButton() {
 
 function sendData() {
     var selModel = document.getElementById("selModel");
-    if (selModel.value == "gpt-3.5-turbo") {
+    if (selModel.value == "gpt-3.5-turbo" || selModel.value == "gpt-4" || selModel.value == "gpt-4-32k") {
         clearText();
         trboSend();
     } else {
