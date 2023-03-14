@@ -21,14 +21,19 @@ function Send() {
     oHttp.onreadystatechange = function () {
         if (oHttp.readyState === 4) {
           // Check for errors
-          if (oHttp.status === 500) {
-            txtOutput.value += "\n Error 500: Internal Server Error";
-            console.log("Error 500: Internal Server Error chatgpt.js Line 26");
-            return;
-          }
-          if (oHttp.status === 429) {
-            txtOutput.value += "\n Error 429: Too Many Requests";
-            console.log("Error 429: Too Many Requests chatgpt.js Line 31");
+    	  if (oHttp.status === 500) {
+      	    txtOutput.value += "\n Error 500: Internal Server Error" + "\n" + oHttp.responseText;
+      	    console.log("Error 500: Internal Server Error chatgpt-turbo.js Line 26");
+      	    return;
+    	  }
+    	  if (oHttp.status === 429) {
+      	    txtOutput.value += "\n Error 429: Too Many Requests" + "\n" + oHttp.responseText;
+            console.log("Error 429: Too Many Requests chatgpt-turbo.js Line 31");
+      	    return;
+    	  }
+          if (oHttp.status === 404) {
+            txtOutput.value += "\n Error 404: Not Found" + "\n" + oHttp.responseText;
+            console.log("Error 404: Too Many Requests chatgpt-turbo.js Line 36");
             return;
           }
             //console.log(oHttp.status);
@@ -38,7 +43,7 @@ function Send() {
                 oJson = JSON.parse(oHttp.responseText);  // API Response Data
             } catch (ex) {
                 txtOutput.value += "Error: " + ex.message;
-                console.log("Error: chatgpt.js Line 41");
+                console.log("Error: chatgpt.js Line 46");
                 return;
               }
 
@@ -60,7 +65,7 @@ function Send() {
            }
           displayImage();
         }
-
+	
 	// Timeout Error Exponetial Backoff
         if (oJson.error && oJson.error.message) {
         	// txtOutput.value += "Error: " + oJson.error.message;
@@ -77,9 +82,9 @@ function Send() {
             retryCount = 0;	  
        	}
 	
-	// Contine Send after Error Handling
+        // Interpret AI Response after Error Handling
 	else if (oJson.choices && oJson.choices[0].text);
-	// console.log("Line 79" + oJson.choices + "" +oJson.choices[0].text);
+	// console.log("Line 87" + oJson.choices + "" +oJson.choices[0].text);
 	    // Always Run Response 
 	    {
             var s = oJson.choices[0].text;
