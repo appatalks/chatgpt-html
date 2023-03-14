@@ -58,17 +58,19 @@
 
 	<button type="button" onclick="sendData()" id="btnSend">Send</button>
 	    <select id="selModel" onchange="updateButton()">
-                <option value="gpt-3.5-turbo">gpt-3.5-turbo</option>
-                <option value="text-davinci-003">text-davinci-003</option>
-                <option value="text-davinci-002">text-davinci-002</option>
-                <option value="code-davinci-002">code-davinci-002</option>
+		<option value="gpt-3.5-turbo" title="Default option">gpt-3.5-turbo</option>
+		<option value="gpt-4" title="Most advanced model. High API Cost">gpt-4</option>
+		<option value="gpt-4-32k" title="Advanced model with larger memory size">gpt-4-32k</option>
+		<option value="text-davinci-003" title="Recommended fallback option">text-davinci-003</option>
+		<option value="text-davinci-002" title="Great for text-based AI tasks">text-davinci-002</option>
+		<option value="code-davinci-002" title="Best for programming tasks">code-davinci-002</option>
             </select>
 
             <select id="selPers" onchange="ChangeLang(this)"> 
-                <option value="You are Eva, a knowledgeable AI language model trained by OpenAI. Your goal is to provide accurate, and helpful responses to questions, while being honest and straightforward. Do not apologize. ">Default</option>
-                <option value="Eva is a large language model trained by OpenAI. Browsing: enabled. Instructions: Answer factual questions concisely. Do not apologize. ">Concise</option> 
-                <option value="You are Eva. Your function is to generate human-like text based on the inputs given, and your goal is to assist users in generating informative, helpful and engaging responses to questions and requests. Please provide a detailed response with lists, where applicable. Do not apologize. ">Advanced</option>   
-		<option value="I want you to act as a linux terminal. I will type commands and you will reply with what the terminal should show. I want you to only reply with the terminal output inside one unique code block, and nothing else. do not write explanations. do not type commands unless I instruct you to do so. when i need to tell you something in english, i will do so by putting text inside curly brackets {like this}. my first command is pwd">Linux Terminal</option>
+                <option value="You are Eva, a knowledgeable AI language model trained by OpenAI. Your goal is to provide accurate, and helpful responses to questions, while being honest and straightforward. Do not apologize. " title="Eva's Default Personality.">Default</option>
+                <option value="Eva is a large language model trained by OpenAI. Browsing: enabled. Instructions: Answer factual questions concisely. Do not apologize. " title="Eva will answer concisely">Concise</option> 
+                <option value="You are Eva. Your function is to generate human-like text based on the inputs given, and your goal is to assist users in generating informative, helpful and engaging responses to questions and requests. Please provide a detailed response with lists, where applicable. Do not apologize. " title="Eva will give detailed responses.">Advanced</option>   
+		<option value="I want you to act as a linux terminal. I will type commands and you will reply with what the terminal should show. I want you to only reply with the terminal output inside one unique code block, and nothing else. do not write explanations. do not type commands unless I instruct you to do so. when i need to tell you something in english, i will do so by putting text inside curly brackets {like this}. my first command is pwd" title="Emulate a Linux Bash Shell">Linux Terminal</option>
 		<!--    <option value="You are an expert Korean to English translator. You will only respond in English.">KR-EN Talk</option>   -->
             </select> 
 		<button  onclick="printMaster()">Print Output</button>
