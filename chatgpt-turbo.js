@@ -22,15 +22,20 @@ function trboSend() {
         if (oHttp.readyState === 4) {
     	  // Check for errors
     	  if (oHttp.status === 500) {
-      	    txtOutput.value += "\n Error 500: Internal Server Error";
+      	    txtOutput.value += "\n Error 500: Internal Server Error" + "\n" + oHttp.responseText;
       	    console.log("Error 500: Internal Server Error chatgpt-turbo.js Line 26");
       	    return;
     	  }
     	  if (oHttp.status === 429) {
-      	    txtOutput.value += "\n Error 429: Too Many Requests";
+      	    txtOutput.value += "\n Error 429: Too Many Requests" + "\n" + oHttp.responseText;
             console.log("Error 429: Too Many Requests chatgpt-turbo.js Line 31");
       	    return;
     	  }
+          if (oHttp.status === 404) {
+            txtOutput.value += "\n Error 404: Not Found" + "\n" + oHttp.responseText;
+            console.log("Error 404: Too Many Requests chatgpt-turbo.js Line 36");
+            return;
+          }
             //console.log(oHttp.status);
             var oJson = {}
             if (txtOutput.value != "") txtOutput.value += "\n"; // User Send Data
@@ -73,14 +78,14 @@ function trboSend() {
             }
 	    else {
                 txtOutput.value += "Error Other: " + oJson.error.message;
-	        console.log("Error Other: chatgpt-turbo.js Line 76");
+	        console.log("Error Other: chatgpt-turbo.js Line 81");
                 retryCount = 0;	  
 	    }
        	}
 	
-	// Contine Send after Error Handling
+	// Interpret AI Response after Error Handling
 	else if (oJson.choices && oJson.choices[0].message);
-	 // console.log("chatgpt-turbo.js Line 82" + oJson.choices + "" + oJson.choices[0].message);
+	 // console.log("chatgpt-turbo.js Line 83" + oJson.choices + "" + oJson.choices[0].message);
 	    // Always Run Response 
 	    {
             var s = oJson.choices[0].message;
@@ -96,7 +101,7 @@ function trboSend() {
     		Send();
 		selectElement.value = "gpt-3.5-turbo";
     	    } else {
-		// console.log("chatgpt-turbo.js line 93" + typeof s, s);
+		// console.log("chatgpt-turbo.js line 99" + typeof s, s);
         	txtOutput.value += "Eva: " + s.content.trim();
     	    }
 
@@ -112,7 +117,7 @@ function trboSend() {
 	    
 	    // Set lastResponse
 	    lastResponse = s.content + "\n";
-            // console.log("chatgpt-turbo.js Line 106" + lastResponse);
+            // console.log("chatgpt-turbo.js Line 120" + lastResponse);
             }            
         }
 
@@ -127,7 +132,10 @@ function trboSend() {
 
     // payload parameters
     var sModel = selModel.value; 
-    var iMaxTokens = 750;
+    var iMaxTokens = 1250;
+	if (sModel === "gpt-4-32k") {
+    	   iMaxTokens = 32768;
+	}
     var dTemperature = 0.7; 
     var eFrequency_penalty = 0.0; // Between -2 and 2, Positive values decreases repeat responses.
     var cPresence_penalty = 0.0; // Between -2 and 2, Positive values increases new topic probability. 
@@ -152,7 +160,7 @@ function trboSend() {
 
     // Sending API Payload
     oHttp.send(JSON.stringify(data));
-    // console.log("chatgpt-turbo.js Line 155" + JSON.stringify(data));
+    // console.log("chatgpt-turbo.js Line 163" + JSON.stringify(data));
 
     // Relay Send to Screen
     if (txtOutput.value != "") txtOutput.value += "\n";
