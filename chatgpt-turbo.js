@@ -142,26 +142,33 @@ function trboSend() {
     var hStop = "&*&"; // I have no idea why I choose this as my stop
 
     // Messages payload
-    let iMessages = [
-      { role: 'system', content: "You are Eva. You have access to previous chats and responses. You will keep conversation to a minimum and answer to the best of your abilities." }, 
-      { role: 'user', content: selPers.value }, 
-      { role: 'assistant', content: "Here are all my previous responses for you to remember: " + userMasterResponse.replace(/\n/g, ' ') }, 
-      { role: 'user', content: "My next response is: " + sQuestion.replace(/\n/g, '') }, 
-    ];
-    
-    // Store messages in local storage
-    localStorage.setItem("messages", JSON.stringify(iMessages));
+    // Check if the messages item exists in localStorage
+    if (!localStorage.getItem("messages")) {
+      // If it does not exist, create an array with the initial messages
+      const iMessages = [
+        { role: 'system', content: "You are Eva. You have access to previous chats and responses. You will keep conversation to a minimum and answer to the best of your abilities." },
+        { role: 'user', content: selPers.value },
+      ];
+
+      // Store the initial messages in localStorage
+      localStorage.setItem("messages", JSON.stringify(iMessages));
+    }
+
+    // Create a new array to store the messages
+    let newMessages = [];
+
+    // Push the messages to the new array
+    newMessages.push({ role: 'assistant', content: lastResponse.replace(/\n/g, ' ') });
+    newMessages.push({ role: 'user', content: sQuestion.replace(/\n/g, '') });
+
+    // Append the new messages to the existing messages in localStorage
+    let existingMessages = JSON.parse(localStorage.getItem("messages")) || [];
+    existingMessages = existingMessages.concat(newMessages);
+    localStorage.setItem("messages", JSON.stringify(existingMessages));
 
     // Retrieve messages from local storage
     var cStoredMessages = localStorage.getItem("messages");
     kMessages = cStoredMessages ? JSON.parse(cStoredMessages) : [];
-
-	    // Append last responses to next payload -- NEEDS WORK....
-	    // iMessages.push({ role: 'assistant', content: "Your last response was: " + lastResponse.replace(/\n/g, ' ') });
-	    // iMessages.push({ role: 'user', content: "My next response is: " + sQuestion.replace(/\n/g, '') });
-
-	    // Store the updated messages array back to local storage
-	    // localStorage.setItem("messages", JSON.stringify(iMessages));
 
     // API Payload
     var data = {
@@ -176,7 +183,7 @@ function trboSend() {
 
     // Sending API Payload
     oHttp.send(JSON.stringify(data));
-    // console.log("chatgpt-turbo.js Line 179" + JSON.stringify(data));
+    // console.log("chatgpt-turbo.js Line 186" + JSON.stringify(data));
 
     // Relay Send to Screen
     if (txtOutput.value != "") txtOutput.value += "\n";
