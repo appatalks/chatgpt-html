@@ -8,8 +8,9 @@
 // Error Handling Variables
 var lastResponse = "";
 var userMasterResponse = "";
-// var aiMasterResponse = "";
+var aiMasterResponse = "";
 var masterOutput = "";
+var storageAssistant = "";
 var retryCount = 0;
 var maxRetries = 5;
 var retryDelay = 2420; // initial delay in milliseconds
