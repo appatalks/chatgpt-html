@@ -2,6 +2,7 @@
 
 ![Screenshot](Screenshot.png)
 
+v.0.9.1.beta - Array Messages Memory in place!!
 v.0.9.beta - March 14th, 2023: Now with gpt-4 support. (still needs testing).
 
 This allows you to easily interact with the OpenAI API and convert the response to speech using Amazon Polly's Text-to-Speech service.
