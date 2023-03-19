@@ -270,6 +270,11 @@ function shiftBreak() {
     });
 }
 
+// Clear Messages for Clear Memory Button
+function clearMessages() {
+    localStorage.clear();
+}
+
 // Get Account Usage Information 
 // Billing
 async function getOpenaiBillUsage(apiKey, start_date, end_date) {
