@@ -43,7 +43,7 @@ function trboSend() {
                 oJson = JSON.parse(oHttp.responseText);  // API Response Data
             } catch (ex) {
                 txtOutput.value += "Error: " + ex.message;
-		console.log("Error: chatgpt-turbo.js Line 41");
+		console.log("Error: chatgpt-turbo.js Line 46");
 		return;
               }
 	
@@ -85,7 +85,7 @@ function trboSend() {
 	
 	// Interpret AI Response after Error Handling
 	else if (oJson.choices && oJson.choices[0].message);
-	 // console.log("chatgpt-turbo.js Line 83" + oJson.choices + "" + oJson.choices[0].message);
+	 // console.log("chatgpt-turbo.js Line 88" + oJson.choices + "" + oJson.choices[0].message);
 	    // Always Run Response 
 	    {
             var s = oJson.choices[0].message;
@@ -101,7 +101,7 @@ function trboSend() {
     		Send();
 		selectElement.value = "gpt-3.5-turbo";
     	    } else {
-		// console.log("chatgpt-turbo.js line 99" + typeof s, s);
+		// console.log("chatgpt-turbo.js line 104" + typeof s, s);
         	txtOutput.value += "Eva: " + s.content.trim();
     	    }
 
@@ -112,8 +112,8 @@ function trboSend() {
 	    userMasterResponse += sQuestion + "\n";
 	    localStorage.setItem("userMasterResponse", userMasterResponse);
 
-            // aiMasterResponse += lastResponse;
-            // localStorage.setItem("aiMasterResponse", aiMasterResponse);
+            aiMasterResponse += lastResponse;
+            localStorage.setItem("aiMasterResponse", aiMasterResponse);
 	    
 	    // Set lastResponse
 	    lastResponse = s.content + "\n";
@@ -140,17 +140,33 @@ function trboSend() {
     var eFrequency_penalty = 0.0; // Between -2 and 2, Positive values decreases repeat responses.
     var cPresence_penalty = 0.0; // Between -2 and 2, Positive values increases new topic probability. 
     var hStop = "&*&"; // I have no idea why I choose this as my stop
+
+    // Messages payload
+    let iMessages = [
+      { role: 'system', content: "You are Eva. You have access to previous chats and responses. You will keep conversation to a minimum and answer to the best of your abilities." }, 
+      { role: 'user', content: selPers.value }, 
+      { role: 'assistant', content: "Here are all my previous responses for you to remember: " + userMasterResponse.replace(/\n/g, ' ') }, 
+      { role: 'user', content: "My next response is: " + sQuestion.replace(/\n/g, '') }, 
+    ];
     
+    // Store messages in local storage
+    localStorage.setItem("messages", JSON.stringify(iMessages));
+
+    // Retrieve messages from local storage
+    var cStoredMessages = localStorage.getItem("messages");
+    kMessages = cStoredMessages ? JSON.parse(cStoredMessages) : [];
+
+	    // Append last responses to next payload -- NEEDS WORK....
+	    // iMessages.push({ role: 'assistant', content: "Your last response was: " + lastResponse.replace(/\n/g, ' ') });
+	    // iMessages.push({ role: 'user', content: "My next response is: " + sQuestion.replace(/\n/g, '') });
+
+	    // Store the updated messages array back to local storage
+	    // localStorage.setItem("messages", JSON.stringify(iMessages));
+
     // API Payload
     var data = {
         model: sModel,
-	// Need Revist after some time, need this to mature. Working'ish, a bit messy.
-	messages: [
-	      { role: 'system', content: "You are Eva. You have access to previous chats and responses. You will keep conversation to a minimum and answer to the best of your abilities." }, 
-	      { role: 'user', content: selPers.value }, 
-              { role: 'assistant', content: "Here are all my previous responses for you to remember: " + userMasterResponse.replace(/\n/g, ' ') }, 
-	      { role: 'user', content: "My next response is: " + sQuestion.replace(/\n/g, '') }, 
-	],
+	messages: kMessages,
         max_tokens: iMaxTokens,
         temperature:  dTemperature,
         frequency_penalty: eFrequency_penalty,
@@ -160,7 +176,7 @@ function trboSend() {
 
     // Sending API Payload
     oHttp.send(JSON.stringify(data));
-    // console.log("chatgpt-turbo.js Line 163" + JSON.stringify(data));
+    // console.log("chatgpt-turbo.js Line 179" + JSON.stringify(data));
 
     // Relay Send to Screen
     if (txtOutput.value != "") txtOutput.value += "\n";
