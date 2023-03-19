@@ -1,7 +1,7 @@
 // Javascript
 // For OpenAI API
 
-// gpt-3.5-turbo API Call 
+// gpt-3.5-turbo + gpt-4 API Call 
 function trboSend() {
 
     var sQuestion = txtMsg.value;
