@@ -273,6 +273,7 @@ function shiftBreak() {
 // Clear Messages for Clear Memory Button
 function clearMessages() {
     localStorage.clear();
+    document.getElementById("txtOutput").value = "\n" + "               MEMORY CLEARED";
 }
 
 // Get Account Usage Information 
