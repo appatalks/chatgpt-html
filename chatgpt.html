@@ -54,7 +54,12 @@
 <p>
 
 <textarea id="txtMsg" rows="5" wrap="soft" style="width: 750px; margin-left: 3px; margin-top: 6px" placeholder="Input Text"></textarea>
+
         <div>
+
+	<div class="container">
+	  <button onclick="startSpeechRecognition()" id="micButton" class="mic-button"></button>
+	</div>
 
 	<button type="button" onclick="sendData()" id="btnSend">Send</button>
 	    <select id="selModel" onchange="updateButton()">
@@ -62,8 +67,6 @@
 		<option value="gpt-4" title="Most advanced model. High API Cost">gpt-4</option>
 		<option value="gpt-4-32k" title="Advanced model with larger memory size. !!!Highest API Cost!!!">gpt-4-32k</option>
 		<option value="text-davinci-003" title="Recommended fallback option">text-davinci-003</option>
-		<option value="text-davinci-002" title="Great for text-based AI tasks">text-davinci-002</option>
-		<option value="code-davinci-002" title="Best for programming tasks">code-davinci-002</option>
             </select>
 
             <select id="selPers" onchange="ChangeLang(this)"> 
@@ -74,6 +77,7 @@
 		<!--    <option value="You are an expert Korean to English translator. You will only respond in English.">KR-EN Talk</option>   -->
             </select> 
 		<button  onclick="printMaster()">Print Output</button>
+
 	</div>
 
 <script>
@@ -90,5 +94,6 @@
   <button id="clearMessagesBtn" onclick="clearMessages()">Clear Memory</button>
   <pre id="usageData"></pre>
 </footer>
+
 </center>
 </html>
