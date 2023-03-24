@@ -39,7 +39,7 @@ body {
 .container {
   position: relative;
   width: 40px;
-  height: 40px;
+  height: 0px;
 }
 
 .mic-button {
