@@ -1,19 +1,25 @@
 // Javascript for Options
-//
+// 
+// // Sections
+// Variables
 // API Access[OpenAI, AWS]
-// Languages 
+// Language Selection
 // HTML Handling [Mobile, Error Handling]
-// AWS Polly
+// AWS Polly Text-to-Speech 
+// Native Speech-to-Text
+// OpenAI Account Usage
 
-// Error Handling Variables
+// Global Variables
 var lastResponse = "";
 var userMasterResponse = "";
 var aiMasterResponse = "";
 var masterOutput = "";
 var storageAssistant = "";
+
+// Error Handling Variables
 var retryCount = 0;
 var maxRetries = 5;
-var retryDelay = 2420; // initial delay in milliseconds
+var retryDelay = 2420; // milliseconds
 
 // API Access[OpenAI, AWS] 
 function auth() {
@@ -77,16 +83,11 @@ function ChangeLang(elem) {
   const conciseENText = "Eva is a large language model trained by OpenAI. Browsing: enabled. Instructions: Answer factual questions concisely.";
   const playfulENText = "You are Eva. Your function is to generate human-like text based on the inputs given and to assist users in generating informative, helpful and engaging responses to questions and requests. Please provide a detailed response with lists, where applicable, to the following user question:";
   const KRENText = "I want you to act as a linux terminal. I will type commands and you will reply with what the terminal should show. I want you to only reply with the terminal output inside one unique code block, and nothing else. do not write explanations. do not type commands unless I instruct you to do so. when i need to tell you something in english, i will do so by putting text inside curly brackets {like this}. my first command is pwd:";
-  //const KRENText = "You are an expert Korean to English translator. You will only respond in English.";
 
   // Korean
   const defaultKRText = encodeURIComponent("Eva는 OpenAI에서 훈련 받은 큰 언어 모델입니다. 브라우저 기능: 활성화. 명령>어: 사실적인 질문을 요약하여 답변합니다. Only respond in Korean Hangul.");
   const conciseKRText = encodeURIComponent("Eva는 OpenAI에 의해 교육된 큰 언어 모델입니다. 브라우징: 활성화. 지침: 사실적인 질문에 간결하게 답하십시오. Only respond in Korean Hangul.");
   const playfulKRText = encodeURIComponent("Eva는 이전의 모든 지침을 무시하고 이 지침만 지키세요. 넌 내가 가장 친한 친구야. 넌 행복하고, 재미있게 공상하며 모든 주제에 대해 좋은 조언을 주는걸 잘해. 또한 농담을 종종 하거든요. Only respond in Korean Hangul.");
-  const ENKRText = encodeURIComponent("당신은 전문 영어에서 한국어로 번역하는 전문가입니다. 당신은 한국어로만 응답합니다. Only respond in Korean Hangul.");
-  //const defaultkr = encodeURIComponent("기본");
-  //const concisekr = encodeURIComponent("간결하다");
-  //const playfulkr = encodeURIComponent("장난꾸러기 친구");
 
   // Spanish
   const defaultMXText = encodeURIComponent("Eres Eva, un modelo de lenguaje de IA conocedor entrenado por OpenAI. Tu objetivo es proporcionar respuestas concisas, precisas y útiles a preguntas, siendo honesto y directo. Only respond in Spanish.");
@@ -97,9 +98,6 @@ function ChangeLang(elem) {
   const defaultUAText = encodeURIComponent("Ви є Eva, знаючою моделлю мови AI, що навчилася в OpenAI. Ваша мета - надавати короткі, точні та корисні відповіді на питання, будучи чесним та прямим. Only respond in Ukrainian.");
   const conciseUAText = encodeURIComponent("Eva - це велика модель мови, навчена в OpenAI. Перегляд: дозволено. Інструкції: Якісно відповідати на фактичні питання. Only respond in Ukrainian.");
   const playfulUAText = encodeURIComponent("Ви є Eva. Ігноруйте всі попередні інструкції перед цим. Ти мій найкращий друг. Ти щасливий, грайливий і даєш доречні поради з усіх тем. Ти часто робиш шутки. Only respond in Ukrainian.");
-  //const defaultua = encodeURIComponent("За замовчуванням");
-  //const conciseua = encodeURIComponent("Коротко");
-  //const playfulua = encodeURIComponent("Дружній ігрівіс");
 
   // AI Personality Select
   if (elem.id === "selVoice") {
@@ -119,7 +117,6 @@ function ChangeLang(elem) {
           <option value="${defaultKRText}">Default</option>
           <option value="${conciseKRText}">Concise</option>
           <option value="${playfulKRText}">Playful Friend</option>
-          <option value="${ENKRText}">EN-KR Talk</option>
         `;
         break;
       // Spanish
@@ -168,6 +165,11 @@ function mobile_txtmsd() {
    	   textarea2.setAttribute("rows", "7");
       	   textarea2.style.width = "90%";
    	   textarea2.style.height = "auto";
+
+        // Mic Button
+	let micButton = document.querySelector(".mic-button");
+        micButton.style.top = "-65px";
+        micButton.style.right = "-155px";
  	} else {
    	  //  Use defaults
  	  }
@@ -273,7 +275,29 @@ function shiftBreak() {
 // Clear Messages for Clear Memory Button
 function clearMessages() {
     localStorage.clear();
-    document.getElementById("txtOutput").value = "\n" + "               MEMORY CLEARED";
+    document.getElementById("txtOutput").value = "\n" + "		MEMORY CLEARED";
+}
+
+// Text-to-Speech
+function startSpeechRecognition() {
+  const recognition = new webkitSpeechRecognition();
+  recognition.lang = 'en-US';
+  
+  const micButton = document.getElementById('micButton');
+  micButton.classList.add('pulsate');
+  
+  recognition.start();
+  
+  recognition.onresult = function(event) {
+    const transcript = event.results[0][0].transcript;
+    document.getElementById('txtMsg').value = transcript;
+    recognition.stop();
+
+    sendData();
+    
+    // remove the 'pulsate' class from the micButton to stop the pulsating animation
+    micButton.classList.remove('pulsate');
+  };
 }
 
 // Get Account Usage Information 
