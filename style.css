@@ -34,3 +34,39 @@ body {
     background-size: ; /* set background-size to cover for mobile view */
   }
 }
+
+/* Mic */
+.container {
+  position: relative;
+  width: 40px;
+  height: 40px;
+}
+
+.mic-button {
+  position: absolute;
+  top: -65px;
+  right: -345px;
+  background-image: url('https://hoshisato.com/ai/generated/page/2/thumb/thumb-125.jpeg');
+  background-repeat: no-repeat;
+  background-size: contain;
+  border: none;
+  width: 40px;
+  height: 40px;
+  cursor: pointer;
+}
+
+.mic-button.pulsate {
+  animation: pulse 1s infinite;
+}
+
+@keyframes pulse {
+  0% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.5;
+  }
+  100% {
+    opacity: 1;
+  }
+}
