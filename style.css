@@ -86,7 +86,7 @@ body {
 /* Position the pseudo-element over the original button */
 .audio {
   position: relative;
-  display: inline-block;
+  display: none;
   z-index: 1;
   background-color: transparent;
-}
+} 
