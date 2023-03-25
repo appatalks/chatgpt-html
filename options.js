@@ -41,7 +41,7 @@ function OnLoad() {
     "   #3 Provide context: Often good context goes a long way for me.\n\n" +
     "   #4 Use puncuation, periods and question marks.\n\n" +
     "   #5 Keep it short: Occam's razor.\n\n" +
-    "                                       Oh and refresh for fresh session :)";
+    "      ";
 }
 
 // Select Engine Completion Endpoint
@@ -151,6 +151,12 @@ function mobile_txtout() {
    	   textarea.setAttribute("rows", "15");
    	   textarea.style.width = "90%";
    	   textarea.style.height = "auto";
+
+        // Speech Button
+        let speakSend = document.querySelector(".speakSend");
+        speakSend.style.top = "-55px";
+        speakSend.style.right = "-145px";
+
  	} else {
   	  // Use Defaults
  	  }
@@ -169,8 +175,9 @@ function mobile_txtmsd() {
         // Mic Button
 	let micButton = document.querySelector(".mic-button");
         micButton.style.top = "-65px";
-        micButton.style.right = "-155px";
- 	} else {
+        micButton.style.right = "-145px";
+ 	
+	} else {
    	  //  Use defaults
  	  }
 	})
@@ -282,19 +289,20 @@ function clearMessages() {
 function startSpeechRecognition() {
   const recognition = new webkitSpeechRecognition();
   recognition.lang = 'en-US';
-  
+  // recognition.continuous = true;
+
   const micButton = document.getElementById('micButton');
   micButton.classList.add('pulsate');
-  
+
   recognition.start();
-  
+
   recognition.onresult = function(event) {
     const transcript = event.results[0][0].transcript;
-    document.getElementById('txtMsg').value = transcript;
+    document.getElementById('txtMsg').value = transcript + "?";
     recognition.stop();
 
     sendData();
-    
+
     // remove the 'pulsate' class from the micButton to stop the pulsating animation
     micButton.classList.remove('pulsate');
   };
