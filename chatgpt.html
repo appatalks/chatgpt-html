@@ -29,7 +29,9 @@
         <div id="textToSynth">
         <textarea id="txtOutput" rows="10" style="margin-top: 10px; width: 100%; height: 300px" placeholder="Output"></textarea>
 	
-	<button class="btn default" onClick="speakText()" id="speakSend">Speak This</button>
+        <div class="container">
+	<button class="speakSend" onClick="speakText(); document.getElementById('audioPlayback').setAttribute('autoplay', true);" id="speakSend" title="Speak This"></button>
+        </div>
 
         <select id="selEngine" onchange="ChangeLang(this)">
             <option value="standard">Standard</option>
@@ -43,13 +45,14 @@
         </select>
 
 	<input type="checkbox" id="autoSpeak">Auto Speak</input>
-
 	<p id="result"></p>
 	</div>
 
-<audio id="audioPlayback" controls>
-<source id="audioSource" type="audio/mp3" src="">
-</audio>
+<!--
+	<audio id="audioPlayback" class="audio" controls>
+	<source id="audioSource" type="audio/mp3" src="">
+	</audio>
+-->
 
 <p>
 
@@ -87,6 +90,7 @@
 
 <div id="idText"></div>
 </div>
+
 </body>
 <footer>
   <img id="eEgg" src="eEgg.gif" alt="Image" style="display:none;">
