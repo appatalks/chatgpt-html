@@ -2,7 +2,7 @@
 
 ![Screenshot](Screenshot.png)
 
-v.0.9.2.beta - Native Speech-to-text Engine added. (Still rather use the google vocie input from the Andrioid phone, but on desktop this works not too bad.)
+v.0.9.2.beta - Native Speech-to-text Engine added. (Still rather use the google voice input from the Android phone, but on desktop this works not too bad.)
 
 Has GPT-4 Support (Needs Testing)
 
