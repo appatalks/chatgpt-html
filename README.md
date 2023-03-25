@@ -1,8 +1,8 @@
-# ChatGPT HTML - Using OpenAI APIs and AWS Polly speech
+# ChatGPT HTML - Using OpenAI APIs and AWS Polly speech (Optional)
 
 ![Screenshot](Screenshot.png)
 
-v.0.9.1.beta - Array Messages Memory in place!!
+v.0.9.2.beta - Native Speech-to-text Engine added. (Still rather use the google vocie input from the Andrioid phone, but on desktop this works not too bad.)
 
 Has GPT-4 Support (Needs Testing)
 
@@ -10,7 +10,7 @@ This allows you to easily interact with the OpenAI API and convert the response 
 
 ## Getting Started
 
-1. Add your OpenAI API key and AWS Keys to the "OPENAI_API_KEY" variable and "AWS.config.credentials" in config.json. 
+1. Add your OpenAI API key and AWS Keys to the "OPENAI_API_KEY" variable and (optinally) "AWS.config.credentials" in config.json. 
 2. Open chatgpt.html and have fun!
 
 ## Features
