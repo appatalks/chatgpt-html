@@ -44,14 +44,14 @@ body {
 
 .mic-button {
   position: absolute;
-  top: -65px;
+  top: -75px;
   right: -345px;
   background-image: url('mic.png');
   background-repeat: no-repeat;
   background-size: contain;
   border: none;
-  width: 40px;
-  height: 40px;
+  width: 45px;
+  height: 45px;
   cursor: pointer;
 }
 
@@ -69,4 +69,24 @@ body {
   100% {
     opacity: 1;
   }
+}
+
+/* Covert to Speech Button */
+.speakSend {
+  position: absolute;
+  display: block;
+  width: 45px;
+  height: 45px;
+  top: -65px;
+  right: -345px;
+  background-image: url(https://hoshisato.com/ai/generated/page/2/thumb/thumb-125.jpeg);
+  background-size: contain;
+}
+
+/* Position the pseudo-element over the original button */
+.audio {
+  position: relative;
+  display: inline-block;
+  z-index: 1;
+  background-color: transparent;
 }
