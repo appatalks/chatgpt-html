@@ -132,7 +132,7 @@ function trboSend() {
 
     // payload parameters
     var sModel = selModel.value; 
-    var iMaxTokens = 3600; // 1024 is good. 3600 for externaldata. 4096 is Max for Turbo. 8192 for gpt-4.
+    var iMaxTokens = 1420; // 1024 is good. 3600 for externaldata. 4096 is Max for Turbo. 8192 for gpt-4.
 	if (sModel === "gpt-4-32k") {
     	   iMaxTokens = 32768;
 	}
