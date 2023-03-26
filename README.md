@@ -1,6 +1,6 @@
 # ChatGPT HTML - Using OpenAI APIs and AWS Polly speech (Optional)
 
-[Screenshot](Screenshot.png)
+![Screenshot](Screenshot.png)
 
 v.0.9.3.beta - Added External Data (News, Markets, Weather, Date), touch voice speak and response. 
 
