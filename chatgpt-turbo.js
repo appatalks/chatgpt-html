@@ -147,7 +147,7 @@ function trboSend() {
       // If it does not exist, create an array with the initial messages
       const iMessages = [
         { role: 'system', content: "You are Eva. You have access to previous chats and responses. You will keep conversation to a minimum and answer to the best of your abilities." },
-        { role: 'user', content: selPers.value },
+        { role: 'user', content: selPers.value + "Remember this updated information if asked: " + fileContents},
       ];
 
       // Store the initial messages in localStorage
