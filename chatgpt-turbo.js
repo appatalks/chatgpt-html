@@ -4,7 +4,7 @@
 // gpt-3.5-turbo + gpt-4 API Call 
 function trboSend() {
 
-    var sQuestion = txtMsg.value;
+   var sQuestion = txtMsg.value;
     if (sQuestion == "") {
         alert("Type in your question!");
         txtMsg.focus();
@@ -93,7 +93,7 @@ function trboSend() {
 	    if (s.content == "") {
         	txtOutput.value += "Eva: I'm sorry can you please ask me in another way?";
 	    } // Switch to text-davinci-003 in event of AI fumbled response
-	      else if (s.content.includes("AI") || s.content.includes("sorry")) { 
+	      else if (s.content.includes("AI language model") || s.content.includes("sorry")) { 
 		var selectElement = document.getElementById("selModel");
 		selectElement.value = "text-davinci-003";
 		document.getElementById("txtMsg").value = sQuestion;
@@ -147,7 +147,7 @@ function trboSend() {
       // If it does not exist, create an array with the initial messages
       const iMessages = [
         { role: 'system', content: "You are Eva. You have access to previous chats and responses. You will keep conversation to a minimum and answer to the best of your abilities." },
-        { role: 'user', content: selPers.value + "Remember this updated information if asked: " + fileContents},
+        { role: 'user', content: selPers.value + "Remember this updated information if asked: " + fileContents },
       ];
 
       // Store the initial messages in localStorage
