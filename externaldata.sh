@@ -12,9 +12,14 @@ news=$(curl -s "https://news.google.com/rss?hl=en-US&gl=US&ceid=US:en" | xmlstar
 # SPY Performace
 spy_price=$(curl -s "https://query1.finance.yahoo.com/v8/finance/chart/SPY?interval=1d" | jq '.chart.result[0].meta.regularMarketPrice')
 
+# Marketpulse by Marketwatch.com
+marketpulse=$(curl -s "http://feeds.marketwatch.com/marketwatch/marketpulse/" | xmlstarlet sel -t -m "//item[position()<=5]" -v "title" -o $'\n' | sed 's/: *//g; s/$/./g')
+
 # Write the data to external.data file
-echo "Today's date: $today" > external.data
-echo "Weather for San Antonio, Texas: $weather" >> external.data
-echo "The SPY ticker price is: $spy_price" >> external.data
-echo "Top 5 news headlines:" >> external.data
-echo "$news" >> external.data
+echo "Today's date: $today " > external.data
+echo "Weather for San Antonio, Texas: $weather " >> external.data
+echo "The SPY ticker price is: $spy_price " >> external.data
+echo "Top 5 news headlines: " >> external.data
+echo "$news " >> external.data
+echo "Top 5 market headlines: " >> external.data
+echo "$marketpulse " >> external.data
