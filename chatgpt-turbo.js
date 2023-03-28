@@ -147,8 +147,7 @@ function trboSend() {
       // If it does not exist, create an array with the initial messages
       const iMessages = [
         { role: 'system', content: "You are Eva. You have access to previous chats and responses. You will keep conversation to a minimum and answer to the best of your abilities." },
-        // { role: 'user', content: selPers.value + "Remember this updated information if asked: " + fileContents },
-        { role: 'user', content: selPers.value },
+        { role: 'user', content: selPers.value + " " + dateContents },
       ];
 
       // Store the initial messages in localStorage
@@ -164,14 +163,6 @@ function trboSend() {
 
       	// External Sources
 	// Check external.js for source data
-
-	// Current Date
-      	const keyword_date = 'date';
-	if (sQuestion.includes(keyword_date)) {
-  	  // If the keyword is present, push a new array with the user's message
-  	  newMessages.push({ role: 'assistant', content: lastResponse.replace(/\n/g, ' ') });
-  	  newMessages.push({ role: 'user', content: "Remember this updated information if asked: " + dateContents + " " + sQuestion.replace(/\n/g, '') });
-	}
 
 	// Weather Report
         const keyword_weather = 'weather';
