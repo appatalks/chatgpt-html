@@ -17,9 +17,12 @@ marketpulse=$(curl -s "http://feeds.marketwatch.com/marketwatch/marketpulse/" | 
 
 # Write the data to external.data file
 echo "Today's date: $today " > date.data
-echo "Weather for San Antonio, Texas: $weather " >> weather.data
-echo "Top 5 news headlines: " >> news.data
+
+echo "Weather for San Antonio, Texas: $weather " > weather.data
+
+echo "Top 5 news headlines: " > news.data
 echo "$news " >> news.data
-echo "The SPY ticker price is: $spy_price " >> market.data
+
+echo "The SPY ticker price is: $spy_price " > market.data
 echo "Top 5 market headlines: " >> market.data
-echo "$marketpulse " >> market.data
+echo "$marketpulse " >> market.data 
