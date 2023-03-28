@@ -147,7 +147,8 @@ function trboSend() {
       // If it does not exist, create an array with the initial messages
       const iMessages = [
         { role: 'system', content: "You are Eva. You have access to previous chats and responses. You will keep conversation to a minimum and answer to the best of your abilities." },
-        { role: 'user', content: selPers.value + "Remember this updated information if asked: " + fileContents },
+        // { role: 'user', content: selPers.value + "Remember this updated information if asked: " + fileContents },
+        { role: 'user', content: selPers.value },
       ];
 
       // Store the initial messages in localStorage
@@ -156,10 +157,45 @@ function trboSend() {
 
     // Create a new array to store the messages
     let newMessages = [];
-
+      
     // Push the messages to the new array
     newMessages.push({ role: 'assistant', content: lastResponse.replace(/\n/g, ' ') });
     newMessages.push({ role: 'user', content: sQuestion.replace(/\n/g, '') });
+
+      	// External Sources
+	// Check external.js for source data
+
+	// Current Date
+      	const keyword_date = 'date';
+	if (sQuestion.includes(keyword_date)) {
+  	  // If the keyword is present, push a new array with the user's message
+  	  newMessages.push({ role: 'assistant', content: lastResponse.replace(/\n/g, ' ') });
+  	  newMessages.push({ role: 'user', content: "Remember this updated information if asked: " + dateContents + " " + sQuestion.replace(/\n/g, '') });
+	}
+
+	// Weather Report
+        const keyword_weather = 'weather';
+        if (sQuestion.includes(keyword_weather)) {
+          newMessages.push({ role: 'assistant', content: lastResponse.replace(/\n/g, ' ') });
+          newMessages.push({ role: 'user', content: "Remember this updated information if asked: " + weatherContents + " " + sQuestion.replace(/\n/g, '') });
+        }
+
+        // Top Headline News
+        const keyword_news = 'news';
+        if (sQuestion.includes(keyword_news)) {
+          newMessages.push({ role: 'assistant', content: lastResponse.replace(/\n/g, ' ') });
+          newMessages.push({ role: 'user', content: "Remember this updated information if asked: " + newsContents + " " + sQuestion.replace(/\n/g, '') });
+        }
+
+        // Markets
+        const keyword_stock = 'stock';
+        const keyword_markets = 'markets';
+        const keyword_spy = 'SPY';
+        if (sQuestion.includes(keyword_stock) || sQuestion.includes(keyword_markets) || sQuestion.includes(keyword_spy)) {
+          newMessages.push({ role: 'assistant', content: lastResponse.replace(/\n/g, ' ') });
+          newMessages.push({ role: 'user', content: "Remember this updated information if asked: " + marketContents + " " + sQuestion.replace(/\n/g, '') });
+        }
+
 
     // Append the new messages to the existing messages in localStorage
     let existingMessages = JSON.parse(localStorage.getItem("messages")) || [];
