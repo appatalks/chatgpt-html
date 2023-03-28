@@ -2,7 +2,7 @@
 
 ![Screenshot_new](Screenshot_new.png)
 
-v.0.9.3.beta - Added External Data (News, Markets, Weather, Date), touch voice speak and response. 
+v.0.9.3.beta - Added External Data (News, Markets, Weather, Date), touch voice speak and response. run the externaldata.sh in cron.
 
 Has GPT-4 Support (Needs Testing)
 
