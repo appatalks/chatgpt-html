@@ -1,27 +1,37 @@
 // Inital External Data Discovery
-const file = "external.data"; // relative path to the file
-let fileContents; // create a variable to store the file contents
 
-fetch(file)
+// Current Date
+const dateFile = "date.data"; // relative path to the file
+let dateContents; // create a variable to store the file contents
+fetch(dateFile)
   .then(response => response.text())
   .then(contents => {
-    fileContents = contents.replace(/\n/g, ''); // store the file contents in the variable
-  //  console.log(fileContents);
-    // do something with the file contents
+    dateContents = contents.replace(/\n/g, ''); // store the file contents in the variable
   })
 
-// Test KeyWord Template "doh"
-const doh = "doh.data"; // relative path to the file
-let dohContents; // create a variable to store the file contents
- 
- fetch(doh)
+// Weather Report
+const weatherFile = "weather.data";
+let weatherContents; 
+ fetch(weatherFile)
    .then(response => response.text())
    .then(contents => {
-     dohContents = contents.replace(/\n/g, ''); // store the file contents in the variable
- //    console.log(dohContents);
-     // do something with the file contents
+     weatherContents = contents.replace(/\n/g, '');
    })
 
-//
-// Other Sources Template
-// Check for keyword/phrase in sQuestion
+// Top Headline News
+const newsFile = "news.data";
+let newsContents; 
+ fetch(newsFile)
+   .then(response => response.text())
+   .then(contents => {
+     newsContents = contents.replace(/\n/g, '');
+   })
+
+// Top Headline News
+const marketFile = "market.data"; 
+let marketContents; 
+ fetch(marketFile)
+   .then(response => response.text())
+   .then(contents => { 
+     marketContents = contents.replace(/\n/g, '');
+   })
