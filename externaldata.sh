@@ -49,7 +49,7 @@ echo "Today's date: $today " > $filepath/date.data
 echo "Weather for San Antonio, Texas: $weather " > $filepath/weather.data
 
 echo "Top 5 news headlines: " > $filepath/news.data
-echo "$news " >> news.data
+echo "$news " >> $filepath/news.data
 
 echo "Top 5 market headlines: " > $filepath/market.data
 echo "$marketpulse " >> $filepath/market.data 
