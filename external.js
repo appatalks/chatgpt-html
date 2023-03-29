@@ -27,7 +27,7 @@ let newsContents;
      newsContents = contents.replace(/\n/g, '');
    })
 
-// Top Headline News
+// Top Market Headlines
 const marketFile = "market.data"; 
 let marketContents; 
  fetch(marketFile)
