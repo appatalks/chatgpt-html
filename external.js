@@ -35,3 +35,12 @@ let marketContents;
    .then(contents => { 
      marketContents = contents.replace(/\n/g, '');
    })
+
+// Latest Solar Weather 
+const solarFile = "solar.data";
+let solarContents;
+ fetch(solarFile)
+   .then(response => response.text())
+   .then(contents => {
+     solarContents = contents.replace(/\n/g, '');
+   })
