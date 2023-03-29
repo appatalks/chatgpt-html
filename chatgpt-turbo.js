@@ -146,7 +146,7 @@ function trboSend() {
     if (!localStorage.getItem("messages")) {
       // If it does not exist, create an array with the initial messages
       const iMessages = [
-        { role: 'system', content: "You are Eva. You have access to previous chats and responses. You also have access to updated information. You will keep conversation to a minimum and answer to the best of your abilities." },
+        { role: 'system', content: "You are Eva. You have access to previous chats and responses. You also have access to updated real-time information. You will keep conversation to a minimum and answer to the best of your abilities." },
         { role: 'user', content: selPers.value + " " + dateContents },
       ];
 
@@ -175,7 +175,7 @@ function trboSend() {
         const keyword_news = 'news';
         if (sQuestion.includes(keyword_news)) {
           newMessages.push({ role: 'assistant', content: lastResponse.replace(/\n/g, ' ') });
-          newMessages.push({ role: 'user', content: "Remember this updated information if asked, the " + newsContents + ". " + sQuestion.replace(/\n/g, '') });
+          newMessages.push({ role: 'user', content: "Today's " + newsContents + ". " + sQuestion.replace(/\n/g, '') });
         }
 
         // Markets
@@ -184,7 +184,7 @@ function trboSend() {
         const keyword_spy = 'SPY';
         if (sQuestion.includes(keyword_stock) || sQuestion.includes(keyword_markets) || sQuestion.includes(keyword_spy)) {
           newMessages.push({ role: 'assistant', content: lastResponse.replace(/\n/g, ' ') });
-          newMessages.push({ role: 'user', content: "Remember this updated information if asked, the " + marketContents + " " + sQuestion.replace(/\n/g, '') });
+          newMessages.push({ role: 'user', content: "Today's " + marketContents + " " + sQuestion.replace(/\n/g, '') });
         }
 
         // Solar Space Weather
@@ -192,7 +192,7 @@ function trboSend() {
         const keyword_spaceweather = 'space';
         if (sQuestion.includes(keyword_solar) || sQuestion.includes(keyword_spaceweather)) {
           newMessages.push({ role: 'assistant', content: lastResponse.replace(/\n/g, ' ') });
-          newMessages.push({ role: 'user', content: "Remember this updated information if asked: " + solarContents + " " + sQuestion.replace(/\n/g, '') });
+          newMessages.push({ role: 'user', content: "Today's " + solarContents + " " + sQuestion.replace(/\n/g, '') });
         }
 
 
@@ -218,7 +218,7 @@ function trboSend() {
 
     // Sending API Payload
     oHttp.send(JSON.stringify(data));
-    // console.log("chatgpt-turbo.js Line 186" + JSON.stringify(data));
+    // console.log("chatgpt-turbo.js Line 221" + JSON.stringify(data));
 
     // Relay Send to Screen
     if (txtOutput.value != "") txtOutput.value += "\n";
