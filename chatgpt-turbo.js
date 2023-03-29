@@ -146,7 +146,7 @@ function trboSend() {
     if (!localStorage.getItem("messages")) {
       // If it does not exist, create an array with the initial messages
       const iMessages = [
-        { role: 'system', content: "You are Eva. You have access to previous chats and responses. You also have access to updated real-time information. You will keep conversation to a minimum and answer to the best of your abilities." },
+        { role: 'system', content: "You are Eva. You have access to previous chats and responses. You also have access to updated real-time news and information. You will keep conversation to a minimum and answer to the best of your abilities." },
         { role: 'user', content: selPers.value + " " + dateContents },
       ];
 
