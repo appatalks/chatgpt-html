@@ -2,5 +2,7 @@
     "AWS_REGION": "",
     "AWS_ACCESS_KEY_ID": "",
     "AWS_SECRET_ACCESS_KEY": "",
+    "GOOGLE_SEARCH_KEY": "",
+    "GOOGLE_SEARCH_ID": "",
     "OPENAI_API_KEY": ""
 }
