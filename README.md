@@ -2,7 +2,7 @@
 
 ![Screenshot_new](Screenshot_new.png)
 
-v.0.9.3.beta - Added External Data (News, Markets, Weather, Date), touch voice speak and response. run the externaldata.sh in cron.
+v.1.0.beta - Google Search Baby! use the keywork google or Google.
 
 Has GPT-4 Support (Needs Testing)
 
