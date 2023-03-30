@@ -167,14 +167,12 @@ function trboSend() {
 	// Weather Report
         const keyword_weather = 'weather';
         if (sQuestion.includes(keyword_weather)) {
-          newMessages.push({ role: 'assistant', content: lastResponse.replace(/\n/g, ' ') });
           newMessages.push({ role: 'user', content: "Today's " + weatherContents + ". " + sQuestion.replace(/\n/g, '') });
         }
 
         // Top Headline News
         const keyword_news = 'news';
         if (sQuestion.includes(keyword_news)) {
-          newMessages.push({ role: 'assistant', content: lastResponse.replace(/\n/g, ' ') });
           newMessages.push({ role: 'user', content: "Today's " + newsContents + ". " + sQuestion.replace(/\n/g, '') });
         }
 
@@ -183,7 +181,6 @@ function trboSend() {
         const keyword_markets = 'markets';
         const keyword_spy = 'SPY';
         if (sQuestion.includes(keyword_stock) || sQuestion.includes(keyword_markets) || sQuestion.includes(keyword_spy)) {
-          newMessages.push({ role: 'assistant', content: lastResponse.replace(/\n/g, ' ') });
           newMessages.push({ role: 'user', content: "Today's " + marketContents + " " + sQuestion.replace(/\n/g, '') });
         }
 
@@ -191,7 +188,6 @@ function trboSend() {
         const keyword_solar = 'solar';
         const keyword_spaceweather = 'space';
         if (sQuestion.includes(keyword_solar) || sQuestion.includes(keyword_spaceweather)) {
-          newMessages.push({ role: 'assistant', content: lastResponse.replace(/\n/g, ' ') });
           newMessages.push({ role: 'user', content: "Today's " + solarContents + " " + sQuestion.replace(/\n/g, '') });
         }
 
