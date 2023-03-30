@@ -27,6 +27,8 @@ fetch('./config.json')
  .then(response => response.json())
  .then(config => {
    OPENAI_API_KEY = config.OPENAI_API_KEY;
+   GOOGLE_SEARCH_KEY = config.GOOGLE_SEARCH_KEY;
+   GOOGLE_SEARCH_ID = config.GOOGLE_SEARCH_ID;
    AWS.config.region = config.AWS_REGION;
    AWS.config.credentials = new AWS.Credentials(config.AWS_ACCESS_KEY_ID, config.AWS_SECRET_ACCESS_KEY);
  });
