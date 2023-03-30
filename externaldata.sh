@@ -7,7 +7,7 @@ filepath=/var/www/html
 today=$(date +"%A, %B %dth, %Y")
 
 # Get the weather for San Antonio, Texas using wttr.in API
-weather=$(curl -s "wttr.in/San+Antonio?format=%C+%t\n" | awk '{printf("%s %.0f°F\n",$1,($2*1.8)+32)}')
+weather=$(curl -s "wttr.in/San+Antonio?format=%C+%t\n")
 
 # Get the top 5 news headlines using Google News API
 news=$(curl -s "https://news.google.com/rss?hl=en-US&gl=US&ceid=US:en" | xmlstarlet sel -t -m "//item[position()<=5]" -v "title" -n | sed -E 's/&apos;/\x27/g' | sed -E 's/&amp;/\&/g')
