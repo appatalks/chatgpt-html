@@ -203,9 +203,14 @@ function trboSend() {
  	    fetch(apiUrl)
     	      .then(response => response.json())
     	      .then(data => {
-      	  	 googleContents = data.items.map(item => item.title);
-      		 console.log(googleContents);
-                 newMessages.push({ role: 'user', content: "Google search results for " + query + ": " + googleContents + sQuestion.replace(/\n/g, '') });
+      	  	 // googleContents = data.items.map(item => item.title);
+		 googleContents = data.items.map(item => {
+  		   return {
+    		     title: item.title,
+    		     link: item.link
+  		   };
+		 });
+                 newMessages.push({ role: 'user', content: "Google search results for " + query + ": " + JSON.stringify(googleContents) + sQuestion.replace(/\n/g, '') });
 
       		// Append the new messages to the existing messages in localStorage
 	      	let existingMessages = JSON.parse(localStorage.getItem("messages")) || [];
