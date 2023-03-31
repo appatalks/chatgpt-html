@@ -33,7 +33,7 @@ function trboSend() {
     	  }
           if (oHttp.status === 404) {
             txtOutput.value += "\n Error 404: Not Found" + "\n" + oHttp.responseText;
-            console.log("Error 404: Too Many Requests chatgpt-turbo.js Line 36");
+            console.log("Error 404: Not Found chatgpt-turbo.js Line 36");
             return;
           }
             //console.log(oHttp.status);
@@ -195,33 +195,24 @@ function trboSend() {
 	const keyword_google = 'google';
 	const keyword_Google = 'Google';
 	const query = sQuestion.replace(/google|Google/g, '').trim();
-        
 	let googleContents; 
 	if (sQuestion.includes(keyword_google) || sQuestion.includes(keyword_Google)) {
-
 	const apiUrl = `https://www.googleapis.com/customsearch/v1?key=${GOOGLE_SEARCH_KEY}&cx=${GOOGLE_SEARCH_ID}&q=${encodeURIComponent(query)}`;
  	    fetch(apiUrl)
     	      .then(response => response.json())
     	      .then(data => {
-      	  	 // googleContents = data.items.map(item => item.title);
 		 googleContents = data.items.map(item => {
   		   return {
     		     title: item.title,
     		     link: item.link
   		   };
 		 });
-                 newMessages.push({ role: 'user', content: "Google search results for " + query + ": " + JSON.stringify(googleContents) + sQuestion.replace(/\n/g, '') });
-
-      		// Append the new messages to the existing messages in localStorage
+                newMessages.push({ role: 'user', content: "Google search results for " + query + ": " + JSON.stringify(googleContents) + sQuestion.replace(/\n/g, '') });
 	      	let existingMessages = JSON.parse(localStorage.getItem("messages")) || [];
       		existingMessages = existingMessages.concat(newMessages);
 	      	localStorage.setItem("messages", JSON.stringify(existingMessages));
-
-    		// Retrieve messages from local storage
 		    var cStoredMessages = localStorage.getItem("messages");
 		    kMessages = cStoredMessages ? JSON.parse(cStoredMessages) : [];
-
-    		// API Payload
 		    var data = {
 		        model: sModel,
 		        messages: kMessages,
@@ -231,18 +222,13 @@ function trboSend() {
 		        presence_penalty: cPresence_penalty,
 		        stop: hStop
 		    }
-
-		    // Sending API Payload
 		    oHttp.send(JSON.stringify(data));
-		    // console.log("chatgpt-turbo.js Line 232" + JSON.stringify(data));
-
-		    // Relay Send to Screen
 		    if (txtOutput.value != "") txtOutput.value += "\n";
 		    txtOutput.value += "You: " + sQuestion;
 		    txtMsg.value = "";
-    				      });
-		return;
-		}
+    		});
+	  return;
+	}
 
     // Append the new messages to the existing messages in localStorage
     let existingMessages = JSON.parse(localStorage.getItem("messages")) || [];
@@ -266,7 +252,7 @@ function trboSend() {
 
     // Sending API Payload
     oHttp.send(JSON.stringify(data));
-    // console.log("chatgpt-turbo.js Line 264" + JSON.stringify(data));
+    // console.log("chatgpt-turbo.js Line 255" + JSON.stringify(data));
 
     // Relay Send to Screen
     if (txtOutput.value != "") txtOutput.value += "\n";
