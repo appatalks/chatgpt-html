@@ -4,12 +4,13 @@
 // gpt-3.5-turbo + gpt-4 API Call 
 function trboSend() {
 
-   var sQuestion = txtMsg.value;
-    if (sQuestion == "") {
-        alert("Type in your question!");
-        txtMsg.focus();
-        return;
-    }
+  var sQuestion = txtMsg.innerHTML;
+    sQuestion = sQuestion.replace(/<br>/g, "\n");
+  if (sQuestion.trim() == "") {
+    alert("Type in your question!");
+    txtMsg.focus();
+    return;
+  }
 
     var oHttp = new XMLHttpRequest();
     oHttp.open("POST", "https://api.openai.com/v1/chat/completions");
@@ -22,28 +23,33 @@ function trboSend() {
         if (oHttp.readyState === 4) {
     	  // Check for errors
     	  if (oHttp.status === 500) {
-      	    txtOutput.value += "\n Error 500: Internal Server Error" + "\n" + oHttp.responseText;
+      	    txtOutput.innerHTML += "<br> Error 500: Internal Server Error" + "<br>" + oHttp.responseText;
       	    console.log("Error 500: Internal Server Error chatgpt-turbo.js Line 26");
       	    return;
     	  }
     	  if (oHttp.status === 429) {
-      	    txtOutput.value += "\n Error 429: Too Many Requests" + "\n" + oHttp.responseText;
+      	    txtOutput.innerHTML += "<br> Error 429: Too Many Requests" + "<br>" + oHttp.responseText;
             console.log("Error 429: Too Many Requests chatgpt-turbo.js Line 31");
       	    return;
     	  }
           if (oHttp.status === 404) {
-            txtOutput.value += "\n Error 404: Not Found" + "\n" + oHttp.responseText;
+            txtOutput.innerHTML += "<br> Error 404: Not Found" + "<br>" + oHttp.responseText;
             console.log("Error 404: Not Found chatgpt-turbo.js Line 36");
+            return;
+          }
+          if (oHttp.status === 400) {
+            txtOutput.innerHTML += "<br> Error 400: Invalid Request" + "<br>" + oHttp.responseText;
+            console.log("Error 400: Invalid Request  chatgpt-turbo.js Line 41");
             return;
           }
             //console.log(oHttp.status);
             var oJson = {}
-            if (txtOutput.value != "") txtOutput.value += "\n"; // User Send Data
+            if (txtOutput.innerHTML != "") txtOutput.innerHTML += "\n"; // User Send Data
             try {
                 oJson = JSON.parse(oHttp.responseText);  // API Response Data
             } catch (ex) {
-                txtOutput.value += "Error: " + ex.message;
-		console.log("Error: chatgpt-turbo.js Line 46");
+                txtOutput.innerHTML += "Error: " + ex.message;
+		console.log("Error: chatgpt-turbo.js Line 52");
 		return;
               }
 	
@@ -68,7 +74,7 @@ function trboSend() {
 	
 	// Timeout Error Exponetial Backoff - needs testing
         if (oJson.error && oJson.error.message) {
-        	// txtOutput.value += "Error: " + oJson.error.message;
+        	// txtOutput.innerHTML += "Error: " + oJson.error.message;
 	    if (oJson.error.message == "overloaded" && retryCount < maxRetries) {
                 retryCount++;
                 var retryDelay = Math.pow(2, retryCount) * 1000;
@@ -77,39 +83,40 @@ function trboSend() {
                 return;
             }
 	    else {
-                txtOutput.value += "Error Other: " + oJson.error.message;
-	        console.log("Error Other: chatgpt-turbo.js Line 81");
+                txtOutput.innerHTML += "Error Other: " + oJson.error.message;
+	        console.log("Error Other: chatgpt-turbo.js Line 87");
                 retryCount = 0;	  
 	    }
        	}
 	
 	// Interpret AI Response after Error Handling
 	else if (oJson.choices && oJson.choices[0].message);
-	 // console.log("chatgpt-turbo.js Line 88" + oJson.choices + "" + oJson.choices[0].message);
+	 // console.log("chatgpt-turbo.js Line 94" + oJson.choices + "" + oJson.choices[0].message);
 	    // Always Run Response 
 	    {
             var s = oJson.choices[0].message;
 	    // Empty Response Handling	     
 	    if (s.content == "") {
-        	txtOutput.value += "Eva: I'm sorry can you please ask me in another way?";
+        	txtOutput.innerHTML += "Eva: I'm sorry can you please ask me in another way?";
 	    } // Switch to text-davinci-003 in event of AI fumbled response
 	      else if (s.content.includes("AI language model") || s.content.includes("sorry")) { 
 		var selectElement = document.getElementById("selModel");
 		selectElement.value = "text-davinci-003";
-		document.getElementById("txtMsg").value = sQuestion;
+		document.getElementById("txtMsg").innerHTML = sQuestion;
 		clearText();
     		Send();
 		selectElement.value = "gpt-3.5-turbo";
     	    } else {
-		// console.log("chatgpt-turbo.js line 104" + typeof s, s);
-        	txtOutput.value += "Eva: " + s.content.trim();
+		// console.log("chatgpt-turbo.js line 110" + typeof s, s);
+        	txtOutput.innerHTML += "<br>" + "Eva: " + s.content.trim();
     	    }
 
             // Send to Local Storage - possibly way to intigrate into memory
-	    masterOutput += "\n" + txtOutput.value + "\n";
+	    let outputWithoutTags = txtOutput.innerText + "Eva: " + s.content.trim();
+	    masterOutput += outputWithoutTags;
 	    localStorage.setItem("masterOutput", masterOutput);
-
-	    userMasterResponse += sQuestion + "\n";
+	    
+            userMasterResponse += sQuestion + "\n";
 	    localStorage.setItem("userMasterResponse", userMasterResponse);
 
             aiMasterResponse += lastResponse;
@@ -117,7 +124,7 @@ function trboSend() {
 	    
 	    // Set lastResponse
 	    lastResponse = s.content + "\n";
-            // console.log("chatgpt-turbo.js Line 120" + lastResponse);
+            // console.log("chatgpt-turbo.js Line 127" + lastResponse);
             }            
         }
 
@@ -223,9 +230,9 @@ function trboSend() {
 		        stop: hStop
 		    }
 		    oHttp.send(JSON.stringify(data));
-		    if (txtOutput.value != "") txtOutput.value += "\n";
-		    txtOutput.value += "You: " + sQuestion;
-		    txtMsg.value = "";
+		    if (txtOutput.innerHTML != "") txtOutput.innerHTML += "\n";
+		    txtOutput.innerHTML += "You: " + sQuestion;
+		    txtMsg.innerHTML = "";
     		});
 	  return;
 	}
@@ -255,7 +262,7 @@ function trboSend() {
     // console.log("chatgpt-turbo.js Line 255" + JSON.stringify(data));
 
     // Relay Send to Screen
-    if (txtOutput.value != "") txtOutput.value += "\n";
-    txtOutput.value += "You: " + sQuestion;
-    txtMsg.value = "";
+    if (txtOutput.innerHTML != "") txtOutput.innerHTML += "\n";
+    txtOutput.innerHTML += "You: " + sQuestion;
+    txtMsg.innerHTML = "";
 }
