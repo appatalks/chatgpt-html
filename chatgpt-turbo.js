@@ -109,8 +109,8 @@ function trboSend() {
     	    } else {
 		// console.log("chatgpt-turbo.js line 110" + typeof s, s);
         	//txtOutput.innerHTML += "<br>" + "Eva: " + s.content.trim() ;
-    const message = "Eva: " + s.content.trim().replace(/</g, '&lt;').replace(/>/g, '&gt;');
-    txtOutput.innerHTML += "<br>" + message;
+    		const message = "Eva: " + s.content.trim().replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    		txtOutput.innerHTML += "<br>" + message;
     	    }
 
             // Send to Local Storage - possibly way to intigrate into memory
