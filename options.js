@@ -2,12 +2,7 @@
 // 
 // // Sections
 // Variables
-// API Access[OpenAI, AWS]
-// Language Selection
-// HTML Handling [Mobile, Error Handling]
-// AWS Polly Text-to-Speech 
-// Native Speech-to-Text
-// OpenAI Account Usage
+// API Access[OpenAI, AWS, Google Custom Search]
 
 // Global Variables
 var lastResponse = "";
@@ -150,9 +145,8 @@ function mobile_txtout() {
 	let textarea = document.getElementById("txtOutput");
 	let userAgent = navigator.userAgent;
 	if (userAgent.indexOf("iPhone") !== -1 || userAgent.indexOf("Android") !== -1 || userAgent.indexOf("Mobile") !== -1) {
-   	   textarea.setAttribute("rows", "25");
    	   textarea.style.width = "90%";
-   	   textarea.style.height = "auto";
+   	   textarea.style.height = "390px";
 
         // Speech Button
         let speakSend = document.querySelector(".speakSend");
@@ -166,24 +160,22 @@ function mobile_txtout() {
 };
 
 function mobile_txtmsd() {
- 	window.addEventListener("load", function() {
-  	let textarea2 = document.getElementById("txtMsg");
-  	let userAgent = navigator.userAgent;
- 	if (userAgent.indexOf("iPhone") !== -1 || userAgent.indexOf("Android") !== -1 || userAgent.indexOf("Mobile") !== -1) {
-   	   textarea2.setAttribute("rows", "11");
-      	   textarea2.style.width = "90%";
-   	   textarea2.style.height = "auto";
+  window.addEventListener("load", function() {
+    let txtMsg = document.getElementById("txtMsg");
+    let userAgent = navigator.userAgent;
+    if (userAgent.indexOf("iPhone") !== -1 || userAgent.indexOf("Android") !== -1 || userAgent.indexOf("Mobile") !== -1) {
+      txtMsg.style.minHeight = "169px";
+      txtMsg.style.width = "90%";
 
-        // Mic Button
-	let micButton = document.querySelector(".mic-button");
-        micButton.style.top = "-69px";
-        micButton.style.right = "-145px";
- 	
-	} else {
-   	  //  Use defaults
- 	  }
-	})
-};
+      // Mic Button
+      let micButton = document.querySelector(".mic-button");
+      micButton.style.top = "-49px";
+      micButton.style.right = "-145px";
+    } else {
+      // Use defaults
+    }
+  });
+}
 
 function useragent_adjust() {
       	var userAgent = navigator.userAgent;
@@ -194,9 +186,55 @@ function useragent_adjust() {
       	}
 };
 
+// Image Insert
+function insertImage() {
+  var imgInput = document.getElementById('imgInput');
+  var txtMsg = document.getElementById('txtMsg');
+
+function addImage(file) {
+  // Create a new image element
+  var img = document.createElement("img");
+
+  // Set the image source to the file object
+  img.src = URL.createObjectURL(file);
+
+  // Append the image to the txtMsg element
+  txtMsg.appendChild(img);
+}
+
+function handleFileSelect(event) {
+  event.preventDefault();
+
+  // Get the file object
+  var file = event.dataTransfer.files[0];
+
+  // Call addImage() function with the file object
+  addImage(file);
+}
+
+function handleDragOver(event) {
+  event.preventDefault();
+}
+
+imgInput.addEventListener("change", function() {
+  // Get the file input element
+  var fileInput = document.getElementById("imgInput");
+
+  // Get the file object
+  var file = fileInput.files[0];
+
+  // Call addImage() function with the file object
+  addImage(file);
+});
+
+txtMsg.addEventListener("dragover", handleDragOver);
+txtMsg.addEventListener("drop", handleFileSelect);
+}
+
+
 // AWS Polly
 function speakText() {
-	var sText = txtOutput.value;
+	var sText = txtOutput.innerHTML;
     	if (sText == "") {
         	alert("No text to convert to speech!");
         	return;
@@ -213,7 +251,7 @@ function speakText() {
         };
 
 	// Let's speak only the response.
-	let text = document.getElementById("txtOutput").value;
+	let text = document.getElementById("txtOutput").innerHTML;
 	let textArr = text.split('Eva:');
 	if(textArr.length > 1){
    	   speechParams.Text = textArr[1];
@@ -242,29 +280,32 @@ function speakText() {
 
 // After Send clear the message box
 function clearText(){
-    document.getElementById("txtOutput").value = "";
+    document.getElementById("txtOutput").innerHTML = "";
 }
 
 // Print full conversation
 function printMaster() {
     // Get the content of the textarea masterOutput
-    var textareaContent = document.getElementById("txtOutput").value = masterOutput;
+    var textareaContent = document.getElementById("txtOutput").innerHTML = masterOutput;
         console.log(masterOutput);
     var printWindow = window.open();
-        printWindow.document.write(txtOutput.value.replace(/\n/g, "<br>"));
+        printWindow.document.write(txtOutput.innerHTML.replace(/\n/g, "<br>"));
         printWindow.print();
 }
 
 // Capture Shift + Enter Keys for new line
 function shiftBreak() {
-    document.querySelector("#txtMsg").addEventListener("keydown", function(event) {
-      if (event.shiftKey && event.keyCode === 13) {
-        var newLine = "\n";
-        var currentValue = document.querySelector("#txtMsg").value;
-        document.querySelector("#txtMsg").value = currentValue + newLine;
-        event.preventDefault();
-      }
-    });
+document.querySelector("#txtMsg").addEventListener("keydown", function(event) {
+  if (event.shiftKey && event.keyCode === 13) {
+    var newLine = document.createElement("br");
+    var sel = window.getSelection();
+    var range = sel.getRangeAt(0);
+    range.deleteContents();
+    range.insertNode(newLine);
+    range.setStartAfter(newLine);
+    event.preventDefault();
+  }
+});
 
     // Capture Enter Key to Send Message and Backspace to reset position
     document.querySelector("#txtMsg").addEventListener("keydown", function(event) {
@@ -284,7 +325,7 @@ function shiftBreak() {
 // Clear Messages for Clear Memory Button
 function clearMessages() {
     localStorage.clear();
-    document.getElementById("txtOutput").value = "\n" + "		MEMORY CLEARED";
+    document.getElementById("txtOutput").innerHTML = "\n" + "		MEMORY CLEARED";
 }
 
 // Text-to-Speech
@@ -300,7 +341,7 @@ function startSpeechRecognition() {
 
   recognition.onresult = function(event) {
     const transcript = event.results[0][0].transcript;
-    document.getElementById('txtMsg').value = transcript + "?";
+    document.getElementById('txtMsg').innerHTML = transcript + "?";
     recognition.stop();
 
     sendData();
@@ -348,7 +389,7 @@ var oKey = OPENAI_API_KEY;
     const totalUsage = data.total_usage;
     // Rounded up the 0.01
     const formattedUsage = (totalUsage / 100 + 0.01).toFixed(2);
-    document.getElementById("txtOutput").value = "\n\n\n  Month's Current Spend: $" + formattedUsage;
+    document.getElementById("txtOutput").innerHTML = "\n\n\n  Month's Current Spend: $" + formattedUsage;
   } else {
   throw new Error(`Failed to retrieve OpenAI usage data: ${await response.text()}`);
   }
