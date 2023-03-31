@@ -150,7 +150,7 @@ function mobile_txtout() {
 	let textarea = document.getElementById("txtOutput");
 	let userAgent = navigator.userAgent;
 	if (userAgent.indexOf("iPhone") !== -1 || userAgent.indexOf("Android") !== -1 || userAgent.indexOf("Mobile") !== -1) {
-   	   textarea.setAttribute("rows", "15");
+   	   textarea.setAttribute("rows", "25");
    	   textarea.style.width = "90%";
    	   textarea.style.height = "auto";
 
@@ -170,13 +170,13 @@ function mobile_txtmsd() {
   	let textarea2 = document.getElementById("txtMsg");
   	let userAgent = navigator.userAgent;
  	if (userAgent.indexOf("iPhone") !== -1 || userAgent.indexOf("Android") !== -1 || userAgent.indexOf("Mobile") !== -1) {
-   	   textarea2.setAttribute("rows", "7");
+   	   textarea2.setAttribute("rows", "11");
       	   textarea2.style.width = "90%";
    	   textarea2.style.height = "auto";
 
         // Mic Button
 	let micButton = document.querySelector(".mic-button");
-        micButton.style.top = "-65px";
+        micButton.style.top = "-69px";
         micButton.style.right = "-145px";
  	
 	} else {
