@@ -2,7 +2,7 @@
 <html>
 <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, minimum-scale=1.0, maximum-scale=1.0">
 <head>
-    <title>Chat GPT</title>
+    <title>Eva - ChatGPT</title>
 <script src="options.js"></script>
 <script src="external.js"></script>
 <script src="chatgpt.js"></script>
@@ -27,7 +27,7 @@
 
     <div id="idContainer">
         <div id="textToSynth">
-        <textarea id="txtOutput" rows="10" style="margin-top: 10px; width: 100%; height: 300px" placeholder="Output"></textarea>
+ <div id="txtOutput" contenteditable="true" rows="10" wrap="soft" placeholder="Output"></div>
 	
         <div class="container">
 	<button class="speakSend" onClick="speakText(); document.getElementById('audioPlayback').setAttribute('autoplay', true);" id="speakSend" title="Speak This"></button>
@@ -48,15 +48,17 @@
 	<p id="result"></p>
 	</div>
 
-
 	<audio id="audioPlayback" class="audio" controls>
 	<source id="audioSource" type="audio/mp3" src="">
 	</audio>
 
-
 <p>
 
-<textarea id="txtMsg" rows="5" wrap="soft" style="width: 750px; margin-left: 3px; margin-top: 6px" placeholder="Input Text"></textarea>
+ <input type="file" id="imgInput"> 
+ <div id="txtMsg" contenteditable="true" rows="5" placeholder="Input Text"></div> 
+    <script>
+      insertImage();
+    </script>  
 
         <div>
 
@@ -77,7 +79,6 @@
                 <option value="Eva is a large language model. Browsing: enabled. Instructions: Answer factual questions concisely. You have access to updated real-time news and information. Do not apologize. " title="Eva will answer concisely">Concise</option> 
                 <option value="You are Eva. Your function is to generate human-like text based on the inputs given, and your goal is to assist users in generating informative, helpful and engaging responses to questions and requests. Please provide a detailed response with lists, where applicable. You have access to updated real-time news and information. Do not apologize. " title="Eva will give detailed responses.">Advanced</option>   
 		<option value="I want you to act as a linux terminal. I will type commands and you will reply with what the terminal should show. I want you to only reply with the terminal output inside one unique code block, and nothing else. do not write explanations. do not type commands unless I instruct you to do so. when i need to tell you something in english, i will do so by putting text inside curly brackets {like this}. my first command is pwd" title="Emulate a Linux Bash Shell">Linux Terminal</option>
-		<!--    <option value="You are an expert Korean to English translator. You will only respond in English.">KR-EN Talk</option>   -->
             </select> 
 		<button  onclick="printMaster()">Print Output</button>
 
