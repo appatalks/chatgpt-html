@@ -31,13 +31,13 @@ fetch('./config.json')
 
 // Welcome Text
 function OnLoad() {
-    document.getElementById("txtOutput").placeholder = "\n" +
-    "           Here are some general prompt tips to help me understand:\n\n\n" +
-    "   #1 Be specific: The more specific your prompt, the more targeted the response will be.\n\n" +
-    "   #2 Start with a question: Starting your prompt will help me feel more natural.\n\n" +
-    "   #3 Provide context: Often good context goes a long way for me.\n\n" +
-    "   #4 Use puncuation, periods and question marks.\n\n" +
-    "   #5 Keep it short: Occam's razor.\n\n" +
+    document.getElementById("txtOutput").innerHTML = "\n" +
+    "           Here are some general prompt tips to help me understand:\n\n" +
+    "   #1 Be specific: The more specific your prompt, the more targeted the response will be.\n" +
+    "   #2 Start with a question: Starting your prompt will help me feel more natural.\n" +
+    "   #3 Provide context: Often good context goes a long way for me.\n" +
+    "   #4 Use puncuation, periods and question marks.\n" +
+    "   #5 Keep it short: Occam's razor.\n" +
     "      ";
 }
 
