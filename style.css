@@ -53,6 +53,11 @@ body {
   white-space: pre-wrap;
 }
 
+#txtOutput img {
+  width: 55px;
+  height: 55px;
+}
+
 #eEgg {
   transition: opacity 0.5s ease-in-out;
   position: absolute;
