@@ -4,12 +4,13 @@
 // Send API Call
 function Send() {
 
-    var sQuestion = txtMsg.value;
-    if (sQuestion == "") {
-        alert("Type in your question!");
-        txtMsg.focus();
-        return;
-    }
+  var sQuestion = txtMsg.innerHTML; 
+    sQuestion = sQuestion.replace(/<br>/g, "\n");
+  if (sQuestion.trim() == "") {
+    alert("Type in your question!");
+    txtMsg.focus(); 
+    return;         
+  }        
 
     var oHttp = new XMLHttpRequest();
     oHttp.open("POST", "https://api.openai.com/v1/completions");
@@ -22,28 +23,28 @@ function Send() {
         if (oHttp.readyState === 4) {
           // Check for errors
     	  if (oHttp.status === 500) {
-      	    txtOutput.value += "\n Error 500: Internal Server Error" + "\n" + oHttp.responseText;
-      	    console.log("Error 500: Internal Server Error chatgpt-turbo.js Line 26");
+      	    txtOutput.innerHTML += "<br> Error 500: Internal Server Error" + "<br>" + oHttp.responseText;
+      	    console.log("Error 500: Internal Server Error chatgpt-turbo.js Line 27");
       	    return;
     	  }
     	  if (oHttp.status === 429) {
-      	    txtOutput.value += "\n Error 429: Too Many Requests" + "\n" + oHttp.responseText;
-            console.log("Error 429: Too Many Requests chatgpt-turbo.js Line 31");
+      	    txtOutput.innerHTML += "<br> Error 429: Too Many Requests" + "<br>" + oHttp.responseText;
+            console.log("Error 429: Too Many Requests chatgpt-turbo.js Line 32");
       	    return;
     	  }
           if (oHttp.status === 404) {
-            txtOutput.value += "\n Error 404: Not Found" + "\n" + oHttp.responseText;
-            console.log("Error 404: Too Many Requests chatgpt-turbo.js Line 36");
+            txtOutput.innerHTML += "<br> Error 404: Not Found" + "<br>" + oHttp.responseText;
+            console.log("Error 404: Too Many Requests chatgpt-turbo.js Line 37");
             return;
           }
             //console.log(oHttp.status);
             var oJson = {}
-            if (txtOutput.value != "") txtOutput.value += "\n"; // User Send Data
+            if (txtOutput.innerHTML != "") txtOutput.innerHTML += "<br>"; // User Send Data
             try {
                 oJson = JSON.parse(oHttp.responseText);  // API Response Data
             } catch (ex) {
-                txtOutput.value += "Error: " + ex.message;
-                console.log("Error: chatgpt.js Line 46");
+                txtOutput.innerHTML += "Error: " + ex.message;
+                console.log("Error: chatgpt.js Line 47");
                 return;
               }
 
@@ -68,7 +69,7 @@ function Send() {
 	
 	// Timeout Error Exponetial Backoff
         if (oJson.error && oJson.error.message) {
-        	// txtOutput.value += "Error: " + oJson.error.message;
+        	// txtOutput.innerHTML += "Error: " + oJson.error.message;
 	    // 503 "Error That model is currently overloaded with other requests."
 	    if (oJson.error.message == "overloaded" && retryCount < maxRetries) {
                 retryCount++;
@@ -77,33 +78,31 @@ function Send() {
                 setTimeout(Send, retryDelay);
                 return;
             }
-            txtOutput.value += "Error Other: " + oJson.error.message;
-	    console.log("Error Other: chatgpt.js Line 76");
+            txtOutput.innerHTML += "Error Other: " + oJson.error.message;
+	    console.log("Error Other: chatgpt.js Line 82");
             retryCount = 0;	  
        	}
 	
         // Interpret AI Response after Error Handling
 	else if (oJson.choices && oJson.choices[0].text);
-	// console.log("Line 87" + oJson.choices + "" +oJson.choices[0].text);
+	// console.log("Line 88" + oJson.choices + "" +oJson.choices[0].text);
 	    // Always Run Response 
 	    {
             var s = oJson.choices[0].text;
 	    // Empty Response Handling	     
 	    if (s == "") {
-        	txtOutput.value += "Eva: I'm sorry can you please ask me in another way?";
+        	txtOutput.innerHTML += "Eva: I'm sorry can you please ask me in another way?";
     	    } else {
-        	txtOutput.value += "Eva: " + s.trim();
+        	txtOutput.innerHTML += "Eva: " + s.trim();
     	    }
 
             // Send to Local Storage - possibly way to intigrate into memory
-            masterOutput += "\n" + txtOutput.value + "\n";
+            let outputWithoutTags = txtOutput.innerText ;
+            masterOutput += outputWithoutTags;
             localStorage.setItem("masterOutput", masterOutput);
 
             userMasterResponse += sQuestion + "\n";
             localStorage.setItem("userMasterResponse", userMasterResponse);
-
-            // aiMasterResponse += lastResponse + "\n";
-            // localStorage.setItem("aiMasterResponse", aiMasterResponse);
 
             // Set lastResponse
 	    lastResponse = s;
@@ -140,7 +139,7 @@ function Send() {
     oHttp.send(JSON.stringify(data));
 
     // Relay Send to Screen
-    if (txtOutput.value != "") txtOutput.value += "\n";
-    txtOutput.value += "You: " + sQuestion;
-    txtMsg.value = "";
+    if (txtOutput.innerHTML != "") txtOutput.innerHTML += "<br>";
+    txtOutput.innerHTML += "You: " + sQuestion;
+    txtMsg.innerHTML = "";
 }
