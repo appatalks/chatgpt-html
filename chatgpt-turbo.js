@@ -108,7 +108,9 @@ function trboSend() {
 		selectElement.value = "gpt-3.5-turbo";
     	    } else {
 		// console.log("chatgpt-turbo.js line 110" + typeof s, s);
-        	txtOutput.innerHTML += "<br>" + "Eva: " + s.content.trim();
+        	//txtOutput.innerHTML += "<br>" + "Eva: " + s.content.trim() ;
+    const message = "Eva: " + s.content.trim().replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    txtOutput.innerHTML += "<br>" + message;
     	    }
 
             // Send to Local Storage - possibly way to intigrate into memory
@@ -193,7 +195,7 @@ function trboSend() {
 
         // Solar Space Weather
         const keyword_solar = 'solar';
-        const keyword_spaceweather = 'space';
+        const keyword_spaceweather = 'space weather';
         if (sQuestion.includes(keyword_solar) || sQuestion.includes(keyword_spaceweather)) {
           newMessages.push({ role: 'user', content: "Today's " + solarContents + " " + sQuestion.replace(/\n/g, '') });
         }
