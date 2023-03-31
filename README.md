@@ -2,7 +2,7 @@
 
 ![Screenshot_new](Screenshot_new.png)
 
-v.1.0.beta - Google Search Baby! use the keywork google or Google.
+v.1.0.beta - Google Search Baby! use the keyword google or Google.
 
 Has GPT-4 Support (Needs Testing)
 
