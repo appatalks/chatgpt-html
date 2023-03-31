@@ -200,6 +200,9 @@ function addImage(file) {
 
   // Append the image to the txtMsg element
   txtMsg.appendChild(img);
+
+  // Return the file object
+  return file;
 }
 
 function handleFileSelect(event) {
@@ -225,12 +228,15 @@ imgInput.addEventListener("change", function() {
 
   // Call addImage() function with the file object
   addImage(file);
+  
+  // Get the uploaded file object and store it in a variable
+     // Might be able to pass this to gpt-4.. Not sure.
+  var uploadedFile = addImage(file);
 });
 
 txtMsg.addEventListener("dragover", handleDragOver);
 txtMsg.addEventListener("drop", handleFileSelect);
 }
-
 
 // AWS Polly
 function speakText() {
