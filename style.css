@@ -15,6 +15,44 @@ body {
   background-size: 90% auto; /* set width and height of image */
 }
 
+#txtMsg {
+  width: 750px;
+  height: 100px;
+  margin-left: 3px;
+  margin-top: 6px;
+  border: 1px solid #ccc;
+  padding: 6px;
+  text-align: left;
+  font-family: Arial, sans-serif;
+  font-size: 14px;
+  line-height: 1.5;
+  color: #333;
+  background-color: #fff;
+  outline: none;
+}
+
+#txtMsg img {
+  width: 55px;
+  height: 55px;
+}
+
+#txtOutput {
+  margin-top: 10px;
+  width: 750px;
+  height: 300px;
+  padding: 10px;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  text-align: left;
+  font-family: Arial, sans-serif;
+  font-size: 16px;
+  line-height: 1.5;
+  color: #333;
+  background-color: #fff;
+  overflow-y: scroll;
+  white-space: pre-wrap;
+}
+
 #eEgg {
   transition: opacity 0.5s ease-in-out;
   position: absolute;
@@ -44,7 +82,7 @@ body {
 
 .mic-button {
   position: absolute;
-  top: -75px;
+  top: -60px;
   right: -345px;
   background-image: url('mic.png');
   background-repeat: no-repeat;
