@@ -114,15 +114,15 @@ function trboSend() {
     	    }
 
             // Send to Local Storage - possibly way to intigrate into memory
-	    let outputWithoutTags = txtOutput.innerText + "Eva: " + s.content.trim();
+	    let outputWithoutTags = txtOutput.innerText + "Eva: " + s.content.trim() + "\n";
 	    masterOutput += outputWithoutTags;
 	    localStorage.setItem("masterOutput", masterOutput);
 	    
-            userMasterResponse += sQuestion + "\n";
-	    localStorage.setItem("userMasterResponse", userMasterResponse);
+            // userMasterResponse += sQuestion + "\n";
+	    // localStorage.setItem("userMasterResponse", userMasterResponse);
 
-            aiMasterResponse += lastResponse;
-            localStorage.setItem("aiMasterResponse", aiMasterResponse);
+            // aiMasterResponse += lastResponse;
+            // localStorage.setItem("aiMasterResponse", aiMasterResponse);
 	    
 	    // Set lastResponse
 	    lastResponse = s.content + "\n";
@@ -165,10 +165,14 @@ function trboSend() {
 
     // Create a new array to store the messages
     let newMessages = [];
-      
-    // Push the messages to the new array
-    newMessages.push({ role: 'assistant', content: lastResponse.replace(/\n/g, ' ') });
-    newMessages.push({ role: 'user', content: sQuestion.replace(/\n/g, '') });
+
+	//const cleanedQuestion = sQuestion.replace(/<div[^>]*>|<\/div>|&nbsp;/gi, '');
+	const cleanedQuestion = sQuestion.replace(/<div[^>]*>|<\/div>|&nbsp;|<span[^>]*>|<\/span>/gi, '');
+
+
+    	// Push the messages to the new array
+    	newMessages.push({ role: 'assistant', content: lastResponse.replace(/\n/g, ' ') });
+	newMessages.push({ role: 'user', content: cleanedQuestion.replace(/\n/g, '') });
 
       	// External Sources
 	// Check external.js for source data
