@@ -36,7 +36,7 @@ function OnLoad() {
     "   #1 Be specific: The more specific your prompt, the more targeted the response will be.\n" +
     "   #2 Start with a question: Starting your prompt will help me feel more natural.\n" +
     "   #3 Provide context: Often good context goes a long way for me.\n" +
-    "   #4 Use puncuation, periods and question marks.\n" +
+    "   #4 Use punctuation, periods and question marks.\n" +
     "   #5 Keep it short: Occam's razor.\n" +
     "      ";
 }
