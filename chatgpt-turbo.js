@@ -203,10 +203,12 @@ function trboSend() {
 	// Google That
 	const keyword_google = 'google';
 	const keyword_Google = 'Google';
-	const query = sQuestion.replace(/google|Google/g, '').trim();
+//	const query = sQuestion.replace(/google|Google/g, '').trim();
+	const query = sQuestion.replace(/<[^>]*>/g, '').replace(/google|Google/g, '').trim();
+
 	let googleContents; 
 	if (sQuestion.includes(keyword_google) || sQuestion.includes(keyword_Google)) {
-	const apiUrl = `https://www.googleapis.com/customsearch/v1?key=${GOOGLE_SEARCH_KEY}&cx=${GOOGLE_SEARCH_ID}&q=${encodeURIComponent(query)}`;
+	const apiUrl = `https://www.googleapis.com/customsearch/v1?key=${GOOGLE_SEARCH_KEY}&cx=${GOOGLE_SEARCH_ID}&q=${encodeURIComponent(query)}&fields=kind,items(title,link)&num=5`;
  	    fetch(apiUrl)
     	      .then(response => response.json())
     	      .then(data => {
