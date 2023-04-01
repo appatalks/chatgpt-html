@@ -114,7 +114,7 @@ function trboSend() {
     	    }
 
             // Send to Local Storage - possibly way to intigrate into memory
-	    let outputWithoutTags = txtOutput.innerText + "Eva: " + s.content.trim() + "\n";
+	    let outputWithoutTags = txtOutput.innerText + "\n";
 	    masterOutput += outputWithoutTags;
 	    localStorage.setItem("masterOutput", masterOutput);
 	    
