@@ -18,10 +18,10 @@ body {
 #txtMsg {
   width: 750px;
   height: 100px;
-  margin-left: 3px;
-  margin-top: 6px;
+  margin-top: 10px;
   border: 1px solid #ccc;
-  padding: 6px;
+  border-radius: 4px;
+  padding: 10px;
   text-align: left;
   font-family: Arial, sans-serif;
   font-size: 14px;
