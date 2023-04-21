@@ -1,24 +1,24 @@
-# ChatGPT HTML - Using OpenAI APIs and AWS Polly speech (Optional)
+# ChatGPT HTML - Using OpenAI APIs; Optional Support with AWS Polly and Google Search APIs.
 
 ![Screenshot_new](Screenshot_new.png)
 
-v.1.0.beta - Google Search Baby! use the keyword google or Google.
+v.1.1
 
-Has GPT-4 Support (Needs Testing)
-
-This allows you to easily interact with the OpenAI API and convert the response to speech using Amazon Polly's Text-to-Speech service.
+This allows you to easily interact with the OpenAI API.
 
 ## Getting Started
 
-1. Add your OpenAI API key and AWS Keys to the "OPENAI_API_KEY" variable and (optinally) "AWS.config.credentials" in config.json. 
+1. Add your OpenAI API key and AWS Keys to the "OPENAI_API_KEY" variable and (optinally) AWS and Google Keys in config.json. 
 2. Open chatgpt.html and have fun!
 
 ## Features
 
+- GPT-4 Support (Needs Testing)
 - Model Selection, Multiple languages, and Print Conversation.
 - Convert to Speech using Amazon Polly's Text-to-Speech service.
-  - Auto Speak! Now avail w00t w00t
-- Error handling for issues that may occur during the API call and speech conversion.
+- Use Google Search with the Keywork "Google"
+- Additional scraped data with scripts
+- Basic Error handling
 
 ## Bugs
 - actively on the look out for these
