@@ -1,4 +1,5 @@
-# ChatGPT HTML - Using OpenAI APIs; Optional Support with AWS Polly and Google Search APIs.
+# ChatGPT HTML - Using OpenAI APIs; 
+Optional Support with AWS Polly and Google Search APIs.
 
 ![Screenshot_new](Screenshot_new.png)
 
