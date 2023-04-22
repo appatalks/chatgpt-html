@@ -17,7 +17,7 @@ This allows you to easily interact with the OpenAI API.
 - GPT-4 Support (Needs Testing)
 - Model Selection, Multiple languages, and Print Conversation.
 - Convert to Speech using Amazon Polly's Text-to-Speech service.
-- Use Google Search with the Keywork "Google"
+- Use Google Search with the Keyword "Google"
 - Additional scraped data with scripts
 - Basic Error handling
 
