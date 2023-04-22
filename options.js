@@ -360,7 +360,7 @@ function startSpeechRecognition() {
 // Get Account Usage Information 
 // Billing
 async function getOpenaiBillUsage(apiKey, start_date, end_date) {
-var oKey = OPENAI_API_KEY;
+  var oKey = OPENAI_API_KEY;
 
   const headers = {
     'Authorization': `Bearer ${oKey}`,
@@ -376,28 +376,40 @@ var oKey = OPENAI_API_KEY;
 
   if (!end_date) {
     const today = new Date();
-          today.setDate(today.getDate() + 1);
+    today.setDate(today.getDate() + 1);
     end_date = today.toISOString().slice(0, 10);
   }
 
-  const searchParams = new URLSearchParams();
-  searchParams.set('start_date', start_date);
-  searchParams.set('end_date', end_date);
-  const response = await fetch(
-    `https://api.openai.com/dashboard/billing/usage?${searchParams.toString()}`,
+  // Get the current usage
+  const usageResponse = await fetch(
+    `https://api.openai.com/dashboard/billing/usage?start_date=${start_date}&end_date=${end_date}`,
     {
       headers,
     }
   );
-  if (response.status === 200) {
-    const data = await response.json();
-    // console.log(data);
-    const totalUsage = data.total_usage;
-    // Rounded up the 0.01
+  if (usageResponse.status === 200) {
+    const usageData = await usageResponse.json();
+    const totalUsage = usageData.total_usage;
     const formattedUsage = (totalUsage / 100 + 0.01).toFixed(2);
-    document.getElementById("txtOutput").innerHTML = "\n\n\n  Month's Current Spend: $" + formattedUsage;
+    document.getElementById("txtOutput").innerHTML = `\n\n\n  Month's Current Spend: $${formattedUsage}`;
   } else {
-  throw new Error(`Failed to retrieve OpenAI usage data: ${await response.text()}`);
+    throw new Error(`Failed to retrieve OpenAI usage data: ${await usageResponse.text()}`);
+  }
+
+  // Get the hard limit
+  const subscriptionResponse = await fetch(
+    `https://api.openai.com/dashboard/billing/subscription`,
+    {
+      headers,
+    }
+  );
+  if (subscriptionResponse.status === 200) {
+    const subscriptionData = await subscriptionResponse.json();
+    const hardLimitUsd = parseFloat(subscriptionData.hard_limit_usd);
+    const formattedHardLimit = hardLimitUsd.toFixed(2);
+    document.getElementById("txtOutput").innerHTML += ` / $${formattedHardLimit}`;
+  } else {
+    throw new Error(`Failed to retrieve OpenAI subscription data: ${await subscriptionResponse.text()}`);
   }
 }
 
