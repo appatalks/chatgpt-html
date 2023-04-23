@@ -219,10 +219,13 @@ function trboSend() {
 		 googleContents = data.items.map(item => {
   		   return {
     		     title: item.title,
-    		     link: item.link
+    		     // link: item.link,
+		     snippet: item.snippet,
+		     displayLink: item.displayLink
   		   };
 		 });
-                newMessages.push({ role: 'user', content: "Google search results for " + query + ": " + JSON.stringify(googleContents) + sQuestion.replace(/\n/g, '') });
+		newMessages.push({ role: 'assistant', content: "Google search results for " + query + "in JSON Format: " + JSON.stringify(googleContents) });
+                newMessages.push({ role: 'user', content: "What are the search results for: " + sQuestion.replace(/\n/g, '') + " list results, summary and associated links please." });
 	      	let existingMessages = JSON.parse(localStorage.getItem("messages")) || [];
       		existingMessages = existingMessages.concat(newMessages);
 	      	localStorage.setItem("messages", JSON.stringify(existingMessages));
