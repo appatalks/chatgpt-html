@@ -212,7 +212,7 @@ function trboSend() {
 
 	let googleContents; 
 	if (sQuestion.includes(keyword_google) || sQuestion.includes(keyword_Google)) {
-	const apiUrl = `https://www.googleapis.com/customsearch/v1?key=${GOOGLE_SEARCH_KEY}&cx=${GOOGLE_SEARCH_ID}&q=${encodeURIComponent(query)}&fields=kind,items(title,snippet,displayLink)&num=5`;
+	const apiUrl = `https://www.googleapis.com/customsearch/v1?key=${GOOGLE_SEARCH_KEY}&cx=${GOOGLE_SEARCH_ID}&q=${encodeURIComponent(query)}&fields=kind,items(title,snippet,link)&num=5`;
  	    fetch(apiUrl)
     	      .then(response => response.json())
     	      .then(data => {
@@ -225,7 +225,7 @@ function trboSend() {
   		   };
 		 });
 		newMessages.push({ role: 'assistant', content: "Google search results for " + query + "in JSON Format: " + JSON.stringify(googleContents) });
-                newMessages.push({ role: 'user', content: "What are the search results for: " + sQuestion.replace(/\n/g, '') + " list results, snippet and associated links please." });
+                newMessages.push({ role: 'user', content: "What are the search results for: " + sQuestion.replace(/\n/g, '') + " Please summarize results and provide associated links." });
 	      	let existingMessages = JSON.parse(localStorage.getItem("messages")) || [];
       		existingMessages = existingMessages.concat(newMessages);
 	      	localStorage.setItem("messages", JSON.stringify(existingMessages));
