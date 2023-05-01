@@ -277,8 +277,12 @@ if (speechParams.Engine === "bark") {
     const xhr = new XMLHttpRequest();
     xhr.responseType = 'blob';
     xhr.onload = function() {
+
+    // Buggy work-around to allow audio file to generate fully, otherwise get old audio response :/
+    setTimeout(function() {
         const audioElement = new Audio("./audio/bark_audio.wav");
         audioElement.play();
+    }, 20000); // Add a delay of 5 seconds (20000 milliseconds)	    
 
 	// Delete the file after playing
 		// Need to figure this part out next. Something is breaking autospeak.
