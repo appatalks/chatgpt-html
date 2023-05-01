@@ -5,6 +5,8 @@ Optional Support with AWS Polly and Google Search APIs.
 
 v.1.2
 
+Expiremental: - Suno-Ai's Bark TTS Engine Added. Run server.py
+
 This allows you to easily interact with the OpenAI API.
 
 ## Getting Started
