@@ -3,7 +3,7 @@ Optional Support with AWS Polly and Google Search APIs.
 
 ![Screenshot_new](Screenshot_new.png)
 
-v.1.1
+v.1.2
 
 This allows you to easily interact with the OpenAI API.
 
@@ -17,6 +17,7 @@ This allows you to easily interact with the OpenAI API.
 - GPT-4 Support (Needs Testing)
 - Model Selection, Multiple languages, and Print Conversation.
 - Convert to Speech using Amazon Polly's Text-to-Speech service.
+- Suno-Ai's Bark TTS Added
 - Use Google Search with the Keyword "Google"
 - Additional scraped data with scripts
 - Basic Error handling
