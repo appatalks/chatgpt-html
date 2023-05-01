@@ -240,49 +240,91 @@ txtMsg.addEventListener("drop", handleFileSelect);
 
 // AWS Polly
 function speakText() {
-	var sText = txtOutput.innerHTML;
-    	if (sText == "") {
-        	alert("No text to convert to speech!");
-        	return;
-    	}
+    var sText = txtOutput.innerHTML;
+    if (sText == "") {
+        alert("No text to convert to speech!");
+        return;
+    }
 
-        // Create the JSON parameters for getSynthesizeSpeechUrl
-        var speechParams = {
-	    Engine: "",
-            OutputFormat: "mp3",
-            SampleRate: "16000",
-            Text: "",
-            TextType: "text",
-            VoiceId: ""
-        };
+    // Create the JSON parameters for getSynthesizeSpeechUrl
+    var speechParams = {
+        Engine: "",
+        OutputFormat: "mp3",
+        SampleRate: "16000",
+        Text: "",
+        TextType: "text",
+        VoiceId: ""
+    };
 
-	// Let's speak only the response.
-	let text = document.getElementById("txtOutput").innerHTML;
-	let textArr = text.split('Eva:');
-	if(textArr.length > 1){
-   	   speechParams.Text = textArr[1];
-	}else{
-	   speechParams.Text = text;
-	}
+    // Let's speak only the response.
+    let text = document.getElementById("txtOutput").innerHTML;
+    let textArr = text.split('Eva:');
+    if(textArr.length > 1){
+        speechParams.Text = textArr[1];
+    }else{
+        speechParams.Text = text;
+    }
 
-	speechParams.VoiceId = document.getElementById("selVoice").value;
-	speechParams.Engine = document.getElementById("selEngine").value;
+    speechParams.VoiceId = document.getElementById("selVoice").value;
+    speechParams.Engine = document.getElementById("selEngine").value;
 
-        // Create the Polly service object and presigner object
-        var polly = new AWS.Polly({apiVersion: '2016-06-10'});
-        var signer = new AWS.Polly.Presigner(speechParams, polly);
 
-        // Create presigned URL of synthesized speech file
-	signer.getSynthesizeSpeechUrl(speechParams, function(error, url) {
-    	if (error) {
-           document.getElementById('result').innerHTML = error;
-    	} else {
-           document.getElementById('audioSource').src = url;
-           document.getElementById('audioPlayback').load();
-           document.getElementById('result').innerHTML = "";
-    	  }
-    	});
+
+    // If selEngine is "bark", call barkTTS function
+if (speechParams.Engine === "bark") {
+    const url = 'http://127.0.0.1:8080/send-string';
+    const data = textArr[1];
+    const xhr = new XMLHttpRequest();
+    xhr.responseType = 'blob';
+    xhr.onload = function() {
+        const audioElement = new Audio("./audio/bark_audio.wav");
+        audioElement.play();
+
+	// Delete the file after playing
+		// Need to figure this part out next. Something is breaking autospeak.
+
+        // Check the state of the checkbox and have fun
+        const checkbox = document.getElementById("autoSpeak");
+        if (checkbox.checked) {
+
+	// Delete the file after playing
+
+            const audio = document.getElementById("audioPlayback");
+            audio.setAttribute("autoplay", true);
+        }
+
+    }
+    xhr.open('POST', url, true);
+    xhr.setRequestHeader('Content-Type', 'text/plain');
+    xhr.send(data);
+    return;
 }
+
+
+
+    // Create the Polly service object and presigner object
+    var polly = new AWS.Polly({apiVersion: '2016-06-10'});
+    var signer = new AWS.Polly.Presigner(speechParams, polly);
+
+    // Create presigned URL of synthesized speech file
+    signer.getSynthesizeSpeechUrl(speechParams, function(error, url) {
+        if (error) {
+            document.getElementById('result').innerHTML = error;
+        } else {
+            document.getElementById('audioSource').src = url;
+            document.getElementById('audioPlayback').load();
+            document.getElementById('result').innerHTML = "";
+
+            // Check the state of the checkbox and have fun
+            const checkbox = document.getElementById("autoSpeak");
+            if (checkbox.checked) {
+                const audio = document.getElementById("audioPlayback");
+                audio.setAttribute("autoplay", true);
+            }
+        }
+    });
+}
+
 
 // After Send clear the message box
 function clearText(){
