@@ -269,10 +269,9 @@ function speakText() {
     speechParams.Engine = document.getElementById("selEngine").value;
 
 
-
     // If selEngine is "bark", call barkTTS function
 if (speechParams.Engine === "bark") {
-    const url = 'http://127.0.0.1:8080/send-string';
+    const url = 'https://192.168.86.30/send-string';
     const data = "WOMAN: " + textArr[1];
     const xhr = new XMLHttpRequest();
     xhr.responseType = 'blob';
