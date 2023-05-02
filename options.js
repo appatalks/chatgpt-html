@@ -271,27 +271,36 @@ function speakText() {
 
     // If selEngine is "bark", call barkTTS function
 if (speechParams.Engine === "bark") {
+
     const url = 'https://192.168.86.30/send-string';
-    const data = "WOMAN: " + textArr[1];
+    const data = "WOMAN: " + textArr;
     const xhr = new XMLHttpRequest();
     xhr.responseType = 'blob';
+
     xhr.onload = function() {
 
-    // Buggy work-around to allow audio file to generate fully, otherwise get old audio response :/
-    setTimeout(function() {
-        const audioElement = new Audio("./audio/bark_audio.wav");
-        audioElement.play();
-    }, 20000); // Add a delay of 5 seconds (20000 milliseconds)	    
+//    setTimeout(function() {
+//        const audioElement = new Audio("./audio/bark_audio.wav");
+//        audioElement.play();
+//        // Delete the previous recording
+//        const deleteRequest = new XMLHttpRequest();
+//        deleteRequest.open('DELETE', 'https://192.168.86.30/audio/bark_audio.wav', true);
+//        deleteRequest.send();
+//    }, 5000); // Add a delay of 5 seconds (5000 milliseconds)
 
-	// Delete the file after playing
-		// Need to figure this part out next. Something is breaking autospeak.
+const audioElement = new Audio("./audio/bark_audio.wav");
+audioElement.addEventListener("ended", function() {
+    // Delete the previous recording
+    const deleteRequest = new XMLHttpRequest();
+    deleteRequest.open('DELETE', 'https://192.168.86.30/audio/bark_audio.wav', true);
+    deleteRequest.send();
+});
+audioElement.play();
+
 
         // Check the state of the checkbox and have fun
         const checkbox = document.getElementById("autoSpeak");
         if (checkbox.checked) {
-
-	// Delete the file after playing
-
             const audio = document.getElementById("audioPlayback");
             audio.setAttribute("autoplay", true);
         }
@@ -302,8 +311,6 @@ if (speechParams.Engine === "bark") {
     xhr.send(data);
     return;
 }
-
-
 
     // Create the Polly service object and presigner object
     var polly = new AWS.Polly({apiVersion: '2016-06-10'});
