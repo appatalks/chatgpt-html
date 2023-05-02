@@ -13,6 +13,7 @@ This allows you to easily interact with the OpenAI API.
 
 1. Add your OpenAI API key and AWS Keys to the "OPENAI_API_KEY" variable and (optinally) AWS and Google Keys in config.json. 
 2. Open chatgpt.html and have fun!
+3. **Note: You may have to review/adjust the code for your specific env. ie CIDR ranges, NGINX/webserver configuration,scripting piece etc.**
 
 ## Features
 
