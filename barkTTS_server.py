@@ -1,3 +1,10 @@
+#Add to NGINX 
+# location ~ /send-string {
+#     proxy_pass http://127.0.0.1:8080$request_uri;
+#     proxy_set_header Host $host;
+#     proxy_set_header X-Real-IP $remote_addr;
+# }
+
 import datetime
 from bark import SAMPLE_RATE, generate_audio, preload_models
 from scipy.io.wavfile import write as write_wav
