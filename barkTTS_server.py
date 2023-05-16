@@ -13,7 +13,12 @@ import nltk
 from http.server import HTTPServer, BaseHTTPRequestHandler
 
 # nltk.download('punkt')
-preload_models()
+preload_models(
+    text_use_small=True,
+    coarse_use_small=True,
+    fine_use_small=True,
+    codec_use_gpu=False
+)
 
 # Set up sample rate (importing instead atm)
 # SAMPLE_RATE = 22050
