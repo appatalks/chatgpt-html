@@ -273,38 +273,37 @@ function speakText() {
 if (speechParams.Engine === "bark") {
 
     const url = 'https://192.168.86.30/send-string';
-    const data = "WOMAN: " + textArr;
+    const data = "WOMAN: " + textArr[1];
     const xhr = new XMLHttpRequest();
     xhr.responseType = 'blob';
 
     xhr.onload = function() {
 
-//    setTimeout(function() {
-//        const audioElement = new Audio("./audio/bark_audio.wav");
-//        audioElement.play();
-//        // Delete the previous recording
-//        const deleteRequest = new XMLHttpRequest();
-//        deleteRequest.open('DELETE', 'https://192.168.86.30/audio/bark_audio.wav', true);
-//        deleteRequest.send();
-//    }, 5000); // Add a delay of 5 seconds (5000 milliseconds)
-
-const audioElement = new Audio("./audio/bark_audio.wav");
-audioElement.addEventListener("ended", function() {
+    const audioElement = new Audio("./audio/bark_audio.wav");
+    audioElement.addEventListener("ended", function() {
     // Delete the previous recording
     const deleteRequest = new XMLHttpRequest();
     deleteRequest.open('DELETE', 'https://192.168.86.30/audio/bark_audio.wav', true);
     deleteRequest.send();
-});
-audioElement.play();
-
-
-        // Check the state of the checkbox and have fun
-        const checkbox = document.getElementById("autoSpeak");
-        if (checkbox.checked) {
-            const audio = document.getElementById("audioPlayback");
-            audio.setAttribute("autoplay", true);
+    });
+    
+    //audioElement.play();
+// Check if the old audio file exists and delete it
+    const checkRequest = new XMLHttpRequest();
+    checkRequest.open('HEAD', 'https://192.168.86.30/audio/bark_audio.wav', true);
+    checkRequest.onreadystatechange = function() {
+      if (checkRequest.readyState === 4) {
+        if (checkRequest.status === 200) {
+          // File exists, send delete request
+	    const deleteRequest = new XMLHttpRequest(); 
+    	    deleteRequest.open('DELETE', 'https://192.168.86.30/audio/bark_audio.wav', true);
+            deleteRequest.send();
         }
-
+        // Start playing the new audio
+        audioElement.play();
+      }
+    };
+    checkRequest.send();
     }
     xhr.open('POST', url, true);
     xhr.setRequestHeader('Content-Type', 'text/plain');
