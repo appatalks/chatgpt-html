@@ -3,7 +3,7 @@ Optional Support with AWS Polly and Google Search APIs.
 
 ![Screenshot_new](Screenshot_new.png)
 
-v.1.2
+v.1.3b
 
 Expiremental: - Suno-Ai's Bark TTS Engine Added. Run server.py (GPU Enabled)
 
@@ -18,6 +18,7 @@ This allows you to easily interact with the OpenAI API.
 ## Features
 
 - GPT-4 Support (Needs Testing)
+- Google PaLM Support added (Bard)
 - Model Selection, Multiple languages, and Print Conversation.
 - Convert to Speech using Amazon Polly's Text-to-Speech service.
 - Suno-Ai's Bark TTS Added
