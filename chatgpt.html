@@ -1,12 +1,16 @@
 <!DOCTYPE html>
 <html>
 <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, minimum-scale=1.0, maximum-scale=1.0">
+<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
+<meta http-equiv="Pragma" content="no-cache" />
+<meta http-equiv="Expires" content="0" />
 <head>
     <title>Eva - ChatGPT</title>
 <script src="options.js"></script>
 <script src="external.js"></script>
 <script src="chatgpt.js"></script>
 <script src="chatgpt-turbo.js"></script>
+<script src="google-palm.js"></script>
 <script src="aws-sdk-2.1304.0.min.js"></script>
  <script>
   auth();
@@ -70,6 +74,7 @@
 	<button type="button" onclick="sendData()" id="btnSend">Send</button>
 	    <select id="selModel" onchange="updateButton()">
 		<option value="gpt-3.5-turbo" title="Default option">gpt-3.5-turbo</option>
+		<option value="palm" title="Google PaLM ie Bard">palm</option>
 		<option value="gpt-4" title="Most advanced model. High API Cost">gpt-4</option>
 		<option value="gpt-4-32k" title="Advanced model with larger memory size. !!!Highest API Cost!!!">gpt-4-32k</option>
 		<option value="text-davinci-003" title="Recommended fallback option">text-davinci-003</option>
