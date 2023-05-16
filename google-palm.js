@@ -4,14 +4,13 @@
 let nextAuthor = 0;
 const messages = [];
 
-
 function palmSend() {
 
-function auth() {
-  return fetch('./config.json')
-    .then(response => response.json())
-    .then(config => config.GOOGLE_PALM_KEY);
-}
+  function auth() {
+    return fetch('./config.json')
+      .then(response => response.json())
+      .then(config => config.GOOGLE_PALM_KEY);
+  }
 
   var sQuestion = document.getElementById("txtMsg").innerHTML;
   sQuestion = sQuestion.replace(/<br>/g, "\n");
@@ -52,20 +51,33 @@ function auth() {
     fetch(gapiUrl, requestOptions)
       .then((response) => response.json())
       .then((result) => {
-        const candidates = result.candidates.map(candidate => candidate.content);
-        const formattedResult = candidates.join('\n');
-        console.log(formattedResult);
+        if (result.filters && result.filters.length > 0) {
+          // Handle case when no response is available
+          console.log("No response available");
+          document.getElementById("txtOutput").innerHTML += "No response available\n";
+        } else {
+          const candidates = result.candidates.map(candidate => candidate.content);
+          const formattedResult = candidates.join('\n');
+          console.log(formattedResult);
 
-        messages.push({
-          author: nextAuthor.toString(),
-          content: formattedResult
-        });
+          messages.push({
+            author: nextAuthor.toString(),
+            content: formattedResult
+          });
 
-        nextAuthor = nextAuthor === 0 ? 1 : 0;
-        document.getElementById("txtOutput").innerHTML += `${messages[messages.length - 1].author === "0" ? "You" : "Eva"}: ${messages[messages.length - 1].content}`;
+          nextAuthor = nextAuthor === 0 ? 1 : 0;
+	  document.getElementById("txtOutput").innerHTML += `Eva: ${messages[messages.length - 1].content}\n`;
+        }
+
+        // Send to Local Storage - possibly way to integrate into memory
+        let palmOutput = txtOutput.innerText + "\n";
+        masterOutput += palmOutput;
+        localStorage.setItem("masterOutput", masterOutput);
+
       })
       .catch((error) => {
         console.error("Error:", error);
       });
   });
+
 }
