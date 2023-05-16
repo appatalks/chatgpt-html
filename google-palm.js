@@ -1,13 +1,21 @@
+// Javascript
+// For Google PaLM API ie Bard
+
+let nextAuthor = 0;
+const messages = [];
+
+
 function palmSend() {
 
-  function auth() {
-    return fetch('./config.json')
-      .then(response => response.json())
-      .then(config => config.GOOGLE_PALM_KEY);
-  }
+function auth() {
+  return fetch('./config.json')
+    .then(response => response.json())
+    .then(config => config.GOOGLE_PALM_KEY);
+}
 
   var sQuestion = document.getElementById("txtMsg").innerHTML;
-    sQuestion = sQuestion.replace(/<br>/g, "\n");
+  sQuestion = sQuestion.replace(/<br>/g, "\n");
+
   if (sQuestion.trim() == "") {
     alert("Type in your question!");
     txtMsg.focus();
@@ -17,8 +25,9 @@ function palmSend() {
   const MODEL_NAME = "chat-bison-001";
 
   auth().then(GOOGLE_PALM_KEY => {
-	txtMsg.innerHTML = "";
-	txtOutput.innerHTML += "You: " + sQuestion + "\n";
+    document.getElementById("txtMsg").innerHTML = "";
+    document.getElementById("txtOutput").innerHTML += "You: " + sQuestion + "\n";
+
     const gapiUrl = `https://generativelanguage.googleapis.com/v1beta2/models/${MODEL_NAME}:generateMessage?key=${GOOGLE_PALM_KEY}`;
 
     const requestOptions = {
@@ -31,7 +40,7 @@ function palmSend() {
           context:
             "You are Eva, a knowledgeable AI language model. Your goal is to provide accurate, and helpful responses to questions, while being honest and straightforward.",
           examples: [],
-          messages: [{ content: sQuestion }],
+          messages: messages.concat([{ author: nextAuthor.toString(), content: sQuestion }])
         },
         temperature: 0.25,
         top_k: 40,
@@ -46,7 +55,14 @@ function palmSend() {
         const candidates = result.candidates.map(candidate => candidate.content);
         const formattedResult = candidates.join('\n');
         console.log(formattedResult);
-        document.getElementById("txtOutput").innerHTML += "Eva: " + formattedResult;
+
+        messages.push({
+          author: nextAuthor.toString(),
+          content: formattedResult
+        });
+
+        nextAuthor = nextAuthor === 0 ? 1 : 0;
+        document.getElementById("txtOutput").innerHTML += `${messages[messages.length - 1].author === "0" ? "You" : "Eva"}: ${messages[messages.length - 1].content}`;
       })
       .catch((error) => {
         console.error("Error:", error);
