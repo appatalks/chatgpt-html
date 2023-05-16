@@ -51,6 +51,11 @@ function updateButton() {
             clearText();
             trboSend();
         };
+    } else if (selModel.value == "palm") {
+        btnSend.onclick = function() {
+            clearText();
+            palmSend();
+        };
     } else {
         btnSend.onclick = function() {
             clearText();
@@ -64,6 +69,9 @@ function sendData() {
     if (selModel.value == "gpt-3.5-turbo" || selModel.value == "gpt-4" || selModel.value == "gpt-4-32k") {
         clearText();
         trboSend();
+    } else if (selModel.value == "palm") {
+        clearText();
+        palmSend();
     } else {
         clearText();
         Send();
