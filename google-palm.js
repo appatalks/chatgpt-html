@@ -89,6 +89,11 @@ function palmSend() {
 
         // Store updated messages in local storage
         localStorage.setItem("palmMessages", JSON.stringify(palmMessages));
+
+            let outputWithoutTags = txtOutput.innerText + "\n";
+            masterOutput += outputWithoutTags;
+            localStorage.setItem("masterOutput", masterOutput);
+
       })
       .catch((error) => {
         console.error("Error:", error);
