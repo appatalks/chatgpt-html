@@ -2,15 +2,22 @@
 // For Google PaLM API ie Bard
 
 let nextAuthor = 0;
-const messages = [];
 
 function palmSend() {
-
   function auth() {
     return fetch('./config.json')
       .then(response => response.json())
       .then(config => config.GOOGLE_PALM_KEY);
   }
+
+  let palmMessages = [];
+
+  // Check if there are messages stored in local storage
+  const storedPalmMessages = localStorage.getItem("palmMessages");
+    if (storedPalmMessages) {
+      palmMessages = JSON.parse(storedPalmMessages);
+  }
+
 
   var sQuestion = document.getElementById("txtMsg").innerHTML;
   sQuestion = sQuestion.replace(/<br>/g, "\n");
@@ -39,7 +46,7 @@ function palmSend() {
           context:
             "You are Eva, a knowledgeable AI language model. Your goal is to provide accurate, and helpful responses to questions, while being honest and straightforward.",
           examples: [],
-          messages: messages.concat([{ author: nextAuthor.toString(), content: sQuestion }])
+          messages: palmMessages.concat([{ author: nextAuthor.toString(), content: sQuestion }])
         },
         temperature: 0.25,
         top_k: 40,
@@ -56,24 +63,31 @@ function palmSend() {
           console.log("No response available");
           document.getElementById("txtOutput").innerHTML += "No response available\n";
         } else {
-          const candidates = result.candidates.map(candidate => candidate.content);
-          const formattedResult = candidates.join('\n');
+          const candidate = result.candidates[0];
+          const content = candidate.content;
+          let formattedResult = content.replace(/\n\n/g, "\n").trim();
+          if (candidate.citationMetadata && candidate.citationMetadata.citationSources) {
+            const citations = candidate.citationMetadata.citationSources;
+            formattedResult += "\n\nCitations:";
+            citations.forEach((citation, index) => {
+              formattedResult += `\n${index + 1}. ${citation.uri}`;
+            });
+          }
+
           console.log(formattedResult);
 
-          messages.push({
+          palmMessages.push({
             author: nextAuthor.toString(),
             content: formattedResult
           });
 
           nextAuthor = nextAuthor === 0 ? 1 : 0;
-	  document.getElementById("txtOutput").innerHTML += `Eva: ${messages[messages.length - 1].content}\n`;
+          // document.getElementById("txtOutput").innerHTML += `Eva: ${palmMessages[palmMessages.length - 1].content}\n`;
+          document.getElementById("txtOutput").innerHTML += `Eva: ${formattedResult}\n`;
         }
 
-        // Send to Local Storage - possibly way to integrate into memory
-        let palmOutput = txtOutput.innerText + "\n";
-        masterOutput += palmOutput;
-        localStorage.setItem("masterOutput", masterOutput);
-
+        // Store updated messages in local storage
+        localStorage.setItem("palmMessages", JSON.stringify(palmMessages));
       })
       .catch((error) => {
         console.error("Error:", error);
