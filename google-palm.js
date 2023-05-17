@@ -1,8 +1,6 @@
 // Javascript
 // For Google PaLM API ie Bard
 
-let nextAuthor = 0;
-
 function palmSend() {
   function auth() {
     return fetch('./config.json')
@@ -14,10 +12,9 @@ function palmSend() {
 
   // Check if there are messages stored in local storage
   const storedPalmMessages = localStorage.getItem("palmMessages");
-    if (storedPalmMessages) {
-      palmMessages = JSON.parse(storedPalmMessages);
+  if (storedPalmMessages) {
+    palmMessages = JSON.parse(storedPalmMessages);
   }
-
 
   var sQuestion = document.getElementById("txtMsg").innerHTML;
   sQuestion = sQuestion.replace(/<br>/g, "\n");
@@ -46,7 +43,7 @@ function palmSend() {
           context:
             "You are Eva, a knowledgeable AI language model. Your goal is to provide accurate, and helpful responses to questions, while being honest and straightforward.",
           examples: [],
-          messages: palmMessages.concat([{ author: nextAuthor.toString(), content: sQuestion }])
+          messages: palmMessages.concat([{ author: "0", content: sQuestion }])
         },
         temperature: 0.25,
         top_k: 40,
@@ -74,15 +71,19 @@ function palmSend() {
             });
           }
 
-          console.log(formattedResult);
+       //   console.log(formattedResult);
 
           palmMessages.push({
-            author: nextAuthor.toString(),
+            author: "0",
+            content: sQuestion
+          });
+
+          palmMessages.push({
+            author: "1",
             content: formattedResult
           });
 
-          nextAuthor = nextAuthor === 0 ? 1 : 0;
-          // document.getElementById("txtOutput").innerHTML += `Eva: ${palmMessages[palmMessages.length - 1].content}\n`;
+          // document.getElementById("txtOutput").innerHTML += `Eva: ${formattedResult}\n`;
           document.getElementById("txtOutput").innerHTML += `Eva: ${formattedResult}\n`;
         }
 
@@ -93,5 +94,4 @@ function palmSend() {
         console.error("Error:", error);
       });
   });
-
 }
