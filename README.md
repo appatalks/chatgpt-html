@@ -1,5 +1,7 @@
 # ChatGPT HTML - Using OpenAI APIs; 
-Optional Support with AWS Polly and Google Search APIs.
+-- Now has Google PaLM API (Bard)
+
+-- Optional Support with AWS Polly and Google Search APIs.
 
 ![Screenshot_new](Screenshot_new.png)
 
