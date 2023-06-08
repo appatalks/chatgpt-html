@@ -68,7 +68,8 @@ function palmSend() {
        //   console.log("Formatted result:", formattedResult);
 
           const imagePlaceholderRegex = /\[Image of (.*?)\]/g;
-          const imagePlaceholders = formattedResult.match(imagePlaceholderRegex);
+       //   const imagePlaceholders = formattedResult.match(imagePlaceholderRegex);
+ 	  const imagePlaceholders = formattedResult.match(imagePlaceholderRegex)?.slice(0, 3);
        //   console.log("Image placeholders:", imagePlaceholders);
 
 	if (imagePlaceholders) {
