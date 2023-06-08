@@ -56,8 +56,8 @@ body {
 }
 
 #txtOutput img {
-  width: 55px;
-  height: 55px;
+  width: 350px;
+  height: auto;
 }
 
 #eEgg {
