@@ -55,38 +55,38 @@ function palmSend() {
     fetch(gapiUrl, requestOptions)
       .then((response) => response.json())
       .then(async (result) => {
-     //   console.log("PaLM response:", result);
+        console.log("PaLM response:", result);
 
         if (result.filters && result.filters.length > 0) {
           // Handle case when no response is available
-      //    console.log("No response available");
+       //   console.log("No response available");
           document.getElementById("txtOutput").innerHTML += "No response available\n";
         } else {
           const candidate = result.candidates[0];
           const content = candidate.content;
           let formattedResult = content.replace(/\n\n/g, "\n").trim();
-      //    console.log("Formatted result:", formattedResult);
+       //   console.log("Formatted result:", formattedResult);
 
           const imagePlaceholderRegex = /\[Image of (.*?)\]/g;
           const imagePlaceholders = formattedResult.match(imagePlaceholderRegex);
-      //    console.log("Image placeholders:", imagePlaceholders);
+       //   console.log("Image placeholders:", imagePlaceholders);
 
-          if (imagePlaceholders) {
-            for (let i = 0; i < imagePlaceholders.length; i++) {
-              const placeholder = imagePlaceholders[i];
-              const searchQuery = placeholder.substring(10, placeholder.length - 1).trim(); // Remove the "[Image of" and "]"
-            //  console.log("Search query:", searchQuery);
+	if (imagePlaceholders) {
+  	  for (let i = 0; i < Math.min(imagePlaceholders.length, 3); i++) {
+    	  const placeholder = imagePlaceholders[i];
+    	  const searchQuery = placeholder.substring(10, placeholder.length - 3).trim();
+         //     console.log("Search query:", searchQuery);
 
               try {
                 const searchResult = await fetchGoogleImages(searchQuery);
-                console.log("Search result:", searchResult);
+           //     console.log("Search result:", searchResult);
 
                 if (searchResult && searchResult.items && searchResult.items.length > 0) {
                   const topImage = searchResult.items[0];
                   const imageLink = topImage.link;
              //     console.log("Top image link:", imageLink);
-
-                  formattedResult = formattedResult.replace(placeholder, `<img src="${imageLink}" alt="${searchQuery}">`);
+	       formattedResult = formattedResult.replace(placeholder, `<img src="${imageLink}" alt="${searchQuery}">`);
+//	formattedResult = formattedResult.replace(placeholder,`<img src="${imageLink}" alt="${searchQuery}" class="palm-image" data-link="${imageLink}">`);
                 }
               } catch (error) {
                 console.error("Error fetching image:", error);
@@ -94,7 +94,7 @@ function palmSend() {
             }
           }
 
-          document.getElementById("txtOutput").innerHTML += `Eva: ${formattedResult}\n`;
+          //  document.getElementById("txtOutput").innerHTML += `Eva: ${formattedResult}\n`;
 
           palmMessages.push({
             author: "0",
@@ -105,6 +105,16 @@ function palmSend() {
             author: "1",
             content: formattedResult
           });
+
+          // Output citations if available
+          if (candidate.citationMetadata && candidate.citationMetadata.citationSources) {
+            const citations = candidate.citationMetadata.citationSources;
+            formattedResult += "\n\nCitations:";
+            citations.forEach((citation, index) => {
+              formattedResult += `\n${index + 1}. ${citation.uri}`;
+            });
+          }
+	document.getElementById("txtOutput").innerHTML += `Eva: ${formattedResult}\n`;
         }
 
         // Store updated messages in local storage
@@ -121,7 +131,9 @@ function palmSend() {
 }
 
 function fetchGoogleImages(query) {
-  return fetch(`https://www.googleapis.com/customsearch/v1?key=${GOOGLE_SEARCH_KEY}&cx=${GOOGLE_SEARCH_ID}&searchType=image&q=${encodeURIComponent(query)}`)
+  const maxResults = 3;
+
+  return fetch(`https://www.googleapis.com/customsearch/v1?key=${GOOGLE_SEARCH_KEY}&cx=${GOOGLE_SEARCH_ID}&searchType=image&num=${maxResults}&q=${encodeURIComponent(query)}`)
     .then((response) => response.json())
     .then((result) => result)
     .catch((error) => {
