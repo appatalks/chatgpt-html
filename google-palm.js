@@ -74,7 +74,7 @@ function palmSend() {
 	if (imagePlaceholders) {
   	  for (let i = 0; i < Math.min(imagePlaceholders.length, 3); i++) {
     	  const placeholder = imagePlaceholders[i];
-    	  const searchQuery = placeholder.substring(10, placeholder.length - 3).trim();
+    	  const searchQuery = placeholder.substring(10, placeholder.length - 3).trim(); // Remove the "[Image of" and "]"
          //     console.log("Search query:", searchQuery);
 
               try {
