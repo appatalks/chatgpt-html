@@ -93,6 +93,8 @@ function palmSend() {
                 console.error("Error fetching image:", error);
               }
             }
+		  formattedResult = formattedResult.replace(imagePlaceholderRegex, "").trim();
+		  formattedResult = formattedResult.replace(/\n{2,}/g, "\n").trim();
           }
 
           //  document.getElementById("txtOutput").innerHTML += `Eva: ${formattedResult}\n`;
