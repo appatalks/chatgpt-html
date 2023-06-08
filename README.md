@@ -2,8 +2,7 @@
 -- Now has Google PaLM API (Bard)
 
 -- Optional Support with AWS Polly and Google Search APIs.
-
-![Screenshot_new](Screenshot_new.png)
+![screenshot-catdog](screenshot-catdog.png)
 
 v.1.3b
 
