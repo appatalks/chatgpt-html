@@ -72,9 +72,9 @@ function palmSend() {
        //   console.log("Image placeholders:", imagePlaceholders);
 
 	if (imagePlaceholders) {
-  	  for (let i = 0; i < Math.min(imagePlaceholders.length, 1); i++) {
+  	  for (let i = 0; i < Math.min(imagePlaceholders.length, 3); i++) {
     	  const placeholder = imagePlaceholders[i];
-    	  const searchQuery = placeholder.substring(10, placeholder.length - 1).trim();
+    	  const searchQuery = placeholder.substring(10, placeholder.length - 3).trim();
          //     console.log("Search query:", searchQuery);
 
               try {
