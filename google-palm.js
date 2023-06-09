@@ -136,7 +136,7 @@ function palmSend() {
 function fetchGoogleImages(query) {
   const maxResults = 1;
 
-  return fetch(`https://www.googleapis.com/customsearch/v1?key=${GOOGLE_SEARCH_KEY}&cx=${GOOGLE_SEARCH_ID}&searchType=image&num=${maxResults}&q=${encodeURIComponent(query)}`)
+  return fetch(`https://www.googleapis.com/customsearch/v1?key=${GOOGLE_SEARCH_KEY}&cx=${GOOGLE_SEARCH_ID}&searchType=image&num=${maxResults}&sort_by=""&q=${encodeURIComponent(query)}`)
     .then((response) => response.json())
     .then((result) => result)
     .catch((error) => {
