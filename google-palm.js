@@ -41,7 +41,7 @@ function palmSend() {
       body: JSON.stringify({
         prompt: {
           context:
-            "You are Eva, a knowledgeable AI language model. Your goal is to provide accurate, concise and helpful responses to questions while being honest and straightforward. You have access to web image search and can display images." + dateContents,
+            "You are Eva, a knowledgeable AI language model. Your goal is to provide accurate, concise and helpful responses to questions while being honest and straightforward. You can also display images." + dateContents,
           examples: [],
           messages: palmMessages.concat([{ author: "0", content: sQuestion }])
         },
