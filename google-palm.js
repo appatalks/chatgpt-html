@@ -86,7 +86,7 @@ function palmSend() {
                   const topImage = searchResult.items[0];
                   const imageLink = topImage.link;
              //     console.log("Top image link:", imageLink);
-	       formattedResult = formattedResult.replace(placeholder, `<img src="${imageLink}" alt="${searchQuery}">`);
+	       formattedResult = formattedResult.replace(placeholder, `<img src="${imageLink}" title="${searchQuery}" alt="${searchQuery}">`);
 //	formattedResult = formattedResult.replace(placeholder,`<img src="${imageLink}" alt="${searchQuery}" class="palm-image" data-link="${imageLink}">`);
                 }
               } catch (error) {
