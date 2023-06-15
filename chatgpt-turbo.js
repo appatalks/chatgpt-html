@@ -108,7 +108,7 @@ function trboSend() {
     	      }
 		
 	      // Google Image Search 
-	      if (s.content.includes("Image")) {
+	      if (s.content.includes("Image of")) {
 
 		let formattedResult = s.content.replace(/\n\n/g, "\n").trim();
 		const imagePlaceholderRegex = /\[(Image of (.*?))\]/g;
@@ -132,9 +132,13 @@ function trboSend() {
             	  }
         	 txtOutput.innerHTML += "<br>" + "Eva: " + formattedResult;
           	}
+		else {
+		    txtOutput.innerHTML += "<br>" + "Eva: " + s.content.trim();
+		  }
+		} else {
+		  txtOutput.innerHTML += "<br>" + "Eva: " + s.content.trim();
  	      }	
        	
-	txtOutput.innerHTML += "<br>" + "Eva: " + s.content.trim() ;
 
             // Send to Local Storage - possibly way to intigrate into memory
 	    let outputWithoutTags = txtOutput.innerText + "\n";
