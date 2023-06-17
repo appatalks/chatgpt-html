@@ -164,7 +164,9 @@ function trboSend() {
     var sModel = selModel.value; 
     var iMaxTokens = 1420; 
 	if (sModel === "gpt-4-32k") {
-    	   iMaxTokens = 32768;
+    	   iMaxTokens = 28420;
+	} else if (sModel === "gpt-3.5-turbo-16k") {
+    	    iMaxTokens = 12420;
 	}
     var dTemperature = 0.7; 
     var eFrequency_penalty = 0.0; 
