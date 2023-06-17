@@ -1,21 +1,17 @@
 # ChatGPT HTML - Using OpenAI APIs; 
--- Now has Google PaLM API (Bard)
-
--- Optional Support with AWS Polly and Google Search APIs.
 ![screenshot-catdog](screenshot-catdog.png)
 
-v.1.3b
-
-Expiremental: - Suno-Ai's Bark TTS Engine Added. Run server.py (GPU Enabled)
+v.1.4
 
 This allows you to easily interact with the OpenAI API.
 
 ## Getting Started
 
-1. Add your OpenAI API key and AWS Keys to the "OPENAI_API_KEY" variable and (optinally) AWS and Google Keys in config.json. 
+1. Add your OpenAI API key to the "OPENAI_API_KEY" variable and (optinally) AWS, Google Keys in config.json for additional functionality. 
 2. Open chatgpt.html and have fun!
-3. **Note: You may have to review/adjust the code for your specific env. ie CIDR ranges, NGINX/webserver configuration,scripting piece etc.**
-
+3. Optional: - Suno-Ai's Bark TTS Engine Added. Run server.py (GPU Enabled)
+4. **Note: You may have to review/adjust the code for your specific env. ie CIDR ranges, NGINX/webserver configuration,scripting piece etc.**
+   
 ## Features
 
 - GPT-4 Support (Needs Testing)
@@ -24,6 +20,7 @@ This allows you to easily interact with the OpenAI API.
 - Convert to Speech using Amazon Polly's Text-to-Speech service.
 - Suno-Ai's Bark TTS Added
 - Use Google Search with the Keyword "Google"
+- Images served with Google Image Search
 - Additional scraped data with scripts
 - Basic Error handling
 
