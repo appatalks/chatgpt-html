@@ -46,7 +46,7 @@ function updateButton() {
     var selModel = document.getElementById("selModel");
     var btnSend = document.getElementById("btnSend");
 
-    if (selModel.value == "gpt-3.5-turbo" || selModel.value == "gpt-4" || selModel.value == "gpt-4-32k") {
+    if (selModel.value == "gpt-3.5-turbo" || selModel.value == "gpt-3.5-turbo-16k" || selModel.value == "gpt-4" || selModel.value == "gpt-4-32k") {
         btnSend.onclick = function() {
             clearText();
             trboSend();
