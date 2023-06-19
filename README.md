@@ -16,6 +16,7 @@ This allows you to easily interact with the OpenAI API.
 
 - GPT-4 Support (Needs Testing)
 - Google PaLM Support added (Bard)
+- Google Vision API added (AI Image processing)
 - Model Selection, Multiple languages, and Print Conversation.
 - Convert to Speech using Amazon Polly's Text-to-Speech service.
 - Suno-Ai's Bark TTS Added
