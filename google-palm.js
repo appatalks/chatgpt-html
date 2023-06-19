@@ -6,7 +6,6 @@ function palmSend() {
   // Remove occurrences of the specific syntax from the txtMsg element
 	txtMsg.innerHTML = txtMsg.innerHTML.replace(/<div[^>]*>.*<\/div>/g, '');
 
-
   function auth() {
     return fetch('./config.json')
       .then(response => response.json())
@@ -23,6 +22,8 @@ function palmSend() {
 
   var sQuestion = document.getElementById("txtMsg").innerHTML;
   sQuestion = sQuestion.replace(/<br>/g, "\n");
+  cleanedQuestion = sQuestion.replace(/<[^>]+>/g, "");
+  console.log(sQuestion); 
 
   if (sQuestion.trim() == "") {
     alert("Type in your question!");
@@ -99,7 +100,7 @@ function palmSend() {
 
           palmMessages.push({
             author: "0",
-            content: sQuestion
+            content: cleanedQuestion
           });
 
           palmMessages.push({
