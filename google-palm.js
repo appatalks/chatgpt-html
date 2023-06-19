@@ -2,6 +2,11 @@
 // For Google PaLM API ie Bard
 
 function palmSend() {
+
+  // Remove occurrences of the specific syntax from the txtMsg element
+	txtMsg.innerHTML = txtMsg.innerHTML.replace(/<div[^>]*>.*<\/div>/g, '');
+
+
   function auth() {
     return fetch('./config.json')
       .then(response => response.json())
@@ -68,26 +73,21 @@ function palmSend() {
        //   console.log("Formatted result:", formattedResult);
 
           const imagePlaceholderRegex = /\[Image of (.*?)\]/g;
-       //   const imagePlaceholders = formattedResult.match(imagePlaceholderRegex);
  	  const imagePlaceholders = formattedResult.match(imagePlaceholderRegex)?.slice(0, 3);
-       //   console.log("Image placeholders:", imagePlaceholders);
 
 	if (imagePlaceholders) {
   	  for (let i = 0; i < Math.min(imagePlaceholders.length, 3); i++) {
     	  const placeholder = imagePlaceholders[i];
     	  const searchQuery = placeholder.substring(10, placeholder.length - 1).trim();
          //     console.log("Search query:", searchQuery);
-
               try {
                 const searchResult = await fetchGoogleImages(searchQuery);
            //     console.log("Search result:", searchResult);
-
                 if (searchResult && searchResult.items && searchResult.items.length > 0) {
                   const topImage = searchResult.items[0];
                   const imageLink = topImage.link;
              //     console.log("Top image link:", imageLink);
 	       formattedResult = formattedResult.replace(placeholder, `<img src="${imageLink}" title="${searchQuery}" alt="${searchQuery}">`);
-//	formattedResult = formattedResult.replace(placeholder,`<img src="${imageLink}" alt="${searchQuery}" class="palm-image" data-link="${imageLink}">`);
                 }
               } catch (error) {
                 console.error("Error fetching image:", error);
@@ -96,8 +96,6 @@ function palmSend() {
 		  formattedResult = formattedResult.replace(imagePlaceholderRegex, "").trim();
 		  formattedResult = formattedResult.replace(/\n{2,}/g, "\n").trim();
           }
-
-          //  document.getElementById("txtOutput").innerHTML += `Eva: ${formattedResult}\n`;
 
           palmMessages.push({
             author: "0",
