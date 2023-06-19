@@ -10,6 +10,7 @@ var userMasterResponse = "";
 var aiMasterResponse = "";
 var masterOutput = "";
 var storageAssistant = "";
+var imgSrcGlobal; // Declare a global variable for img.src
 
 // Error Handling Variables
 var retryCount = 0;
@@ -24,6 +25,7 @@ fetch('./config.json')
    OPENAI_API_KEY = config.OPENAI_API_KEY;
    GOOGLE_SEARCH_KEY = config.GOOGLE_SEARCH_KEY;
    GOOGLE_SEARCH_ID = config.GOOGLE_SEARCH_ID;
+   GOOGLE_VISION_KEY = config.GOOGLE_VISION_KEY;
    AWS.config.region = config.AWS_REGION;
    AWS.config.credentials = new AWS.Credentials(config.AWS_ACCESS_KEY_ID, config.AWS_SECRET_ACCESS_KEY);
  });
@@ -199,51 +201,123 @@ function insertImage() {
   var imgInput = document.getElementById('imgInput');
   var txtMsg = document.getElementById('txtMsg');
 
-function addImage(file) {
-  // Create a new image element
-  var img = document.createElement("img");
+  function addImage(file) {
+    // Create a new image element
+    var img = document.createElement("img");
 
-  // Set the image source to the file object
-  img.src = URL.createObjectURL(file);
+    // Set the image source to the file object
+    img.src = URL.createObjectURL(file);
 
-  // Append the image to the txtMsg element
-  txtMsg.appendChild(img);
+    // Assign the img.src value to the global variable
+    imgSrcGlobal = img.src;
 
-  // Return the file object
-  return file;
+    // Append the image to the txtMsg element
+    txtMsg.appendChild(img);
+
+    // Read the file as a data URL
+    var reader = new FileReader();
+    reader.onloadend = function() {
+      var imageData = reader.result;
+      // Send the Base64-encoded image data to Google's Vision API
+      sendToVisionAPI(imageData);
+    };
+    reader.readAsDataURL(file);
+
+    // Return the file object
+    //return file;
+  }
+
+  function sendToVisionAPI(imageData) {
+    // Send the image data to Google's Vision API
+    var visionApiUrl = `https://vision.googleapis.com/v1/images:annotate?key=${GOOGLE_VISION_KEY}`;
+
+    // Create the API request payload
+    var requestPayload = {
+      requests: [
+        {
+          image: {
+            content: imageData.split(",")[1] // Extract the Base64-encoded image data from the data URL
+          },
+          features: [
+            {
+              type: "LABEL_DETECTION",
+              maxResults: 3
+            }
+          ]
+        }
+      ]
+    };
+
+    // Make the API request
+    fetch(visionApiUrl, {
+      method: "POST",
+      body: JSON.stringify(requestPayload)
+    })
+      .then(response => response.json())
+      .then(data => {
+        // Handle the API response here
+	interpretVisionResponse(data);
+        console.log(data);
+      })
+      .catch(error => {
+        // Handle any errors that occurred during the API request
+        console.error("Error:", error);
+      });
+  }
+
+  function interpretVisionResponse(data) {
+    // Extract relevant information from the Vision API response
+    // and pass it to ChatGPT for interpretation
+    var labels = data.responses[0].labelAnnotations;
+
+    // Prepare the text message to be sent to ChatGPT
+    var message = "I see the following labels in the image:\n";
+    labels.forEach(label => {
+      message += "- " + label.description + "\n";
+    });
+	
+  // Create a hidden element to store the Vision API response
+  var hiddenElement = document.createElement("div");
+  hiddenElement.style.display = "none";
+  hiddenElement.textContent = message;
+
+  // Append the hidden element to the txtMsg element
+  txtMsg.appendChild(hiddenElement);
+
 }
 
-function handleFileSelect(event) {
-  event.preventDefault();
 
-  // Get the file object
-  var file = event.dataTransfer.files[0];
+  function handleFileSelect(event) {
+    event.preventDefault();
 
-  // Call addImage() function with the file object
-  addImage(file);
-}
+    // Get the file object
+    var file = event.dataTransfer.files[0];
 
-function handleDragOver(event) {
-  event.preventDefault();
-}
+    // Call addImage() function with the file object
+    addImage(file);
+  }
 
-imgInput.addEventListener("change", function() {
-  // Get the file input element
-  var fileInput = document.getElementById("imgInput");
+  function handleDragOver(event) {
+    event.preventDefault();
+  }
 
-  // Get the file object
-  var file = fileInput.files[0];
+  imgInput.addEventListener("change", function() {
+    // Get the file input element
+    var fileInput = document.getElementById("imgInput");
 
-  // Call addImage() function with the file object
-  addImage(file);
-  
-  // Get the uploaded file object and store it in a variable
-     // Might be able to pass this to gpt-4.. Not sure.
-  var uploadedFile = addImage(file);
-});
+    // Get the file object
+    var file = fileInput.files[0];
 
-txtMsg.addEventListener("dragover", handleDragOver);
-txtMsg.addEventListener("drop", handleFileSelect);
+    // Call addImage() function with the file object
+    addImage(file);
+
+    // Get the uploaded file object and store it in a variable
+    // Might be able to pass this to gpt-4.. Not sure.
+    var uploadedFile = addImage(file);
+  });
+
+  txtMsg.addEventListener("dragover", handleDragOver);
+  txtMsg.addEventListener("drop", handleFileSelect);
 }
 
 // AWS Polly
