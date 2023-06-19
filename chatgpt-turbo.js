@@ -273,6 +273,7 @@ function trboSend() {
 		    txtOutput.innerHTML += "You: " + sQuestion; 
 		    txtOutput.appendChild(responseImage);
 		    txtMsg.innerHTML = "";
+
     		});
 	  return;
 	}
@@ -302,13 +303,32 @@ function trboSend() {
     // console.log("chatgpt-turbo.js Line 255" + JSON.stringify(data));
 
     // Relay Send to Screen
-var responseImage = document.createElement("img");
-    responseImage.src = imgSrcGlobal;
 
-    if (txtOutput.innerHTML != "") txtOutput.innerHTML += "\n";
-    txtOutput.innerHTML += "You: " + sQuestion;
-    txtOutput.appendChild(responseImage);
-    txtMsg.innerHTML = "";
+//var responseImage = document.createElement("img");
+//    responseImage.src = imgSrcGlobal;
+//
+//    if (txtOutput.innerHTML != "") txtOutput.innerHTML += "\n";
+//    txtOutput.innerHTML += "You: " + sQuestion;
+//    // txtOutput.appendChild(responseImage);
+//	
+//	if (responseImage.src && responseImage.src !== "undefined") {
+//	  txtOutput.appendChild(responseImage);
+//	}
+//   txtMsg.innerHTML = "";
+if (imgSrcGlobal) {
+  var responseImage = document.createElement("img");
+  responseImage.src = imgSrcGlobal;
+
+  if (txtOutput.innerHTML != "") txtOutput.innerHTML += "\n";
+  txtOutput.innerHTML += "You: " + sQuestion;
+
+  txtOutput.appendChild(responseImage);
+} else {
+
+txtOutput.innerHTML += "You: " + sQuestion;
+txtMsg.innerHTML = "";
+}
+
 }
 
 // Google Image Seach
