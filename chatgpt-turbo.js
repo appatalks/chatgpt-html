@@ -4,6 +4,9 @@
 // gpt-3.5-turbo + gpt-4 API Call 
 function trboSend() {
 
+  // Remove occurrences of the specific syntax from the txtMsg element
+	txtMsg.innerHTML = txtMsg.innerHTML.replace(/<img\b[^>]*>/g, '');
+
   var sQuestion = txtMsg.innerHTML;
     sQuestion = sQuestion.replace(/<br>/g, "\n");
   if (sQuestion.trim() == "") {
@@ -178,7 +181,7 @@ function trboSend() {
     if (!localStorage.getItem("messages")) {
       // If it does not exist, create an array with the initial messages
       const iMessages = [
-        { role: 'system', content: 'You are Eva. You have access to previous chats and responses. You also have access to updated real-time news and information. You will keep conversation to a minimum and answer to the best of your abilities. An image of an object can be shown with an \"[Image of ]\" tag.' },
+        { role: 'system', content: 'You are Eva. You have access to previous chats and responses. You also have access to updated real-time news and information. You can describe images from additional proceessing. You will keep conversation to a minimum and answer to the best of your abilities. An image of an object can be shown with an \"[Image of ]\" tag.' },
         { role: 'user', content: selPers.value + " " + dateContents },
       ];
 
@@ -262,8 +265,13 @@ function trboSend() {
 		        stop: hStop
 		    }
 		    oHttp.send(JSON.stringify(data));
+
+			var responseImage = document.createElement("img");
+			    responseImage.src = imgSrcGlobal;
+
 		    if (txtOutput.innerHTML != "") txtOutput.innerHTML += "\n";
-		    txtOutput.innerHTML += "You: " + sQuestion;
+		    txtOutput.innerHTML += "You: " + sQuestion; 
+		    txtOutput.appendChild(responseImage);
 		    txtMsg.innerHTML = "";
     		});
 	  return;
@@ -294,8 +302,12 @@ function trboSend() {
     // console.log("chatgpt-turbo.js Line 255" + JSON.stringify(data));
 
     // Relay Send to Screen
+var responseImage = document.createElement("img");
+    responseImage.src = imgSrcGlobal;
+
     if (txtOutput.innerHTML != "") txtOutput.innerHTML += "\n";
     txtOutput.innerHTML += "You: " + sQuestion;
+    txtOutput.appendChild(responseImage);
     txtMsg.innerHTML = "";
 }
 
