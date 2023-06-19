@@ -5,5 +5,6 @@
     "GOOGLE_SEARCH_KEY": "",
     "GOOGLE_SEARCH_ID": "",
     "GOOGLE_PALM_KEY": "",
+    "GOOGLE_VISION_KEY": "",
     "OPENAI_API_KEY": ""
 }
