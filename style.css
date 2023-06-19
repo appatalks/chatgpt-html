@@ -56,7 +56,7 @@ body {
 }
 
 #txtOutput img {
-  width: 350px;
+  width: 250px;
   height: auto;
 }
 
@@ -134,4 +134,4 @@ body {
   display: none;
   z-index: 1;
   background-color: transparent;
-} 
+}
