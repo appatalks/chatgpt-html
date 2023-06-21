@@ -232,21 +232,31 @@ function insertImage() {
     var visionApiUrl = `https://vision.googleapis.com/v1/images:annotate?key=${GOOGLE_VISION_KEY}`;
 
     // Create the API request payload
-    var requestPayload = {
-      requests: [
-        {
-          image: {
-            content: imageData.split(",")[1] // Extract the Base64-encoded image data from the data URL
+  var requestPayload = {
+    requests: [
+      {
+        image: {
+          content: imageData.split(",")[1] // Extract the Base64-encoded image data from the data URL
+        },
+        features: [
+          {
+            type: "LABEL_DETECTION",
+            maxResults: 3
           },
-          features: [
-            {
-              type: "LABEL_DETECTION",
-              maxResults: 3
-            }
-          ]
-        }
-      ]
-    };
+          {
+            type: "TEXT_DETECTION"
+          },
+          {
+            type: "OBJECT_LOCALIZATION",
+            maxResults: 3
+          },
+          {
+            type: "LANDMARK_DETECTION"
+          }
+        ]
+      }
+    ]
+  };
 
     // Make the API request
     fetch(visionApiUrl, {
@@ -269,12 +279,39 @@ function insertImage() {
     // Extract relevant information from the Vision API response
     // and pass it to ChatGPT for interpretation
     var labels = data.responses[0].labelAnnotations;
+    var textAnnotations = data.responses[0].textAnnotations;
+    var localizedObjects = data.responses[0].localizedObjectAnnotations;
+    var landmarkAnnotations = data.responses[0].landmarkAnnotations;
 
     // Prepare the text message to be sent to ChatGPT
     var message = "I see the following labels in the image:\n";
     labels.forEach(label => {
       message += "- " + label.description + "\n";
     });
+  // Add text detection information to the message
+  if (textAnnotations && textAnnotations.length > 0) {
+    message += "\nText detected:\n";
+    textAnnotations.forEach(text => {
+      message += "- " + text.description + "\n";
+    });
+  }
+
+  // Add object detection information to the message
+  if (localizedObjects && localizedObjects.length > 0) {
+    message += "\nObjects detected:\n";
+    localizedObjects.forEach(object => {
+      message += "- " + object.name + "\n";
+    });
+  }
+
+  // Add landmark detection information to the message
+  if (landmarkAnnotations && landmarkAnnotations.length > 0) {
+    message += "\nLandmarks detected:\n";
+    landmarkAnnotations.forEach(landmark => {
+      message += "- " + landmark.description + "\n";
+    });
+  }
+
 	
   // Create a hidden element to store the Vision API response
   var hiddenElement = document.createElement("div");
