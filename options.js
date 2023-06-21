@@ -177,6 +177,10 @@ function mobile_txtmsd() {
       txtMsg.style.minHeight = "169px";
       txtMsg.style.width = "90%";
 
+              var input = document.getElementById("imgInput");
+              input.style.display = "block";
+
+
       // Mic Button
       let micButton = document.querySelector(".mic-button");
       micButton.style.top = "-49px";
