@@ -271,7 +271,7 @@ function insertImage() {
       .then(data => {
         // Handle the API response here
 	interpretVisionResponse(data);
-        console.log(data);
+        // console.log(data);
       })
       .catch(error => {
         // Handle any errors that occurred during the API request
@@ -350,7 +350,7 @@ function insertImage() {
     var file = fileInput.files[0];
 
     // Call addImage() function with the file object
-    addImage(file);
+    // addImage(file);
 
     // Get the uploaded file object and store it in a variable
     // Might be able to pass this to gpt-4.. Not sure.
@@ -467,7 +467,7 @@ function clearText(){
 function printMaster() {
     // Get the content of the textarea masterOutput
     var textareaContent = document.getElementById("txtOutput").innerHTML = masterOutput;
-        console.log(masterOutput);
+        // console.log(masterOutput);
     var printWindow = window.open();
         printWindow.document.write(txtOutput.innerHTML.replace(/\n/g, "<br>"));
         printWindow.print();
