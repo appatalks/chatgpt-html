@@ -7,7 +7,7 @@ This allows you to easily interact with the OpenAI API.
 
 ## Getting Started
 
-1. Add your OpenAI API key to the "OPENAI_API_KEY" variable and (optinally) AWS, Google Keys in config.json for additional functionality. 
+1. Add your OpenAI API key to the "OPENAI_API_KEY" variable and (optionally) AWS, Google Keys in config.json for additional functionality. 
 2. Open chatgpt.html and have fun!
 3. Optional: - Suno-Ai's Bark TTS Engine Added. Run server.py (GPU Enabled)
 4. **Note: You may have to review/adjust the code for your specific env. ie CIDR ranges, NGINX/webserver configuration,scripting piece etc.**
