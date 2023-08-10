@@ -1,7 +1,7 @@
 # ChatGPT HTML - Using OpenAI APIs; 
 ![screenshot-catdog](screenshot-catdog.png)
 
-v.1.5a
+v.1.6a
 
 This allows you to easily interact with the OpenAI API.
 
@@ -14,7 +14,7 @@ This allows you to easily interact with the OpenAI API.
    
 ## Features
 
-- GPT-4 Support (Needs Testing)
+- GPT-4 Support
 - Google PaLM Support added (Bard)
 - Google Vision API added (AI Image processing)
 - Model Selection, Multiple languages, and Print Conversation.
@@ -26,7 +26,7 @@ This allows you to easily interact with the OpenAI API.
 - Basic Error handling
 
 ## Bugs
-- actively on the look out for these
+- Check Issues
 - Response with "usage":{"completion_tokens":420} causes weird display bug on-screen.
 - **Not for Production use (really messy code, likely security concerns, all-over-the-place, good playgroud and learning tho!)**
 
