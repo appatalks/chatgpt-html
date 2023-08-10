@@ -107,7 +107,7 @@ function trboSend() {
 		document.getElementById("txtMsg").innerHTML = sQuestion;
 		clearText();
     		Send();
-		selectElement.value = "gpt-3.5-turbo";
+		selectElement.value = "gpt-4";
     	      }
 		
 	      // Google Image Search 
@@ -304,17 +304,6 @@ function trboSend() {
 
     // Relay Send to Screen
 
-//var responseImage = document.createElement("img");
-//    responseImage.src = imgSrcGlobal;
-//
-//    if (txtOutput.innerHTML != "") txtOutput.innerHTML += "\n";
-//    txtOutput.innerHTML += "You: " + sQuestion;
-//    // txtOutput.appendChild(responseImage);
-//	
-//	if (responseImage.src && responseImage.src !== "undefined") {
-//	  txtOutput.appendChild(responseImage);
-//	}
-//   txtMsg.innerHTML = "";
 if (imgSrcGlobal) {
   var responseImage = document.createElement("img");
   responseImage.src = imgSrcGlobal;
