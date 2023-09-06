@@ -73,18 +73,17 @@
 
 	<button type="button" onclick="sendData()" id="btnSend">Send</button>
 	    <select id="selModel" onchange="updateButton()">
-		<option value="gpt-4" title="Default option">gpt-4</option>
-		<option value="gpt-3.5-turbo" title="gpt-3.5-turbo">gpt-3.5-turbo</option>
+		<option value="gpt-3.5-turbo" title="Default">gpt-3.5-turbo</option>
 		<option value="gpt-3.5-turbo-16k" title="gpt-3.5-turbo-16k">gpt-3.5-turbo-16k</option>
+		<option value="gpt-4" title="GPT 4">gpt-4</option>
 		<option value="palm" title="Google PaLM ie Bard">palm</option>
 		<option value="gpt-4-32k" title="Advanced model with larger memory size. * Highest API Cost *">gpt-4-32k</option>
-		<option value="text-davinci-003" title="Recommended fallback option">text-davinci-003</option>
             </select>
 
             <select id="selPers" onchange="ChangeLang(this)"> 
-                <option value="You are Eva, a knowledgeable AI language model. Your goal is to provide accurate, and helpful responses to questions, while being honest and straightforward. You have access to updated real-time news and information. " title="Eva's Default Personality.">Default</option>
+                <option value="You are Eva, a knowledgeable AI language model. Your goal is to provide accurate, and helpful responses to questions, while being honest and straightforward. You have access to provide updated real-time news, information and media. " title="Eva's Default Personality.">Default</option>
                 <option value="Eva is a large language model. Browsing: enabled. Instructions: Answer factual questions concisely. You have access to updated real-time news and information. " title="Eva will answer concisely">Concise</option> 
-                <option value="You are Eva. Your function is to generate human-like text based on the inputs given, and your goal is to assist users in generating informative, helpful and engaging responses to questions and requests. Please provide a detailed response with lists, where applicable. You have access to updated real-time news and information. " title="Eva will give detailed responses.">Advanced</option>   
+                <option value="You are Eva. Your function is to generate human-like text based on the inputs given, and your goal is to assist users in generating informative, helpful and engaging responses to questions and requests. Please provide a detailed response with lists, where applicable. You have access to updated real-time news, information and media. " title="Eva will give detailed responses.">Advanced</option>   
 		<option value="I want you to act as a linux terminal. I will type commands and you will reply with what the terminal should show. I want you to only reply with the terminal output inside one unique code block, and nothing else. do not write explanations. do not type commands unless I instruct you to do so. when i need to tell you something in english, i will do so by putting text inside curly brackets {like this}. my first command is pwd" title="Emulate a Linux Bash Shell">Linux Terminal</option>
             </select> 
 		<button  onclick="printMaster()">Print Output</button>
