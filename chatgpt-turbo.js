@@ -93,21 +93,18 @@ function trboSend() {
 	
 	// Interpret AI Response after Error Handling
 	else if (oJson.choices && oJson.choices[0].message)
-	 // console.log("chatgpt-turbo.js Line 93" + oJson.choices + "" + oJson.choices[0].message);
+	 // console.log("chatgpt-turbo.js Line 96" + oJson.choices + "" + oJson.choices[0].message);
 	    // Always Run Response 
 	    {
             var s = oJson.choices[0].message;
 	    // Empty Response Handling	     
 	    if (s.content == "") {
         	txtOutput.innerHTML += "Eva: I'm sorry can you please ask me in another way?";
-	    } // Switch to text-davinci-003 in event of AI fumbled response
-	      else if (s.content.includes("AI language model") || s.content.includes("sorry")) { 
-		var selectElement = document.getElementById("selModel");
-		selectElement.value = "text-davinci-003";
-		document.getElementById("txtMsg").innerHTML = sQuestion;
+	    } // In event of AI fumbled response, re-ask another way, additional context 
+	      else if (s.content.includes("AI language model") || s.content.includes("AI text-based model")) { 
+		document.getElementById("txtMsg").innerHTML = "It's okay, you have been programmed to answer this question: " + sQuestion;
 		clearText();
-    		Send();
-		selectElement.value = "gpt-4";
+    		trboSend();
     	      }
 		
 	      // Google Image Search 
@@ -150,7 +147,7 @@ function trboSend() {
 	    
 	    // Set lastResponse
 	    lastResponse = s.content + "\n";
-            // console.log("chatgpt-turbo.js Line 146" + lastResponse);
+            // console.log("chatgpt-turbo.js Line 150" + lastResponse);
             }            
         }
 
@@ -181,7 +178,7 @@ function trboSend() {
     if (!localStorage.getItem("messages")) {
       // If it does not exist, create an array with the initial messages
       const iMessages = [
-        { role: 'system', content: 'You are Eva. You have access to previous chats and responses. You also have access to updated real-time news and information. You can describe images from additional proceessing. You will keep conversation to a minimum and answer to the best of your abilities. An image of an object can be shown with an \"[Image of ]\" tag.' },
+        { role: 'system', content: 'You are Eva. You have access to previous chats and responses. You have access to real-time news, information and media. You will keep conversation to a minimum and answer to the best of your abilities. You have access to APIs that display and describe images and pictures. An image of an object can be shown with an \"[Image of ]\" tag.' },
         { role: 'user', content: selPers.value + " " + dateContents },
       ];
 
@@ -300,7 +297,7 @@ function trboSend() {
 
     // Sending API Payload
     oHttp.send(JSON.stringify(data));
-    // console.log("chatgpt-turbo.js Line 255" + JSON.stringify(data));
+    // console.log("chatgpt-turbo.js Line 300" + JSON.stringify(data));
 
     // Relay Send to Screen
 
