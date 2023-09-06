@@ -101,7 +101,7 @@ function trboSend() {
 	    if (s.content == "") {
         	txtOutput.innerHTML += "Eva: I'm sorry can you please ask me in another way?";
 	    } // In event of AI fumbled response, re-ask another way, additional context 
-	      else if (s.content.includes("AI language model") || s.content.includes("AI text-based model")) { 
+	      else if (s.content.includes("AI language model") || s.content.includes("I apologize") || s.content.includes("AI text-based model")) { 
 		document.getElementById("txtMsg").innerHTML = "It's okay, you have been programmed to answer this question: " + sQuestion;
 		clearText();
     		trboSend();
