@@ -6,19 +6,19 @@
 <meta http-equiv="Expires" content="0" />
 <head>
     <title>Eva - ChatGPT</title>
-<script src="options.js"></script>
-<script src="external.js"></script>
-<script src="chatgpt.js"></script>
-<script src="chatgpt-turbo.js"></script>
-<script src="google-palm.js"></script> 
-<script src="aws-sdk-2.1304.0.min.js"></script>
+<script src="core/js/options.js"></script>
+<script src="core/js/external.js"></script>
+<script src="core/js/chatgpt.js"></script>
+<script src="core/js/chatgpt-turbo.js"></script>
+<script src="core/js/gl-google.js"></script> 
+<script src="core/js/aws-sdk-2.1304.0.min.js"></script>
  <script>
   auth();
   // Adjust for Mobile User Agents
   mobile_txtout();
   mobile_txtmsd();
 </script>
-<link rel="stylesheet" type="text/css" href="style.css">
+<link rel="stylesheet" type="text/css" href="core/style.css">
 </head>
 
 <center>
@@ -74,9 +74,11 @@
 	<button type="button" onclick="sendData()" id="btnSend">Send</button>
 	    <select id="selModel" onchange="updateButton()">
 		<option value="gpt-3.5-turbo" title="Default">gpt-3.5-turbo</option>
+		<option value="dall-e-3" title="Image Generation">DALL-E-3</option> 
 		<option value="gpt-3.5-turbo-16k" title="gpt-3.5-turbo-16k">gpt-3.5-turbo-16k</option>
 		<option value="gpt-4" title="GPT 4">gpt-4</option>
-		<option value="palm" title="Google PaLM ie Bard">palm</option>
+		<option value="gemini" title="Google Gemini">gemini</option>
+		<option value="palm" title="Legacy Google PaLM ie Bard">palm</option>
 		<option value="gpt-4-32k" title="Advanced model with larger memory size. * Highest API Cost *">gpt-4-32k</option>
             </select>
 
@@ -100,7 +102,7 @@
 
 </body>
 <footer>
-  <img id="eEgg" src="eEgg.gif" alt="Image" style="display:none;">
+  <img id="eEgg" src="core/img/eEgg.gif" alt="Image" style="display:none;">
 <!--  <button id="getUsageBtn" onclick="getOpenaiUsageNested()">Get OpenAI Usage</button> -->
   <button id="clearMessagesBtn" onclick="clearMessages()">Clear Memory</button>
   <pre id="usageData"></pre>

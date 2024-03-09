@@ -58,6 +58,11 @@ function updateButton() {
             clearText();
             palmSend();
         };
+    } else if (selModel.value == "gemini") {
+        btnSend.onclick = function() {
+            clearText();
+            geminiSend();
+        };
     } else {
         btnSend.onclick = function() {
             clearText();

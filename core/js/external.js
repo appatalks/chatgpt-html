@@ -1,7 +1,7 @@
 // Inital External Data Discovery
 
 // Current Date
-const dateFile = "date.data"; // relative path to the file
+const dateFile = "core/external/date.data"; // relative path to the file
 let dateContents; // create a variable to store the file contents
 fetch(dateFile)
   .then(response => response.text())
@@ -10,7 +10,7 @@ fetch(dateFile)
   })
 
 // Weather Report
-const weatherFile = "weather.data";
+const weatherFile = "core/external/weather.data";
 let weatherContents; 
  fetch(weatherFile)
    .then(response => response.text())
@@ -19,7 +19,7 @@ let weatherContents;
    })
 
 // Top Headline News
-const newsFile = "news.data";
+const newsFile = "core/external/news.data";
 let newsContents; 
  fetch(newsFile)
    .then(response => response.text())
@@ -28,7 +28,7 @@ let newsContents;
    })
 
 // Top Market Headlines
-const marketFile = "market.data"; 
+const marketFile = "core/external/market.data"; 
 let marketContents; 
  fetch(marketFile)
    .then(response => response.text())
@@ -37,7 +37,7 @@ let marketContents;
    })
 
 // Latest Solar Weather 
-const solarFile = "solar.data";
+const solarFile = "core/external/solar.data";
 let solarContents;
  fetch(solarFile)
    .then(response => response.text())
