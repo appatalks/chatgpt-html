@@ -1,7 +1,7 @@
 # ChatGPT HTML - Using OpenAI APIs; 
 ![screenshot-catdog](core/img/screenshot-catdog.png)
 
-v.1.7a
+v.2.0
 
 This allows you to easily interact with the OpenAI API.
 
