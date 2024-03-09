@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # Set File Path
-filepath=/var/www/html
+filepath=/usr/share/nginx/html/core/external/
 
 # Get today's date
 today=$(date +"%A, %B %dth, %Y")
@@ -24,6 +24,7 @@ dow_price=$(curl -s "https://query1.finance.yahoo.com/v8/finance/chart/DOW?inter
 qyld_price=$(curl -s "https://query1.finance.yahoo.com/v8/finance/chart/QYLD?interval=1d" | jq -r '.chart.result[0].meta | "Price: \(.regularMarketPrice) Change: " + (100 * (.regularMarketPrice - .chartPreviousClose) / .chartPreviousClose | tostring | split(".") | .[0] + "." + .[1][:3]) + "%"')
 ryld_price=$(curl -s "https://query1.finance.yahoo.com/v8/finance/chart/RYLD?interval=1d" | jq -r '.chart.result[0].meta | "Price: \(.regularMarketPrice) Change: " + (100 * (.regularMarketPrice - .chartPreviousClose) / .chartPreviousClose | tostring | split(".") | .[0] + "." + .[1][:3]) + "%"')
 
+
 # Marketpulse by Marketwatch.com
 marketpulse=$(curl -s "http://feeds.marketwatch.com/marketwatch/marketpulse/" | xmlstarlet sel -t -m "//item[position()<=5]" -v "title" -o $'\n' | sed 's/: *//g; s/$/./g')
 
@@ -34,14 +35,14 @@ spaceweather=$(curl -s https://services.swpc.noaa.gov/products/alerts.json | jq 
 # Write the data to external.data file
 #
 #
-echo "Today's date: $today " > $filepath/date.data
+echo "Today's date: $today" > $filepath/date.data
 
-echo "Weather for San Antonio, Texas: $weather " > $filepath/weather.data
+echo "Weather for San Antonio, Texas: $weather" > $filepath/weather.data
 
-echo "Top 5 news headlines: " > $filepath/news.data
+echo "Top 5 news headlines are: " > $filepath/news.data
 echo "$news " >> $filepath/news.data
 
-echo "Top 5 market headlines: " > $filepath/market.data
+echo "Top 5 market headlines are: " > $filepath/market.data
 echo "$marketpulse " >> $filepath/market.data 
 echo "SPY ticker $spy_price " >> $filepath/market.data
 echo "GOLD ticker $gold_price " >> $filepath/market.data
