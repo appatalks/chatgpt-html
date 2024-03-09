@@ -3,7 +3,7 @@ body {
   width: ;
   height: 800px;
   overflow: hidden;
-  background-image: url(background.jpg);
+  background-image: url(img/background.jpg);
   background-color: rgba(68,70,84);
   color: #fff;
   margin: 0; /* remove default margins */
@@ -75,7 +75,7 @@ body {
     height: ;
     display: flex;
     background-color: blue;
-    background-image: url(background.jpg);
+    background-image: url(img/background.jpg);
     background-size: ; /* set background-size to cover for mobile view */
   }
 }
@@ -91,7 +91,7 @@ body {
   position: absolute;
   top: -60px;
   right: -345px;
-  background-image: url('mic.png');
+  background-image: url('img/mic.png');
   background-repeat: no-repeat;
   background-size: contain;
   border: none;
@@ -124,7 +124,7 @@ body {
   height: 45px;
   top: -65px;
   right: -345px;
-  background-image: url(https://hoshisato.com/ai/generated/page/2/thumb/thumb-125.jpeg);
+  background-image: url(img/thumb-125.jpeg);
   background-size: contain;
 }
 
@@ -134,4 +134,5 @@ body {
   display: none;
   z-index: 1;
   background-color: transparent;
-}
+} 
+
