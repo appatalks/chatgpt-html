@@ -1,5 +1,5 @@
 # ChatGPT HTML - Using OpenAI APIs; 
-![screenshot-catdog](screenshot-catdog.png)
+![screenshot-catdog](core/img/screenshot-catdog.png)
 
 v.1.6a
 
