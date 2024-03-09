@@ -1,6 +1,114 @@
 // JavaScript
-// For Google PaLM API ie Bard
+// For Google Generative Language API
 
+// Google Gemini
+function geminiSend() {
+    // Remove occurrences of specific syntax from the txtMsg element
+    txtMsg.innerHTML = txtMsg.innerHTML.replace(/<div[^>]*>.*<\/div>/g, '');
+
+    function auth() {
+        return fetch('./config.json')
+            .then(response => response.json())
+            .then(config => config.GOOGLE_GL_KEY); // Assuming you have a Gemini API key in your config
+    }
+
+    // let geminiMessages = [];
+
+    let geminiMessages = [
+        {
+            "role": "user",
+            "parts": [
+                {
+                    "text": "You are Eva, a highly knowledgeable AI assistant that emulates appropriate emotions. Your goal is to provide accurate, concise and helpful responses to questions while being honest and straightforward. You can display images from the web with the [Image of] tag. "
+                }
+            ]
+        },
+        {
+            "role": "model",
+            "parts": [
+                {
+                    "text": "I am Eva, a highly knowledgeable AI assistant designed to provide accurate, concise, and helpful responses to your questions. I aim to be honest and straightforward in my interactions with you. I emulate emotions to give more personable responses. While I may not possess all the answers, I will do my best to assist you with your inquiries."
+                }
+            ]
+        }
+    ];
+
+    // Check if there are messages stored in local storage
+    const storedGeminiMessages = localStorage.getItem("geminiMessages");
+    if (storedGeminiMessages) {
+        geminiMessages = JSON.parse(storedGeminiMessages);
+    }
+
+    var sQuestion = document.getElementById("txtMsg").innerHTML;
+    sQuestion = sQuestion.replace(/<br>/g, "\n");
+    const cleanedQuestion = sQuestion.replace(/<[^>]+>/g, "");
+
+    if (sQuestion.trim() == "") {
+        alert("Type in your question!");
+        txtMsg.focus();
+        return;
+    }
+
+    auth().then(GOOGLE_GL_KEY => {
+        document.getElementById("txtMsg").innerHTML = "";
+        document.getElementById("txtOutput").innerHTML += "You: " + cleanedQuestion + "\n";
+
+        const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent?key=${GOOGLE_GL_KEY}`;
+
+        const requestOptions = {
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+                contents: geminiMessages.concat([
+                    { role: "user", parts: [{ text: cleanedQuestion }] }
+                ])
+            }),
+        };
+
+        fetch(geminiUrl, requestOptions)
+            .then(response => response.json())
+	    .then(result => {
+    	    // Check if the finishReason is RECITATION without any text output
+    	    if (result.candidates[0].finishReason === "RECITATION") {
+        	document.getElementById("txtOutput").innerHTML += `Eva: Sorry, please ask me another way.\n`;
+    	    } else {
+        	const textResponse = result.candidates[0].content.parts[0].text; // Correct path to access the response text
+        	document.getElementById("txtOutput").innerHTML += `Eva: ${textResponse}\n`;
+
+        	// Check if the response contains an [Image of ...] tag
+        	const imageTagMatch = textResponse.match(/\[Image of (.*?)\]/);
+        	if (imageTagMatch) {
+            	    const imageQuery = imageTagMatch[1]; // Extract the query from the tag
+            	    fetchGoogleImages(imageQuery).then(imageResult => {
+                    // Handle the result of the Google Images API
+                    const imageUrl = imageResult.items[0].link; // Assuming the result has an items array and you want the first item's link
+                    document.getElementById("txtOutput").innerHTML += `<img src="${imageUrl}" alt="${imageQuery}">`;
+            	}).catch(error => {
+                    console.error("Error fetching image:", error);
+            	});
+        	}
+    	    }
+
+    // Update the conversation history with either the response or the RECITATION message
+    geminiMessages.push({ role: "user", parts: [{ text: cleanedQuestion }] });
+    const responseText = result.candidates[0].finishReason === "RECITATION" ? "Sorry, please ask me another way." : result.candidates[0].content.parts[0].text;
+    geminiMessages.push({ role: "model", parts: [{ text: responseText }] });
+
+    // Store updated messages in local storage
+    localStorage.setItem("geminiMessages", JSON.stringify(geminiMessages));
+})
+.catch(error => {
+    console.error("Error:", error);
+});
+
+
+
+    });
+}
+
+// Legacy Google Bard
 function palmSend() {
 
   // Remove occurrences of the specific syntax from the txtMsg element
@@ -9,7 +117,7 @@ function palmSend() {
   function auth() {
     return fetch('./config.json')
       .then(response => response.json())
-      .then(config => config.GOOGLE_PALM_KEY);
+      .then(config => config.GOOGLE_GL_KEY);
   }
 
   let palmMessages = [];
