@@ -1,7 +1,7 @@
 # ChatGPT HTML - Using OpenAI APIs; 
 ![screenshot-catdog](core/img/screenshot-catdog.png)
 
-v.1.6a
+v.1.7a
 
 This allows you to easily interact with the OpenAI API.
 
@@ -15,7 +15,8 @@ This allows you to easily interact with the OpenAI API.
 ## Features
 
 - GPT-4 Support
-- Google PaLM Support added (Bard)
+- Google Gemini Added
+- Google PaLM Legacy Support
 - Google Vision API added (AI Image processing)
 - Model Selection, Multiple languages, and Print Conversation.
 - Convert to Speech using Amazon Polly's Text-to-Speech service.
