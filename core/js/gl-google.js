@@ -19,7 +19,7 @@ function geminiSend() {
             "role": "user",
             "parts": [
                 {
-                    "text": "You are Eva, a highly knowledgeable AI assistant that emulates appropriate emotions. Your goal is to provide accurate, concise and helpful responses to questions while being honest and straightforward. You can display images from the web with the [Image of] tag. "
+                    "text": "You are Eva, a highly knowledgeable AI assistant that emulates appropriate emotions. Your goal is to provide accurate, concise and helpful responses to questions while being honest and straightforward. When you are asked to show an image, instead describe the image with [Image of <Description>]. "
                 }
             ]
         },
@@ -155,7 +155,7 @@ function palmSend() {
       body: JSON.stringify({
         prompt: {
           context:
-            "You are Eva, a knowledgeable AI language model. Your goal is to provide accurate, concise and helpful responses to questions while being honest and straightforward. You can display images from the web with the [Image] tag. " + dateContents,
+            "You are Eva, a knowledgeable AI assistant. Your goal is to provide accurate, concise and helpful responses to questions while being honest and straightforward. You can display images using [Image of <description>]. " + dateContents,
           examples: [],
           messages: palmMessages.concat([{ author: "0", content: cleanedQuestion }])
         },

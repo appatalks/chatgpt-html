@@ -230,8 +230,30 @@ function insertImage() {
     var reader = new FileReader();
     reader.onloadend = function() {
       var imageData = reader.result;
-      // Send the Base64-encoded image data to Google's Vision API
-      sendToVisionAPI(imageData);
+
+      // Choose where to send Base64-encoded image
+      var selModel = document.getElementById("selModel");
+      var btnSend = document.getElementById("btnSend");
+      
+      // Send to gpt-4-vision-preview (Work in progress)
+      if (selModel.value == "gpt-3.5-turbo" || selModel.value == "gpt-3.5-turbo-16k" || selModel.value == "gpt-4-turbo-preview") {
+	  sendToVisionAPI(imageData);
+	  // sentTo-gpt-4-vision(imageData);
+          btnSend.onclick = function() {
+	      updateButton();
+	      sendData();
+	      clearSendText();
+          };
+      } else if (selModel.value == "palm") {
+	  // Send Legacy PaLM to Google Vision (Gemini has built in label detection)
+	  sendToVisionAPI(imageData);
+          btnSend.onclick = function() {
+	      updateButton();
+	      sendData();
+	      clearSendText();
+          };
+      }	
+
     };
     reader.readAsDataURL(file);
 
@@ -244,31 +266,31 @@ function insertImage() {
     var visionApiUrl = `https://vision.googleapis.com/v1/images:annotate?key=${GOOGLE_VISION_KEY}`;
 
     // Create the API request payload
-  var requestPayload = {
-    requests: [
-      {
-        image: {
-          content: imageData.split(",")[1] // Extract the Base64-encoded image data from the data URL
-        },
-        features: [
-          {
-            type: "LABEL_DETECTION",
-            maxResults: 3
+    var requestPayload = {
+      requests: [
+        {
+          image: {
+            content: imageData.split(",")[1] // Extract the Base64-encoded image data from the data URL
           },
-          {
-            type: "TEXT_DETECTION"
-          },
-          {
-            type: "OBJECT_LOCALIZATION",
-            maxResults: 3
-          },
-          {
-            type: "LANDMARK_DETECTION"
-          }
-        ]
-      }
-    ]
-  };
+          features: [
+            {
+              type: "LABEL_DETECTION",
+              maxResults: 3
+            },
+            {
+              type: "TEXT_DETECTION"
+            },
+            {
+              type: "OBJECT_LOCALIZATION",
+              maxResults: 3
+            },
+            {
+              type: "LANDMARK_DETECTION"
+            }
+          ]
+        }
+      ]
+    };
 
     // Make the API request
     fetch(visionApiUrl, {
@@ -300,38 +322,37 @@ function insertImage() {
     labels.forEach(label => {
       message += "- " + label.description + "\n";
     });
-  // Add text detection information to the message
-  if (textAnnotations && textAnnotations.length > 0) {
-    message += "\nText detected:\n";
-    textAnnotations.forEach(text => {
-      message += "- " + text.description + "\n";
-    });
-  }
+    // Add text detection information to the message
+    if (textAnnotations && textAnnotations.length > 0) {
+      message += "\nText detected:\n";
+      textAnnotations.forEach(text => {
+        message += "- " + text.description + "\n";
+      });
+    }
 
-  // Add object detection information to the message
-  if (localizedObjects && localizedObjects.length > 0) {
-    message += "\nObjects detected:\n";
-    localizedObjects.forEach(object => {
-      message += "- " + object.name + "\n";
-    });
-  }
+    // Add object detection information to the message
+    if (localizedObjects && localizedObjects.length > 0) {
+      message += "\nObjects detected:\n";
+      localizedObjects.forEach(object => {
+        message += "- " + object.name + "\n";
+      });
+    }
 
-  // Add landmark detection information to the message
-  if (landmarkAnnotations && landmarkAnnotations.length > 0) {
-    message += "\nLandmarks detected:\n";
-    landmarkAnnotations.forEach(landmark => {
-      message += "- " + landmark.description + "\n";
-    });
-  }
-
+    // Add landmark detection information to the message
+    if (landmarkAnnotations && landmarkAnnotations.length > 0) {
+      message += "\nLandmarks detected:\n";
+      landmarkAnnotations.forEach(landmark => {
+        message += "- " + landmark.description + "\n";
+      });
+    }
 	
-  // Create a hidden element to store the Vision API response
-  var hiddenElement = document.createElement("div");
-  hiddenElement.style.display = "none";
-  hiddenElement.textContent = message;
+    // Create a hidden element to store the Vision API response
+    var hiddenElement = document.createElement("div");
+    hiddenElement.style.display = "none";
+    hiddenElement.textContent = message;
 
-  // Append the hidden element to the txtMsg element
-  txtMsg.appendChild(hiddenElement);
+    // Append the hidden element to the txtMsg element
+    txtMsg.appendChild(hiddenElement);
 
 }
 
@@ -469,6 +490,10 @@ if (speechParams.Engine === "bark") {
 // After Send clear the message box
 function clearText(){
     document.getElementById("txtOutput").innerHTML = "";
+}
+
+function clearSendText(){
+    document.getElementById("txtMsg").innerHTML = "";
 }
 
 // Print full conversation

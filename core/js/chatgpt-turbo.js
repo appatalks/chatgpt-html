@@ -302,19 +302,17 @@ function trboSend() {
 
     // Relay Send to Screen
 
-if (imgSrcGlobal) {
-  var responseImage = document.createElement("img");
-  responseImage.src = imgSrcGlobal;
-
-  if (txtOutput.innerHTML != "") txtOutput.innerHTML += "\n";
+  if (imgSrcGlobal) {
+    var responseImage = document.createElement("img");
+    responseImage.src = imgSrcGlobal;
+    if (txtOutput.innerHTML != "") txtOutput.innerHTML += "\n";
+    txtOutput.innerHTML += "You: " + sQuestion;
+    txtOutput.appendChild(responseImage);
+  } else {
   txtOutput.innerHTML += "You: " + sQuestion;
-
-  txtOutput.appendChild(responseImage);
-} else {
-
-txtOutput.innerHTML += "You: " + sQuestion;
-txtMsg.innerHTML = "";
-}
+  txtMsg.innerHTML = "";
+  }
+  imgSrcGlobal = '';
 
 }
 
