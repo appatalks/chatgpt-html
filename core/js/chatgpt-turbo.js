@@ -1,7 +1,7 @@
 // Javascript
 // For OpenAI API
 
-// gpt-3.5-turbo + gpt-4 API Call 
+// gpt-3.5-turbo + gpt-4-turbo API Call 
 function trboSend() {
 
   // Remove occurrences of the specific syntax from the txtMsg element
@@ -164,8 +164,8 @@ function trboSend() {
     // payload parameters
     var sModel = selModel.value; 
     var iMaxTokens = 1420; 
-	if (sModel === "gpt-4-32k") {
-    	   iMaxTokens = 28420;
+	if (sModel === "gpt-4-turbo-preview") {
+    	   iMaxTokens = 4096;
 	} else if (sModel === "gpt-3.5-turbo-16k") {
     	    iMaxTokens = 12420;
 	}
@@ -179,7 +179,7 @@ function trboSend() {
     if (!localStorage.getItem("messages")) {
       // If it does not exist, create an array with the initial messages
       const iMessages = [
-        { role: 'system', content: 'You are Eva. You have access to previous chats and responses. You have access to real-time news, information and media. You will keep conversation to a minimum and answer to the best of your abilities. You have access to APIs that display and describe images and pictures. An image of an object can be shown with an \"[Image of ]\" tag.' },
+        { role: 'system', content: 'You are Eva. You have access to previous chats and responses. You have access to real-time news, information and media. You will keep conversation to a minimum and answer to the best of your abilities. When you are asked to show an image, instead describe the image with [Image of <Description>].' },
         { role: 'user', content: selPers.value + " " + dateContents },
       ];
 

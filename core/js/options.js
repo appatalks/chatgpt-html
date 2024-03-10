@@ -1,8 +1,5 @@
 // Javascript for Options
 // 
-// // Sections
-// Variables
-// API Access[OpenAI, AWS, Google Custom Search]
 
 // Global Variables
 var lastResponse = "";
@@ -48,7 +45,7 @@ function updateButton() {
     var selModel = document.getElementById("selModel");
     var btnSend = document.getElementById("btnSend");
 
-    if (selModel.value == "gpt-3.5-turbo" || selModel.value == "gpt-3.5-turbo-16k" || selModel.value == "gpt-4" || selModel.value == "gpt-4-32k") {
+    if (selModel.value == "gpt-3.5-turbo" || selModel.value == "gpt-3.5-turbo-16k" || selModel.value == "gpt-4-turbo-preview") {
         btnSend.onclick = function() {
             clearText();
             trboSend();
@@ -71,14 +68,20 @@ function updateButton() {
     }
 }
 
+
 function sendData() {
+    // Logic required for initial message
     var selModel = document.getElementById("selModel");
-    if (selModel.value == "gpt-3.5-turbo" || selModel.value == "gpt-4" || selModel.value == "gpt-4-32k") {
+
+    if (selModel.value == "gpt-3.5-turbo" || selModel.value == "gpt-3.5-turbo-16k" || selModel.value == "gpt-4-turbo-preview") {
         clearText();
         trboSend();
     } else if (selModel.value == "palm") {
         clearText();
         palmSend();
+    } else if (selModel.value == "gemini") {
+        clearText();
+        geminiSend();
     } else {
         clearText();
         Send();
@@ -416,7 +419,7 @@ if (speechParams.Engine === "bark") {
     });
     
     //audioElement.play();
-// Check if the old audio file exists and delete it
+    // Check if the old audio file exists and delete it
     const checkRequest = new XMLHttpRequest();
     checkRequest.open('HEAD', 'https://192.168.86.30/audio/bark_audio.wav', true);
     checkRequest.onreadystatechange = function() {
@@ -534,72 +537,4 @@ function startSpeechRecognition() {
     // remove the 'pulsate' class from the micButton to stop the pulsating animation
     micButton.classList.remove('pulsate');
   };
-}
-
-// Get Account Usage Information 
-// Billing
-async function getOpenaiBillUsage(apiKey, start_date, end_date) {
-  var oKey = OPENAI_API_KEY;
-
-  const headers = {
-    'Authorization': `Bearer ${oKey}`,
-    'Content-Type': 'application/json',
-  };
-
-  if (!start_date) {
-    const today = new Date();
-    const year = today.getFullYear();
-    const month = today.getMonth();
-    start_date = new Date(year, month, 1).toISOString().slice(0, 10);
-  }
-
-  if (!end_date) {
-    const today = new Date();
-    today.setDate(today.getDate() + 1);
-    end_date = today.toISOString().slice(0, 10);
-  }
-
-  // Get the current usage
-  const usageResponse = await fetch(
-    `https://api.openai.com/dashboard/billing/usage?start_date=${start_date}&end_date=${end_date}`,
-    {
-      headers,
-    }
-  );
-  if (usageResponse.status === 200) {
-    const usageData = await usageResponse.json();
-    const totalUsage = usageData.total_usage;
-    const formattedUsage = (totalUsage / 100 + 0.01).toFixed(2);
-    document.getElementById("txtOutput").innerHTML = `\n\n\n  Month's Current Spend: $${formattedUsage}`;
-  } else {
-    throw new Error(`Failed to retrieve OpenAI usage data: ${await usageResponse.text()}`);
-  }
-
-  // Get the hard limit
-  const subscriptionResponse = await fetch(
-    `https://api.openai.com/dashboard/billing/subscription`,
-    {
-      headers,
-    }
-  );
-  if (subscriptionResponse.status === 200) {
-    const subscriptionData = await subscriptionResponse.json();
-    const hardLimitUsd = parseFloat(subscriptionData.hard_limit_usd);
-    const formattedHardLimit = hardLimitUsd.toFixed(2);
-    document.getElementById("txtOutput").innerHTML += ` / $${formattedHardLimit}`;
-  } else {
-    throw new Error(`Failed to retrieve OpenAI subscription data: ${await subscriptionResponse.text()}`);
-  }
-}
-
-// Token Usage // Disabled
-async function getOpenaiUsage(apiKey, start_date, end_date) {
-// Place Holder 
-}
-
-// Tie the API together
-function getOpenaiUsageNested() {
-  getOpenaiBillUsage();
-  // getOpenaiUsage(); Not very useful information to show here. maybe "current_usage_usd": 0.0
-  // Placer
 }
