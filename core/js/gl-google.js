@@ -53,7 +53,7 @@ function geminiSend() {
         document.getElementById("txtMsg").innerHTML = "";
         document.getElementById("txtOutput").innerHTML += "You: " + cleanedQuestion + "\n";
 
-        const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent?key=${GOOGLE_GL_KEY}`;
+        const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.0-pro-latest:generateContent?key=${GOOGLE_GL_KEY}`;
 
         const requestOptions = {
             method: "POST",
