@@ -41,11 +41,67 @@ function OnLoad() {
 }
 
 // Select Engine Completion Endpoint
+// Assuming there's an input field with id "userQuestion" for the user's question
+function autoSelect() {
+    var userQuestionElement = document.getElementById("txtMsg").innerHTML;
+    if (!userQuestionElement) {
+        console.error('userQuestion element not found.');
+        return; // Exit the function if the element does not exist
+    }
+    var userInput = userQuestionElement; // Get the user's question
+    console.error(userQuestionElement);
+    // Check if userInput is indeed a string
+    if (typeof userInput === "string") {
+        var selModel = document.getElementById("selModel"); 
+
+    // Simple heuristic to select a model based on the user's input
+    if (userInput.length > 500) {
+        selModel.value = "gpt-3.5-turbo-16k";  // Long queries might not need more token resources
+    } 
+    else if (userInput.includes("code") || userInput.includes("programming") || userInput.includes("debug") || userInput.includes("bash") || userInput.includes("python") || userInput.includes("javascript") || userInput.includes("script") || userInput.includes("langauge") || userInput.includes("한글") || userInput.includes("weather") || userInput.includes("news") || userInput.includes("space") || userInput.includes("solar") || userInput.includes("javascript") || userInput.includes("stock") || userInput.includes("markets") || userInput.includes("symbol") || userInput.includes("ticker") || userInput.includes("Google") || userInput.includes("google") || userInput.includes("date") || userInput.includes("math") || userInput.includes("fraction") || userInput.includes("problem")) {
+        selModel.value = "gpt-4-turbo-preview"; // For coding-related, math, logic, reasoning, language tasks.
+    } 
+    else if (userInput.includes("story") || userInput.includes("imagine") || userInput.includes("gemini")) {
+        selModel.value = "gemini"; // For complex queries, a different model could be preferred
+    } 
+    else {
+        selModel.value = "gemini"; // Default to a Google Gemin
+    }
+
+    // Now trigger the appropriate send function based on the selected model
+    switch (selModel.value) {
+        case "gpt-3.5-turbo":
+        case "gpt-3.5-turbo-16k":
+        case "gpt-4-turbo-preview":
+            trboSend();
+            break;
+        case "palm":
+            palmSend();
+            break;
+        case "gemini":
+            geminiSend();
+            break;
+        default:
+            Send();
+    }
+    // Reset back to auto
+    selModel.value = "auto";
+} else {
+        console.error('userInput is not a string. Actual type:', typeof userInput);
+    }
+}
+
+
 function updateButton() {
     var selModel = document.getElementById("selModel");
     var btnSend = document.getElementById("btnSend");
 
-    if (selModel.value == "gpt-3.5-turbo" || selModel.value == "gpt-3.5-turbo-16k" || selModel.value == "gpt-4-turbo-preview") {
+    if (selModel.value == "auto") {
+        btnSend.onclick = function() {
+            clearText();
+            autoSelect();
+        };
+    } else if (selModel.value == "gpt-3.5-turbo" || selModel.value == "gpt-3.5-turbo-16k" || selModel.value == "gpt-4-turbo-preview") {
         btnSend.onclick = function() {
             clearText();
             trboSend();
@@ -73,7 +129,10 @@ function sendData() {
     // Logic required for initial message
     var selModel = document.getElementById("selModel");
 
-    if (selModel.value == "gpt-3.5-turbo" || selModel.value == "gpt-3.5-turbo-16k" || selModel.value == "gpt-4-turbo-preview") {
+    if (selModel.value == "auto") {
+	clearText();
+        autoSelect();
+    } else if (selModel.value == "gpt-3.5-turbo" || selModel.value == "gpt-3.5-turbo-16k" || selModel.value == "gpt-4-turbo-preview") {
         clearText();
         trboSend();
     } else if (selModel.value == "palm") {
