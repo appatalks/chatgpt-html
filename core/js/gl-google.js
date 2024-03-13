@@ -51,7 +51,9 @@ function geminiSend() {
 
     auth().then(GOOGLE_GL_KEY => {
         document.getElementById("txtMsg").innerHTML = "";
-        document.getElementById("txtOutput").innerHTML += "You: " + cleanedQuestion + "\n";
+        document.getElementById("txtOutput").innerHTML += '<span class="user">You: </span>' + cleanedQuestion + "<br>" + "\n";
+	var element = document.getElementById("txtOutput");
+        element.scrollTop = element.scrollHeight;
 
         const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.0-pro-latest:generateContent?key=${GOOGLE_GL_KEY}`;
 
@@ -72,11 +74,15 @@ function geminiSend() {
 	    .then(result => {
     	    // Check if the finishReason is RECITATION without any text output
     	    if (result.candidates[0].finishReason === "RECITATION") {
-        	document.getElementById("txtOutput").innerHTML += `Eva: Sorry, please ask me another way.\n`;
+        	// document.getElementById("txtOutput").innerHTML += `Eva: Sorry, please ask me another way.\n`;
+        	document.getElementById("txtOutput").innerHTML += '<span class="eva">Eva: Sorry, please ask me another way.</span>' + `\n`;
+                var element = document.getElementById("txtOutput");
+                element.scrollTop = element.scrollHeight;
     	    } else {
         	const textResponse = result.candidates[0].content.parts[0].text; // Correct path to access the response text
-        	document.getElementById("txtOutput").innerHTML += `Eva: ${textResponse}\n`;
-
+        	document.getElementById("txtOutput").innerHTML += '<span class="eva">Eva: </span>' + `${textResponse}`;
+                var element = document.getElementById("txtOutput");
+                element.scrollTop = element.scrollHeight;
         	// Check if the response contains an [Image of ...] tag
         	const imageTagMatch = textResponse.match(/\[Image of (.*?)\]/);
         	if (imageTagMatch) {
@@ -85,6 +91,8 @@ function geminiSend() {
                     // Handle the result of the Google Images API
                     const imageUrl = imageResult.items[0].link; // Assuming the result has an items array and you want the first item's link
                     document.getElementById("txtOutput").innerHTML += `<img src="${imageUrl}" alt="${imageQuery}">`;
+                    var element = document.getElementById("txtOutput");
+                    element.scrollTop = element.scrollHeight;
             	}).catch(error => {
                     console.error("Error fetching image:", error);
             	});
@@ -141,11 +149,15 @@ function palmSend() {
 
   const MODEL_NAME = "chat-bison-001";
 
-  auth().then(GOOGLE_PALM_KEY => {
+  auth().then(GOOGLE_GL_KEY => {
     document.getElementById("txtMsg").innerHTML = "";
-    document.getElementById("txtOutput").innerHTML += "You: " + sQuestion + "\n";
+//    document.getElementById("txtOutput").innerHTML += "You: " + sQuestion + "\n";
+    document.getElementById("txtOutput").innerHTML += '<span class="user">You: </span>' + sQuestion + "<br>" + "\n";
+    var element = document.getElementById("txtOutput");
+    element.scrollTop = element.scrollHeight;
 
-    const gapiUrl = `https://generativelanguage.googleapis.com/v1beta2/models/${MODEL_NAME}:generateMessage?key=${GOOGLE_PALM_KEY}`;
+
+    const gapiUrl = `https://generativelanguage.googleapis.com/v1beta2/models/${MODEL_NAME}:generateMessage?key=${GOOGLE_GL_KEY}`;
 
     const requestOptions = {
       method: "POST",
@@ -224,7 +236,9 @@ function palmSend() {
               formattedResult += `\n${index + 1}. ${citation.uri}`;
             });
           }
-	document.getElementById("txtOutput").innerHTML += `Eva: ${formattedResult}\n`;
+	document.getElementById("txtOutput").innerHTML += '<span class="eva">Eva: </span>' + `${formattedResult}`;
+        var element = document.getElementById("txtOutput");
+        element.scrollTop = element.scrollHeight;
         }
 
         // Store updated messages in local storage

@@ -49,7 +49,7 @@ function autoSelect() {
         return; // Exit the function if the element does not exist
     }
     var userInput = userQuestionElement; // Get the user's question
-    console.error(userQuestionElement);
+    console.log(userQuestionElement);
     // Check if userInput is indeed a string
     if (typeof userInput === "string") {
         var selModel = document.getElementById("selModel"); 
@@ -58,7 +58,7 @@ function autoSelect() {
     if (userInput.length > 500) {
         selModel.value = "gpt-3.5-turbo-16k";  // Long queries might not need more token resources
     } 
-    else if (userInput.includes("code") || userInput.includes("programming") || userInput.includes("debug") || userInput.includes("bash") || userInput.includes("python") || userInput.includes("javascript") || userInput.includes("script") || userInput.includes("langauge") || userInput.includes("한글") || userInput.includes("weather") || userInput.includes("news") || userInput.includes("space") || userInput.includes("solar") || userInput.includes("javascript") || userInput.includes("stock") || userInput.includes("markets") || userInput.includes("symbol") || userInput.includes("ticker") || userInput.includes("Google") || userInput.includes("google") || userInput.includes("date") || userInput.includes("math") || userInput.includes("fraction") || userInput.includes("problem")) {
+    else if (userInput.includes("code") || userInput.includes("programming") || userInput.includes("debug") || userInput.includes("bash") || userInput.includes("python") || userInput.includes("javascript") || userInput.includes("script") || userInput.includes("langauge") || userInput.includes("한글") || userInput.includes("weather") || userInput.includes("news") || userInput.includes("space") || userInput.includes("solar") || userInput.includes("javascript") || userInput.includes("stock") || userInput.includes("markets") || userInput.includes("symbol") || userInput.includes("ticker") || userInput.includes("Google") || userInput.includes("google") || userInput.includes("date") || userInput.includes("math") || userInput.includes("fraction") || userInput.includes("problem") || userInput.includes("+") || userInput.includes("=")) {
         selModel.value = "gpt-4-turbo-preview"; // For coding-related, math, logic, reasoning, language tasks.
     } 
     else if (userInput.includes("story") || userInput.includes("imagine") || userInput.includes("gemini")) {
@@ -469,10 +469,25 @@ function speakText() {
 
     // Let's speak only the response.
     let text = document.getElementById("txtOutput").innerHTML;
-    let textArr = text.split('Eva:');
-    if(textArr.length > 1){
-        speechParams.Text = textArr[1];
-    }else{
+
+    // Split the text by "Eva:" to get all of Eva's responses.
+    let textArr = text.split('<span class="eva">Eva:');
+
+    // Check if there are Eva's responses.
+    if (textArr.length > 1) {
+        // Take the last response from Eva.
+        let lastResponse = textArr[textArr.length - 1];
+
+        // Further process to remove any HTML tags and get pure text, if necessary.
+        // This step is crucial to avoid sending HTML tags to the speech API.
+        // Use a regular expression to remove HTML tags.
+        let cleanText = lastResponse.replace(/<\/?[^>]+(>|$)/g, "");
+
+        // Set the cleaned last response to the speechParams.Text.
+        speechParams.Text = cleanText.trim();
+    } else {
+        // Fallback to the entire text if there's no "Eva:" found.
+        // You might want to handle this case differently.
         speechParams.Text = text;
     }
 
@@ -481,46 +496,45 @@ function speakText() {
 
 
     // If selEngine is "bark", call barkTTS function
-if (speechParams.Engine === "bark") {
+    if (speechParams.Engine === "bark") {
 
-    const url = 'https://192.168.86.30/send-string';
-    const data = "WOMAN: " + textArr[1];
-    const xhr = new XMLHttpRequest();
-    xhr.responseType = 'blob';
+      const url = 'https://192.168.86.30/send-string';
+      const data = "WOMAN: " + textArr[1];
+      const xhr = new XMLHttpRequest();
+      xhr.responseType = 'blob';
 
-    xhr.onload = function() {
-
-    const audioElement = new Audio("./audio/bark_audio.wav");
-    audioElement.addEventListener("ended", function() {
-    // Delete the previous recording
-    const deleteRequest = new XMLHttpRequest();
-    deleteRequest.open('DELETE', 'https://192.168.86.30/audio/bark_audio.wav', true);
-    deleteRequest.send();
-    });
+      xhr.onload = function() {
+      const audioElement = new Audio("./audio/bark_audio.wav");
+      audioElement.addEventListener("ended", function() {
+      // Delete the previous recording
+      const deleteRequest = new XMLHttpRequest();
+      deleteRequest.open('DELETE', 'https://192.168.86.30/audio/bark_audio.wav', true);
+      deleteRequest.send();
+      });
     
-    //audioElement.play();
-    // Check if the old audio file exists and delete it
-    const checkRequest = new XMLHttpRequest();
-    checkRequest.open('HEAD', 'https://192.168.86.30/audio/bark_audio.wav', true);
-    checkRequest.onreadystatechange = function() {
-      if (checkRequest.readyState === 4) {
-        if (checkRequest.status === 200) {
-          // File exists, send delete request
-	    const deleteRequest = new XMLHttpRequest(); 
-    	    deleteRequest.open('DELETE', 'https://192.168.86.30/audio/bark_audio.wav', true);
-            deleteRequest.send();
+      //audioElement.play();
+      // Check if the old audio file exists and delete it
+      const checkRequest = new XMLHttpRequest();
+      checkRequest.open('HEAD', 'https://192.168.86.30/audio/bark_audio.wav', true);
+      checkRequest.onreadystatechange = function() {
+        if (checkRequest.readyState === 4) {
+          if (checkRequest.status === 200) {
+            // File exists, send delete request
+	      const deleteRequest = new XMLHttpRequest(); 
+    	      deleteRequest.open('DELETE', 'https://192.168.86.30/audio/bark_audio.wav', true);
+              deleteRequest.send();
+          }
+          // Start playing the new audio
+          audioElement.play();
         }
-        // Start playing the new audio
-        audioElement.play();
+      };
+      checkRequest.send();
       }
-    };
-    checkRequest.send();
+      xhr.open('POST', url, true);
+      xhr.setRequestHeader('Content-Type', 'text/plain');
+      xhr.send(data);
+      return;
     }
-    xhr.open('POST', url, true);
-    xhr.setRequestHeader('Content-Type', 'text/plain');
-    xhr.send(data);
-    return;
-}
 
     // Create the Polly service object and presigner object
     var polly = new AWS.Polly({apiVersion: '2016-06-10'});
@@ -548,7 +562,10 @@ if (speechParams.Engine === "bark") {
 
 // After Send clear the message box
 function clearText(){
-    document.getElementById("txtOutput").innerHTML = "";
+    // NEED TO ADJUST for MEMORY CLEAR
+    // document.getElementById("txtOutput").innerHTML = "";
+    var element = document.getElementById("txtOutput");
+    element.innerHTML += "<br><br>";     
 }
 
 function clearSendText(){
