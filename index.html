@@ -11,6 +11,7 @@
 <script src="core/js/chatgpt.js"></script>
 <script src="core/js/chatgpt-turbo.js"></script>
 <script src="core/js/gl-google.js"></script> 
+<script src="core/js/dalle3.js"></script> 
 <script src="core/js/aws-sdk-2.1304.0.min.js"></script>
  <script>
   auth();
@@ -31,7 +32,7 @@
 
     <div id="idContainer">
         <div id="textToSynth">
- 	  <div id="txtOutput" contenteditable="true" rows="10" wrap="soft" placeholder="Output"></div>
+ 	  <div id="txtOutput" rows="10" wrap="soft" placeholder="Output"></div>
           <div class="container">
 	    <button class="speakSend" onClick="speakText(); document.getElementById('audioPlayback').setAttribute('autoplay', true);" id="speakSend" title="Speak This"></button>
           </div>
@@ -73,7 +74,7 @@
 	    <select id="selModel" onchange="updateButton()">
 		<option value="auto" title="Default">auto</option>
 		<option value="gpt-3.5-turbo" title="gpt-3.5-turbo">gpt-3.5-turbo</option>
-		<option value="dall-e-3" title="Image Generation">DALL-E-3</option> 
+		<option value="dall-e-3" title="Image Generation">dall-e-3</option> 
 		<option value="gpt-3.5-turbo-16k" title="gpt-3.5-turbo-16k">gpt-3.5-turbo-16k</option>
 		<option value="gpt-4-turbo-preview" title="GPT-4-Turbo">gpt-4-turbo-preview</option>
 		<option value="gemini" title="Google Gemini">gemini</option>

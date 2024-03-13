@@ -41,7 +41,6 @@ function OnLoad() {
 }
 
 // Select Engine Completion Endpoint
-// Assuming there's an input field with id "userQuestion" for the user's question
 function autoSelect() {
     var userQuestionElement = document.getElementById("txtMsg").innerHTML;
     if (!userQuestionElement) {
@@ -52,21 +51,31 @@ function autoSelect() {
     console.log(userQuestionElement);
     // Check if userInput is indeed a string
     if (typeof userInput === "string") {
-        var selModel = document.getElementById("selModel"); 
+    	var selModel = document.getElementById("selModel");
 
-    // Simple heuristic to select a model based on the user's input
-    if (userInput.length > 500) {
-        selModel.value = "gpt-3.5-turbo-16k";  // Long queries might not need more token resources
-    } 
-    else if (userInput.includes("code") || userInput.includes("programming") || userInput.includes("debug") || userInput.includes("bash") || userInput.includes("python") || userInput.includes("javascript") || userInput.includes("script") || userInput.includes("langauge") || userInput.includes("한글") || userInput.includes("weather") || userInput.includes("news") || userInput.includes("space") || userInput.includes("solar") || userInput.includes("javascript") || userInput.includes("stock") || userInput.includes("markets") || userInput.includes("symbol") || userInput.includes("ticker") || userInput.includes("Google") || userInput.includes("google") || userInput.includes("date") || userInput.includes("math") || userInput.includes("fraction") || userInput.includes("problem") || userInput.includes("+") || userInput.includes("=")) {
-        selModel.value = "gpt-4-turbo-preview"; // For coding-related, math, logic, reasoning, language tasks.
-    } 
-    else if (userInput.includes("story") || userInput.includes("imagine") || userInput.includes("gemini")) {
-        selModel.value = "gemini"; // For complex queries, a different model could be preferred
-    } 
-    else {
-        selModel.value = "gemini"; // Default to a Google Gemin
-    }
+    	// Define keywords for different conditions
+    	const gptHuristics = ["code", "programming", "debug", "bash", "python", "javascript", "script", "language", "한글", "weather", "news", "space", "solar", "stock", "markets", "symbol", "ticker", "Google", "google", "date", "math", "fraction", "problem", "+", "="];
+    	
+	const glHuristics = ["story", "imagine", "gemini"];
+
+	const dalHuristics =["show me an image of", "create an image of"];
+
+    	// Simple heuristic to select a model based on the user's input
+    	if (userInput.length > 500) {
+            selModel.value = "gpt-3.5-turbo-16k"; // Long queries might not need more token resources
+    	} 
+    	else if (gptHuristics.some(keyword => userInput.includes(keyword))) {
+            selModel.value = "gpt-4-turbo-preview"; // For coding-related, math, logic, reasoning, language tasks.
+    	}
+    	else if (glHuristics.some(keyword => userInput.includes(keyword))) {
+            selModel.value = "gemini"; // For complex queries, a different model could be preferred
+    	}
+        else if (dalHuristics.some(keyword => userInput.includes(keyword))) {
+            selModel.value = "dall-e-3"; // For dall-e-3 generated images
+        }
+    	else {
+            selModel.value = "gemini"; // Default to a different model if none of the above conditions are met
+    	}
 
     // Now trigger the appropriate send function based on the selected model
     switch (selModel.value) {
@@ -81,12 +90,15 @@ function autoSelect() {
         case "gemini":
             geminiSend();
             break;
+        case "dall-e-3":
+            dalle3Send();
+            break;
         default:
             Send();
     }
     // Reset back to auto
     selModel.value = "auto";
-} else {
+    } else {
         console.error('userInput is not a string. Actual type:', typeof userInput);
     }
 }
@@ -116,14 +128,20 @@ function updateButton() {
             clearText();
             geminiSend();
         };
+    } else if (selModel.value == "dall-e-3") {
+        btnSend.onclick = function() {
+            clearText();
+            dalle3Send();
+        };
     } else {
         btnSend.onclick = function() {
             clearText();
-            Send();
+           // Send();
+	   document.getElementById("txtOutput").innerHTML = "\n" + "Invalid Model" 
+	   console.error('Invalid Model')
         };
     }
 }
-
 
 function sendData() {
     // Logic required for initial message
@@ -141,9 +159,14 @@ function sendData() {
     } else if (selModel.value == "gemini") {
         clearText();
         geminiSend();
+    } else if (selModel.value == "dall-e-3") {
+        clearText();
+        dalle3Send();
     } else {
         clearText();
-        Send();
+        // Send();
+        document.getElementById("txtOutput").innerHTML = "\n" + "Invalid Model"
+        console.error('Invalid Model')
     }
 }
 
@@ -414,7 +437,6 @@ function insertImage() {
     txtMsg.appendChild(hiddenElement);
 
 }
-
 
   function handleFileSelect(event) {
     event.preventDefault();
