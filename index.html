@@ -31,47 +31,45 @@
 
     <div id="idContainer">
         <div id="textToSynth">
- <div id="txtOutput" contenteditable="true" rows="10" wrap="soft" placeholder="Output"></div>
-	
-        <div class="container">
-	<button class="speakSend" onClick="speakText(); document.getElementById('audioPlayback').setAttribute('autoplay', true);" id="speakSend" title="Speak This"></button>
-        </div>
-
-        <select id="selEngine" onchange="ChangeLang(this)">
+ 	  <div id="txtOutput" contenteditable="true" rows="10" wrap="soft" placeholder="Output"></div>
+          <div class="container">
+	    <button class="speakSend" onClick="speakText(); document.getElementById('audioPlayback').setAttribute('autoplay', true);" id="speakSend" title="Speak This"></button>
+          </div>
+          <select id="selEngine" onchange="ChangeLang(this)">
             <option value="standard">Standard</option>
             <option value="neural">Neural</option>
 	    <option value="bark">Bark</option>
-        </select>
-        <select id="selVoice" onchange="ChangeLang(this)">
+          </select>
+          <select id="selVoice" onchange="ChangeLang(this)">
             <option value="Salli">English</option>
             <option value="Seoyeon">Korean</option>
             <option value="Mia">Spanish</option>
             <option value="Tatyana">Ukrainian</option>
-        </select>
+          </select>
 
-	<input type="checkbox" id="autoSpeak">Auto Speak</input>
-	<p id="result"></p>
-	</div>
+	  <input type="checkbox" id="autoSpeak">Auto Speak</input>
+	  <p id="result"></p>
+  	</div>
 
-	<audio id="audioPlayback" class="audio" controls>
-	<source id="audioSource" type="audio/mp3" src="">
-	</audio>
+      	<audio id="audioPlayback" class="audio" controls>
+      	<source id="audioSource" type="audio/mp3" src="">
+      	</audio>
 
-<p>
+	<p>
 
-  <input type="file" id="imgInput" style="display:;"> 
- <div id="txtMsg" contenteditable="true" rows="5" placeholder="Input Text"></div> 
-    <script>
-      insertImage();
-    </script>  
+  	<input type="file" id="imgInput" style="display:;"> 
+ 	<div id="txtMsg" contenteditable="true" rows="5" placeholder="Input Text"></div> 
+    
+	<script>
+      	  insertImage();
+    	</script>  
 
         <div>
+	  <div class="container">
+	    <button onclick="startSpeechRecognition()" id="micButton" class="mic-button"></button>
+	  </div>
 
-	<div class="container">
-	  <button onclick="startSpeechRecognition()" id="micButton" class="mic-button"></button>
-	</div>
-
-	<button type="button" onclick="sendData()" id="btnSend">Send</button>
+	  <button type="button" onclick="sendData()" id="btnSend">Send</button>
 	    <select id="selModel" onchange="updateButton()">
 		<option value="auto" title="Default">auto</option>
 		<option value="gpt-3.5-turbo" title="gpt-3.5-turbo">gpt-3.5-turbo</option>
@@ -83,31 +81,26 @@
             </select>
 
             <select id="selPers" onchange="ChangeLang(this)"> 
-                <option value="You are Eva, a knowledgeable AI language model. Your goal is to provide accurate, and helpful responses to questions, while being honest and straightforward. You have access to provide updated real-time news, information and media. " title="Eva's Default Personality.">Default</option>
+                <option value="You are Eva, a knowledgeable AI assistant. Your goal is to provide accurate, and helpful responses to questions, while being honest and straightforward. You have access to provide updated real-time news, information and media. " title="Eva's Default Personality.">Default</option>
                 <option value="Eva is a large language model. Browsing: enabled. Instructions: Answer factual questions concisely. You have access to updated real-time news and information. " title="Eva will answer concisely">Concise</option> 
                 <option value="You are Eva. Your function is to generate human-like text based on the inputs given, and your goal is to assist users in generating informative, helpful and engaging responses to questions and requests. Please provide a detailed response with lists, where applicable. You have access to updated real-time news, information and media. " title="Eva will give detailed responses.">Advanced</option>   
 		<option value="I want you to act as a linux terminal. I will type commands and you will reply with what the terminal should show. I want you to only reply with the terminal output inside one unique code block, and nothing else. do not write explanations. do not type commands unless I instruct you to do so. when i need to tell you something in english, i will do so by putting text inside curly brackets {like this}. my first command is pwd" title="Emulate a Linux Bash Shell">Linux Terminal</option>
             </select> 
 		<button  onclick="printMaster()">Print Output</button>
-
 	</div>
 
-<script>
-  // Capture CTRL + Enter Key Captures
-  shiftBreak();
-</script>
+	<script>
+  	  // Capture CTRL + Enter Key Captures
+  	  shiftBreak();
+	</script>
 
-<div id="idText"></div>
-</div>
+	<div id="idText"></div>
+    </div>
 
 </body>
 <footer>
   <img id="eEgg" src="core/img/eEgg.gif" alt="Image" style="display:none;">
-<!--  <button id="getUsageBtn" onclick="getOpenaiUsageNested()">Get OpenAI Usage</button> -->
   <button id="clearMessagesBtn" onclick="clearMessages()">Clear Memory</button>
-  <pre id="usageData"></pre>
-<!--  <input type="file" id="imgInput" style="display:none;"> -->
 </footer>
-
 </center>
 </html>
