@@ -45,7 +45,7 @@ body {
   padding: 10px;
   border: 1px solid #ccc;
   border-radius: 4px;
-  text-align: left;
+  text-align: left; 
   font-family: Arial, sans-serif;
   font-size: 16px;
   line-height: 1.5;
@@ -53,6 +53,23 @@ body {
   background-color: #fff;
   overflow-y: scroll;
   white-space: pre-wrap;
+}
+
+.message {
+  display: block; /* Makes the message a block-level element */
+  padding: 5px; /* Adds some padding around the messages */
+}
+
+.user {
+  color: #007bff; /* Blue color for the user */
+  font-weight: bold; /* Optional: makes the user text bold */
+  text-align: right;
+}
+
+.eva {
+  color: #28a745; /* Green color for Eva */
+  font-weight: bold; /* Optional: makes the Eva text bold */
+  text-align: left;
 }
 
 #txtOutput img {

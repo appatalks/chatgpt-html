@@ -99,7 +99,11 @@ function trboSend() {
             var s = oJson.choices[0].message;
 	    // Empty Response Handling	     
 	    if (s.content == "") {
-        	txtOutput.innerHTML += "Eva: I'm sorry can you please ask me in another way?";
+        	txtOutput.innerHTML += '<span class="eva">Eva: Im sorry can you please ask me in another way? </span>';
+                var element = document.getElementById("txtOutput");
+                // Automatically scroll to the bottom of the element
+                element.scrollTop = element.scrollHeight;
+
 	    } // In event of AI fumbled response, re-ask another way, additional context 
 	      // Some cases, would cause loop logic. Disabling while I figure out a better way
 	      // else if (s.content.includes("AI language model") || s.content.includes("I apologize") || s.content.includes("AI text-based model")) { 
@@ -131,13 +135,23 @@ function trboSend() {
                 console.error("Error fetching image:", error);
                 }
             	  }
-        	 txtOutput.innerHTML += "<br>" + "Eva: " + formattedResult;
+        	 // txtOutput.innerHTML += "<br>" + '<span class="eva">Eva: ' + formattedResult + '</span>';
+        	 txtOutput.innerHTML += "<br>" + '<span class="eva">Eva: </span>' + formattedResult;
+		   var element = document.getElementById("txtOutput");
+		   // Automatically scroll to the bottom of the element
+    		   element.scrollTop = element.scrollHeight;
           	}
 		else {
-		    txtOutput.innerHTML += "<br>" + "Eva: " + s.content.trim();
+		    txtOutput.innerHTML += "<br>" + '<span class="eva">Eva: </span>' + s.content.trim();
+                    var element = document.getElementById("txtOutput");
+                    // Automatically scroll to the bottom of the element
+                    element.scrollTop = element.scrollHeight;
 		  }
 		} else {
-		  txtOutput.innerHTML += "<br>" + "Eva: " + s.content.trim();
+		  txtOutput.innerHTML += "<br>" + '<span class="eva">Eva: </span>' + s.content.trim();
+                   var element = document.getElementById("txtOutput");
+                   // Automatically scroll to the bottom of the element
+                   element.scrollTop = element.scrollHeight;
  	      }	
        	
 
@@ -268,7 +282,8 @@ function trboSend() {
 			    responseImage.src = imgSrcGlobal;
 
 		    if (txtOutput.innerHTML != "") txtOutput.innerHTML += "\n";
-		    txtOutput.innerHTML += "You: " + sQuestion; 
+		    // txtOutput.innerHTML += '<span class="user">You: ' + sQuestion + '</span>'; 
+		    txtOutput.innerHTML += '<span class="user">You: </span>' + sQuestion; 
 		    txtOutput.appendChild(responseImage);
 		    txtMsg.innerHTML = "";
 
@@ -306,11 +321,15 @@ function trboSend() {
     var responseImage = document.createElement("img");
     responseImage.src = imgSrcGlobal;
     if (txtOutput.innerHTML != "") txtOutput.innerHTML += "\n";
-    txtOutput.innerHTML += "You: " + sQuestion;
+    // txtOutput.innerHTML += '<span class="user">You: ' + sQuestion + '</span>';
+    txtOutput.innerHTML += '<span class="user">You: </span>' + sQuestion;
     txtOutput.appendChild(responseImage);
   } else {
-  txtOutput.innerHTML += "You: " + sQuestion;
+  txtOutput.innerHTML += '<span class="user">You: </span>' + sQuestion;
   txtMsg.innerHTML = "";
+  var element = document.getElementById("txtOutput");
+    // Automatically scroll to the bottom of the element
+    element.scrollTop = element.scrollHeight;
   }
   imgSrcGlobal = '';
 
