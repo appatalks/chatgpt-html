@@ -103,7 +103,7 @@ function geminiSend() {
             	    fetchGoogleImages(imageQuery).then(imageResult => {
                     // Handle the result of the Google Images API
                     const imageUrl = imageResult.items[0].link; // Assuming the result has an items array and you want the first item's link
-                    document.getElementById("txtOutput").innerHTML += `<br><img src="${imageUrl}" alt="${imageQuery}">`;
+                    document.getElementById("txtOutput").innerHTML += `<br><a href="${imageUrl}" target="_blank"><img src="${imageUrl}" alt="${imageQuery}"></a>`;
                     var element = document.getElementById("txtOutput");
                     element.scrollTop = element.scrollHeight;
             	    }).catch(error => {
