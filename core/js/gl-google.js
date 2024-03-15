@@ -70,7 +70,20 @@ function geminiSend() {
         };
 
         fetch(geminiUrl, requestOptions)
-            .then(response => response.json())
+            // .then(response => response.json())
+	    .then(response => {
+            if (!response.ok) { // Check if the response status is not OK (e.g., 503, 404, etc.)
+                if (response.status === 503) {
+                    // Handle specific 503 error
+                    return Promise.reject(new Error('Error: 503 - The model is overloaded. Please try again later.'));
+                } else {
+                    // Handle other errors
+                    return Promise.reject(new Error('Error handling response.'));
+	            console.error("Error handling response", error);
+                }
+            }
+                return response.json();
+    	    })
 	    .then(result => {
     	    // Check if the finishReason is RECITATION without any text output
     	    if (result.candidates[0].finishReason === "RECITATION") {
@@ -90,29 +103,27 @@ function geminiSend() {
             	    fetchGoogleImages(imageQuery).then(imageResult => {
                     // Handle the result of the Google Images API
                     const imageUrl = imageResult.items[0].link; // Assuming the result has an items array and you want the first item's link
-                    document.getElementById("txtOutput").innerHTML += `<img src="${imageUrl}" alt="${imageQuery}">`;
+                    document.getElementById("txtOutput").innerHTML += `<br><img src="${imageUrl}" alt="${imageQuery}">`;
                     var element = document.getElementById("txtOutput");
                     element.scrollTop = element.scrollHeight;
-            	}).catch(error => {
-                    console.error("Error fetching image:", error);
-            	});
+            	    }).catch(error => {
+                    	console.error("Error fetching image:", error);
+            		});
         	}
-    	    }
-
-    // Update the conversation history with either the response or the RECITATION message
-    geminiMessages.push({ role: "user", parts: [{ text: cleanedQuestion }] });
-    const responseText = result.candidates[0].finishReason === "RECITATION" ? "Sorry, please ask me another way." : result.candidates[0].content.parts[0].text;
-    geminiMessages.push({ role: "model", parts: [{ text: responseText }] });
-
-    // Store updated messages in local storage
-    localStorage.setItem("geminiMessages", JSON.stringify(geminiMessages));
-})
-.catch(error => {
+    	      }
+    	    // Update the conversation history with either the response or the RECITATION message
+    	    geminiMessages.push({ role: "user", parts: [{ text: cleanedQuestion }] });
+    	    const responseText = result.candidates[0].finishReason === "RECITATION" ? "Sorry, please ask me another way." : result.candidates[0].content.parts[0].text;
+    	    geminiMessages.push({ role: "model", parts: [{ text: responseText }] });
+    	    // Store updated messages in local storage
+    	    localStorage.setItem("geminiMessages", JSON.stringify(geminiMessages));
+	})
+    .catch(error => {
     console.error("Error:", error);
-});
-
-
-
+    document.getElementById("txtOutput").innerHTML += '<span class="error">Error: </span>' + `${error.message}` + '\n';
+    var element = document.getElementById("txtOutput");
+    element.scrollTop = element.scrollHeight;
+    });
     });
 }
 
@@ -151,11 +162,9 @@ function palmSend() {
 
   auth().then(GOOGLE_GL_KEY => {
     document.getElementById("txtMsg").innerHTML = "";
-//    document.getElementById("txtOutput").innerHTML += "You: " + sQuestion + "\n";
     document.getElementById("txtOutput").innerHTML += '<span class="user">You: </span>' + sQuestion + "<br>" + "\n";
     var element = document.getElementById("txtOutput");
     element.scrollTop = element.scrollHeight;
-
 
     const gapiUrl = `https://generativelanguage.googleapis.com/v1beta2/models/${MODEL_NAME}:generateMessage?key=${GOOGLE_GL_KEY}`;
 
@@ -185,13 +194,13 @@ function palmSend() {
 
         if (result.filters && result.filters.length > 0) {
           // Handle case when no response is available
-       //   console.log("No response available");
+          //   console.log("No response available");
           document.getElementById("txtOutput").innerHTML += "No response available\n";
         } else {
           const candidate = result.candidates[0];
           const content = candidate.content;
           let formattedResult = content.replace(/\n\n/g, "\n").trim();
-       //   console.log("Formatted result:", formattedResult);
+          // console.log("Formatted result:", formattedResult);
 
           const imagePlaceholderRegex = /\[Image of (.*?)\]/g;
  	  const imagePlaceholders = formattedResult.match(imagePlaceholderRegex)?.slice(0, 3);
@@ -200,19 +209,19 @@ function palmSend() {
   	  for (let i = 0; i < Math.min(imagePlaceholders.length, 3); i++) {
     	  const placeholder = imagePlaceholders[i];
     	  const searchQuery = placeholder.substring(10, placeholder.length - 1).trim();
-         //     console.log("Search query:", searchQuery);
+          // console.log("Search query:", searchQuery);
               try {
                 const searchResult = await fetchGoogleImages(searchQuery);
-           //     console.log("Search result:", searchResult);
+                // console.log("Search result:", searchResult);
                 if (searchResult && searchResult.items && searchResult.items.length > 0) {
                   const topImage = searchResult.items[0];
                   const imageLink = topImage.link;
-             //     console.log("Top image link:", imageLink);
+                  // console.log("Top image link:", imageLink);
 	       formattedResult = formattedResult.replace(placeholder, `<img src="${imageLink}" title="${searchQuery}" alt="${searchQuery}">`);
                 }
               } catch (error) {
                 console.error("Error fetching image:", error);
-              }
+              	}
             }
 		  formattedResult = formattedResult.replace(imagePlaceholderRegex, "").trim();
 		  formattedResult = formattedResult.replace(/\n{2,}/g, "\n").trim();
