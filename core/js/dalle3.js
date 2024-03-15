@@ -27,6 +27,7 @@ function dalle3Send() {
             // Clear the send div before adding new images
             document.getElementById("txtMsg").innerHTML = "";
             document.getElementById("txtOutput").innerHTML += '<span class="user">You: </span>' + prompt + "<br>" + "\n";
+	    document.getElementById("txtOutput").innerHTML += '<span class="eva">Eva: </span>' + "Here is a generated image of that description ... " + "\n";
 
             // Send an API request using JavaScript fetch
             fetch("https://api.openai.com/v1/images/generations", {
@@ -57,7 +58,6 @@ function dalle3Send() {
     		linkElement.appendChild(imgElement); // Append the image to the anchor element
 
     		// Append the anchor element (which contains the image) to the result div
-		document.getElementById("txtOutput").innerHTML += '<span class="eva">Eva: </span>' + "Here is a generated image of that description ... " + "\n";
     		document.getElementById("txtOutput").appendChild(linkElement);
                 var element = document.getElementById("txtOutput");
                 element.scrollTop = element.scrollHeight;

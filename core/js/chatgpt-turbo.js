@@ -278,17 +278,27 @@ function trboSend() {
 		    }
 		    oHttp.send(JSON.stringify(data));
 
-			var responseImage = document.createElement("img");
-			    responseImage.src = imgSrcGlobal;
-
+		// Check if imgSrcGlobal is not empty or undefined
+		if (imgSrcGlobal) {
+		    var responseImage = document.createElement("img");
+		    responseImage.src = imgSrcGlobal;
+		    // Ensure there's a way to handle the case where the image cannot be loaded
+		    responseImage.onerror = function() {
+		        console.error("Error loading image at " + imgSrcGlobal);
+		        responseImage.remove(); // Optionally remove the img element if it fails to load
+		    };
+		    // Only append the image if imgSrcGlobal is valid
 		    if (txtOutput.innerHTML != "") txtOutput.innerHTML += "\n";
-		    // txtOutput.innerHTML += '<span class="user">You: ' + sQuestion + '</span>'; 
-		    txtOutput.innerHTML += '<span class="user">You: </span>' + sQuestion; 
+		    txtOutput.innerHTML += '<span class="user">You: </span>' + sQuestion;
 		    txtOutput.appendChild(responseImage);
-		    txtMsg.innerHTML = "";
-
-    		});
-	  return;
+		} else {
+		    // Handle the case where imgSrcGlobal is not provided
+		    if (txtOutput.innerHTML != "") txtOutput.innerHTML += "\n";
+		    txtOutput.innerHTML += '<span class="user">You: </span>' + sQuestion;
+		}
+		txtMsg.innerHTML = "";
+	      });
+	      return;
 	}
 
     // Append the new messages to the existing messages in localStorage
@@ -321,18 +331,15 @@ function trboSend() {
     var responseImage = document.createElement("img");
     responseImage.src = imgSrcGlobal;
     if (txtOutput.innerHTML != "") txtOutput.innerHTML += "\n";
-    // txtOutput.innerHTML += '<span class="user">You: ' + sQuestion + '</span>';
     txtOutput.innerHTML += '<span class="user">You: </span>' + sQuestion;
     txtOutput.appendChild(responseImage);
   } else {
-  txtOutput.innerHTML += '<span class="user">You: </span>' + sQuestion;
-  txtMsg.innerHTML = "";
-  var element = document.getElementById("txtOutput");
-    // Automatically scroll to the bottom of the element
+    txtOutput.innerHTML += '<span class="user">You: </span>' + sQuestion;
+    txtMsg.innerHTML = "";
+    var element = document.getElementById("txtOutput");
     element.scrollTop = element.scrollHeight;
   }
   imgSrcGlobal = '';
-
 }
 
 // Google Image Seach

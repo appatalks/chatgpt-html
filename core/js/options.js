@@ -597,11 +597,12 @@ function clearSendText(){
 // Print full conversation
 function printMaster() {
     // Get the content of the textarea masterOutput
-    var textareaContent = document.getElementById("txtOutput").innerHTML = masterOutput;
-        // console.log(masterOutput);
+    // var textareaContent = document.getElementById("txtOutput").innerHTML = masterOutput;
+    // console.log(masterOutput);
     var printWindow = window.open();
-        printWindow.document.write(txtOutput.innerHTML.replace(/\n/g, "<br>"));
-        printWindow.print();
+        // printWindow.document.write(txtOutput.innerHTML.replace(/\n/g, "<br>"));
+        printWindow.document.write(txtOutput.innerHTML);
+	// printWindow.print(txtOutput.innerHTML);
 }
 
 // Capture Shift + Enter Keys for new line
