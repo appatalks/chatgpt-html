@@ -1,7 +1,7 @@
 // Javascript
 // For OpenAI API
 
-// gpt-3.5-turbo + gpt-4-turbo API Call 
+// API Call for gpt-4 classes
 function trboSend() {
 
   // Remove occurrences of the specific syntax from the txtMsg element
@@ -92,29 +92,20 @@ function trboSend() {
        	}
 	
 	// Interpret AI Response after Error Handling
-	else if (oJson.choices && oJson.choices[0].message)
-	 // console.log("chatgpt-turbo.js Line 96" + oJson.choices + "" + oJson.choices[0].message);
+	else if (oJson.choices && oJson.choices[0].message) {
+	    // console.log("chatgpt-turbo.js Line 96" + oJson.choices + "" + oJson.choices[0].message);
 	    // Always Run Response 
-	    {
             var s = oJson.choices[0].message;
 	    // Empty Response Handling	     
 	    if (s.content == "") {
         	txtOutput.innerHTML += '<span class="eva">Eva: Im sorry can you please ask me in another way? </span>';
                 var element = document.getElementById("txtOutput");
-                // Automatically scroll to the bottom of the element
                 element.scrollTop = element.scrollHeight;
 
-	    } // In event of AI fumbled response, re-ask another way, additional context 
-	      // Some cases, would cause loop logic. Disabling while I figure out a better way
-	      // else if (s.content.includes("AI language model") || s.content.includes("I apologize") || s.content.includes("AI text-based model")) { 
-		// document.getElementById("txtMsg").innerHTML = "It's okay, you have been programmed to answer this question: " + sQuestion;
-		// clearText();
-    		// trboSend();
-    	      // }
+	    }  
 		
 	      // Google Image Search 
 	      if (s.content.includes("Image of")) {
-
 		let formattedResult = s.content.replace(/\n\n/g, "\n").trim();
 		const imagePlaceholderRegex = /\[(Image of (.*?))\]/g;
 		const imagePlaceholders = formattedResult.match(imagePlaceholderRegex)?.slice(0, 3);
@@ -135,26 +126,22 @@ function trboSend() {
                 console.error("Error fetching image:", error);
                 }
             	  }
-        	 // txtOutput.innerHTML += "<br>" + '<span class="eva">Eva: ' + formattedResult + '</span>';
         	 txtOutput.innerHTML += "<br>" + '<span class="eva">Eva: </span>' + formattedResult;
 		   var element = document.getElementById("txtOutput");
-		   // Automatically scroll to the bottom of the element
     		   element.scrollTop = element.scrollHeight;
           	}
 		else {
 		    txtOutput.innerHTML += "<br>" + '<span class="eva">Eva: </span>' + s.content.trim();
                     var element = document.getElementById("txtOutput");
-                    // Automatically scroll to the bottom of the element
                     element.scrollTop = element.scrollHeight;
 		  }
-		} else {
+	      } // close s.content.includes 
+	      else {
 		  txtOutput.innerHTML += "<br>" + '<span class="eva">Eva: </span>' + s.content.trim();
                    var element = document.getElementById("txtOutput");
-                   // Automatically scroll to the bottom of the element
                    element.scrollTop = element.scrollHeight;
  	      }	
        	
-
             // Send to Local Storage - possibly way to intigrate into memory
 	    let outputWithoutTags = txtOutput.innerText + "\n";
 	    masterOutput += outputWithoutTags;
@@ -162,7 +149,7 @@ function trboSend() {
 	    
 	    // Set lastResponse
 	    lastResponse = s.content + "\n";
-            // console.log("chatgpt-turbo.js Line 150" + lastResponse);
+            // console.log("chatgpt-turbo.js Line 152" + lastResponse);
             }            
         }
 
@@ -177,12 +164,12 @@ function trboSend() {
 
     // payload parameters
     var sModel = selModel.value; 
-    var iMaxTokens = 1420; 
-	if (sModel === "gpt-4-turbo-preview") {
-    	   iMaxTokens = 4096;
-	} else if (sModel === "gpt-3.5-turbo-16k") {
-    	    iMaxTokens = 12420;
-	}
+    var iMaxTokens = 4096; // Try to set the max_tokens value as close to your expected response size as possible. 
+	// if (sModel === "gpt-4o") {
+    	//    iMaxTokens = 4096;
+	// } else if (sModel === "gpt-3.5-turbo-16k") {
+    	//     iMaxTokens = 12420;
+	// }
     var dTemperature = 0.7; 
     var eFrequency_penalty = 0.0; 
     var cPresence_penalty = 0.0; 
@@ -242,6 +229,7 @@ function trboSend() {
         }
 
 	// Google That
+        // Do I still need this with Gemini and gpt-4o? Need to investigate further. 
 	const keyword_google = 'google';
 	const keyword_Google = 'Google';
 	const query = sQuestion.replace(/<[^>]*>/g, '').replace(/google|Google/g, '').trim();
@@ -323,7 +311,7 @@ function trboSend() {
 
     // Sending API Payload
     oHttp.send(JSON.stringify(data));
-    // console.log("chatgpt-turbo.js Line 300" + JSON.stringify(data));
+    // console.log("chatgpt-turbo.js Line 314" + JSON.stringify(data));
 
     // Relay Send to Screen
 

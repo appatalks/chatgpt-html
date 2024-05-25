@@ -54,18 +54,22 @@ function autoSelect() {
     	var selModel = document.getElementById("selModel");
 
     	// Define keywords for different conditions
+
+	// coding-related, math, logic, reasoning, language tasks
     	const gptHuristics = ["code", "programming", "debug", "bash", "python", "javascript", "script", "language", "한글", "weather", "news", "space", "solar", "stock", "markets", "symbol", "ticker", "Google", "google", "date", "math", "fraction", "problem", "+", "="];
     	
-	const glHuristics = ["story", "imagine", "gemini"];
-
+	// For complex queries
+	const glHuristics = ["gemini"];
+	
+	// Image generation
 	const dalHuristics =["show me an image of", "create an image of"];
 
     	// Simple heuristic to select a model based on the user's input
     	if (userInput.length > 500) {
-            selModel.value = "gpt-3.5-turbo-16k"; // Long queries might not need more token resources
+            selModel.value = "gpt-4o"; // Long queries might not need more token resources
     	} 
     	else if (gptHuristics.some(keyword => userInput.includes(keyword))) {
-            selModel.value = "gpt-4-turbo-preview"; // For coding-related, math, logic, reasoning, language tasks.
+            selModel.value = "gpt-4o"; // For coding-related, math, logic, reasoning, language tasks.
     	}
     	else if (glHuristics.some(keyword => userInput.includes(keyword))) {
             selModel.value = "gemini"; // For complex queries, a different model could be preferred
@@ -74,18 +78,15 @@ function autoSelect() {
             selModel.value = "dall-e-3"; // For dall-e-3 generated images
         }
     	else {
-            selModel.value = "gemini"; // Default to a different model if none of the above conditions are met
+            selModel.value = "gpt-4o"; // Default to a different model if none of the above conditions are met
     	}
 
     // Now trigger the appropriate send function based on the selected model
     switch (selModel.value) {
         case "gpt-3.5-turbo":
-        case "gpt-3.5-turbo-16k":
         case "gpt-4-turbo-preview":
+        case "gpt-4o":
             trboSend();
-            break;
-        case "palm":
-            palmSend();
             break;
         case "gemini":
             geminiSend();
@@ -113,15 +114,10 @@ function updateButton() {
             clearText();
             autoSelect();
         };
-    } else if (selModel.value == "gpt-3.5-turbo" || selModel.value == "gpt-3.5-turbo-16k" || selModel.value == "gpt-4-turbo-preview") {
+    } else if (selModel.value == "gpt-3.5-turbo" || selModel.value == "gpt-4-turbo-preview" || selModel.value == "gpt-4o" ) {
         btnSend.onclick = function() {
             clearText();
             trboSend();
-        };
-    } else if (selModel.value == "palm") {
-        btnSend.onclick = function() {
-            clearText();
-            palmSend();
         };
     } else if (selModel.value == "gemini") {
         btnSend.onclick = function() {
@@ -150,12 +146,9 @@ function sendData() {
     if (selModel.value == "auto") {
 	clearText();
         autoSelect();
-    } else if (selModel.value == "gpt-3.5-turbo" || selModel.value == "gpt-3.5-turbo-16k" || selModel.value == "gpt-4-turbo-preview") {
+    } else if (selModel.value == "gpt-3.5-turbo" || selModel.value == "gpt-4-turbo-preview" || selModel.value == "gpt-4o") {
         clearText();
         trboSend();
-    } else if (selModel.value == "palm") {
-        clearText();
-        palmSend();
     } else if (selModel.value == "gemini") {
         clearText();
         geminiSend();
@@ -316,31 +309,42 @@ function insertImage() {
       // Choose where to send Base64-encoded image
       var selModel = document.getElementById("selModel");
       var btnSend = document.getElementById("btnSend");
+      var sQuestion = txtMsg.innerHTML.replace(/<br>/g, "\n").trim(); // Get the question here
+
       
-      // Send to gpt-4-vision-preview (Work in progress)
-      if (selModel.value == "gpt-3.5-turbo" || selModel.value == "gpt-3.5-turbo-16k" || selModel.value == "gpt-4-turbo-preview") {
+      // Send to VisionAPI
+      if (selModel.value == "gpt-3.5-turbo" || selModel.value == "gpt-4-turbo-preview") {
 	  sendToVisionAPI(imageData);
-	  // sentTo-gpt-4-vision(imageData);
           btnSend.onclick = function() {
 	      updateButton();
 	      sendData();
 	      clearSendText();
           };
-      } else if (selModel.value == "palm") {
-	  // Send Legacy PaLM to Google Vision (Gemini has built in label detection)
-	  sendToVisionAPI(imageData);
+      } else if (selModel.value == "gpt-4o") {
+          sendToNative(imageData, sQuestion);
           btnSend.onclick = function() {
 	      updateButton();
 	      sendData();
 	      clearSendText();
           };
       }	
-
     };
     reader.readAsDataURL(file);
-
     // Return the file object
     //return file;
+  }
+
+  function sendToNative(imageData, sQuestion) {
+    var existingMessages = JSON.parse(localStorage.getItem("messages")) || [];
+    var newMessages = [
+      // { role: 'user', content: sQuestion },
+      // { role: 'user', content: { type: "image_url", image_url: { url: imageData } } }
+      { role: 'user', content: [ { type: "text", text: sQuestion },
+        { type: "image_url", image_url: { url: imageData } } ]
+      }
+    ];
+    existingMessages = existingMessages.concat(newMessages);
+    localStorage.setItem("messages", JSON.stringify(existingMessages));
   }
 
   function sendToVisionAPI(imageData) {
