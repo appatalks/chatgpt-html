@@ -95,7 +95,7 @@ function autoSelect() {
             dalle3Send();
             break;
         default:
-            Send();
+            trboSend();
     }
     // Reset back to auto
     selModel.value = "auto";
@@ -320,7 +320,7 @@ function insertImage() {
 	      sendData();
 	      clearSendText();
           };
-      } else if (selModel.value == "gpt-4o") {
+      } else if (selModel.value == "gpt-4o" || selModel.value == "auto") {
           sendToNative(imageData, sQuestion);
           btnSend.onclick = function() {
 	      updateButton();
