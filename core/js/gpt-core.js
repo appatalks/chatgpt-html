@@ -1,7 +1,7 @@
 // Javascript
 // For OpenAI API
 
-// API Call for gpt-4 classes
+// API Call for latest gpt classes
 function trboSend() {
 
   // Remove occurrences of the specific syntax from the txtMsg element
@@ -27,7 +27,7 @@ function trboSend() {
     	  // Check for errors
     	  if (oHttp.status === 500) {
       	    txtOutput.innerHTML += "<br> Error 500: Internal Server Error" + "<br>" + oHttp.responseText;
-      	    console.log("Error 500: Internal Server Error chatgpt-turbo.js Line 26");
+      	    console.log("Error 500: Internal Server Error chatgpt-turbo.js Line 30");
       	    return;
     	  }
     	  if (oHttp.status === 429) {
@@ -53,7 +53,7 @@ function trboSend() {
 		console.log("oJson", oJson);
             } catch (ex) {
                 txtOutput.innerHTML += "Error: " + ex.message;
-		console.log("Error: chatgpt-turbo.js Line 52");
+		console.log("Error: gpt-core.js Line 56");
 		return;
               }
 	
@@ -86,14 +86,14 @@ function trboSend() {
             }
 	    else {
                 txtOutput.innerHTML += "Error Other: " + oJson.error.message;
-	        console.log("Error Other: chatgpt-turbo.js Line 87");
+	        console.log("Error Other: gpt-core.js Line 89");
                 retryCount = 0;	  
 	    }
        	}
 	
 	// Interpret AI Response after Error Handling
 	else if (oJson.choices && oJson.choices[0].message) {
-	    // console.log("chatgpt-turbo.js Line 96" + oJson.choices + "" + oJson.choices[0].message);
+	    // console.log("gpt-core.js Line 96" + oJson.choices + "" + oJson.choices[0].message);
 	    // Always Run Response 
             var s = oJson.choices[0].message;
 	    // Empty Response Handling	     
@@ -149,7 +149,7 @@ function trboSend() {
 	    
 	    // Set lastResponse
 	    lastResponse = s.content + "\n";
-            // console.log("chatgpt-turbo.js Line 152" + lastResponse);
+            // console.log("gpt-core.js Line 152" + lastResponse);
             }            
         }
 
@@ -311,7 +311,7 @@ function trboSend() {
 
     // Sending API Payload
     oHttp.send(JSON.stringify(data));
-    // console.log("chatgpt-turbo.js Line 314" + JSON.stringify(data));
+    // console.log("gpt-core.js Line 314" + JSON.stringify(data));
 
     // Relay Send to Screen
 

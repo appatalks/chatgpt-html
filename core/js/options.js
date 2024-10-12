@@ -55,8 +55,8 @@ function autoSelect() {
 
     	// Define keywords for different conditions
 
-	// coding-related, math, logic, reasoning, language tasks
-    	const gptHuristics = ["code", "programming", "debug", "bash", "python", "javascript", "script", "language", "한글", "weather", "news", "space", "solar", "stock", "markets", "symbol", "ticker", "Google", "google", "date", "math", "fraction", "problem", "+", "="];
+	// coding-related, math, logic, math, science
+    	const gptHuristics = ["code", "programming", "debug", "bash", "python", "javascript", "script", "space", "solar", "math", "fraction", "problem", "+", "="];
     	
 	// For complex queries
 	const glHuristics = ["gemini"];
@@ -69,23 +69,24 @@ function autoSelect() {
             selModel.value = "gpt-4o"; // Long queries might not need more token resources
     	} 
     	else if (gptHuristics.some(keyword => userInput.includes(keyword))) {
-            selModel.value = "gpt-4o"; // For coding-related, math, logic, reasoning, language tasks.
+            selModel.value = "o1-mini"; // For coding-related, math, logic, science.
     	}
     	else if (glHuristics.some(keyword => userInput.includes(keyword))) {
-            selModel.value = "gemini"; // For complex queries, a different model could be preferred
+            selModel.value = "gemini"; // For Google Gemini's model
     	}
         else if (dalHuristics.some(keyword => userInput.includes(keyword))) {
             selModel.value = "dall-e-3"; // For dall-e-3 generated images
         }
     	else {
-            selModel.value = "gpt-4o"; // Default to a different model if none of the above conditions are met
+            selModel.value = "gpt-4o-mini"; // Default to a different model if none of the above conditions are met
     	}
 
     // Now trigger the appropriate send function based on the selected model
     switch (selModel.value) {
-        case "gpt-3.5-turbo":
-        case "gpt-4-turbo-preview":
+        case "gpt-4o-mini":
         case "gpt-4o":
+        case "o1-mini":
+        case "o1-preview":
             trboSend();
             break;
         case "gemini":
@@ -114,7 +115,7 @@ function updateButton() {
             clearText();
             autoSelect();
         };
-    } else if (selModel.value == "gpt-3.5-turbo" || selModel.value == "gpt-4-turbo-preview" || selModel.value == "gpt-4o" ) {
+    } else if (selModel.value == "gpt-4o-mini" || selModel.value == "o1-mini" || selModel.value == "gpt-4o" || selModel.value == "o1-preview") {
         btnSend.onclick = function() {
             clearText();
             trboSend();
@@ -146,7 +147,7 @@ function sendData() {
     if (selModel.value == "auto") {
 	clearText();
         autoSelect();
-    } else if (selModel.value == "gpt-3.5-turbo" || selModel.value == "gpt-4-turbo-preview" || selModel.value == "gpt-4o") {
+    } else if (selModel.value == "gpt-4o-mini" || selModel.value == "o1-mini" || selModel.value == "gpt-4o" || selModel.value == "o1-preview") {
         clearText();
         trboSend();
     } else if (selModel.value == "gemini") {
@@ -262,7 +263,6 @@ function mobile_txtmsd() {
 
               var input = document.getElementById("imgInput");
               input.style.display = "block";
-
 
       // Mic Button
       let micButton = document.querySelector(".mic-button");
