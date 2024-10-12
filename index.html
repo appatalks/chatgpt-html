@@ -1,109 +1,118 @@
 <!DOCTYPE html>
-<html>
-<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, minimum-scale=1.0, maximum-scale=1.0">
-<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
-<meta http-equiv="Pragma" content="no-cache" />
-<meta http-equiv="Expires" content="0" />
+<html lang="en">
 <head>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, minimum-scale=1.0, maximum-scale=1.0">
+    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
+    <meta http-equiv="Pragma" content="no-cache" />
+    <meta http-equiv="Expires" content="0" />
     <title>Eva - ChatGPT</title>
-<script src="core/js/options.js"></script>
-<script src="core/js/external.js"></script>
-<script src="core/js/gpt-core.js"></script>
-<script src="core/js/gl-google.js"></script> 
-<script src="core/js/dalle3.js"></script> 
-<script src="core/js/aws-sdk-2.1304.0.min.js"></script>
- <script>
-  auth();
-  // Adjust for Mobile User Agents
-  mobile_txtout();
-  mobile_txtmsd();
-</script>
-<link rel="stylesheet" type="text/css" href="core/style.css">
+    <script src="core/js/options.js"></script>
+    <script src="core/js/external.js"></script>
+    <script src="core/js/gpt-core.js"></script>
+    <script src="core/js/gl-google.js"></script> 
+    <script src="core/js/dalle3.js"></script> 
+    <script src="core/js/aws-sdk-2.1304.0.min.js"></script>
+    <script>
+      auth();
+      // Adjust for Mobile User Agents
+      mobile_txtout();
+      mobile_txtmsd();
+    </script>
+    <link rel="stylesheet" type="text/css" href="core/style.css">
 </head>
 
 <center>
-<body onload="OnLoad()">
+<body onload="OnLoad()"> 
 
- <script>
-   // Adjust for Mobile User Agents
-   useragent_adjust();
- </script>
+    <script>
+      // Adjust for Mobile User Agents
+      useragent_adjust();
+    </script>
 
     <div id="idContainer">
         <div id="textToSynth">
- 	  <div id="txtOutput" rows="10" wrap="soft" placeholder="Output"></div>
-          <div class="container">
-	    <button class="speakSend" onClick="speakText(); document.getElementById('audioPlayback').setAttribute('autoplay', true);" id="speakSend" title="Speak This"></button>
-          </div>
-          <select id="selEngine" onchange="ChangeLang(this)">
-            <option value="standard">Standard</option>
-            <option value="neural">Neural</option>
-            <option value="generative">Generative</option>
-	    <option value="bark">Bark</option>
-          </select>
-          <select id="selVoice" onchange="ChangeLang(this)">
-            <option value="Salli">English</option>
-            <option value="Ruth">English(gen)</option>
-            <option value="Seoyeon">Korean</option>
-            <option value="Mia">Spanish</option>
-            <option value="Tatyana">Ukrainian</option>
-          </select>
-
-	  <input type="checkbox" id="autoSpeak">Auto Speak</input>
-	  <p id="result"></p>
-  	</div>
-
-      	<audio id="audioPlayback" class="audio" controls>
-      	<source id="audioSource" type="audio/mp3" src="">
-      	</audio>
-
-	<p>
-
-  	<input type="file" id="imgInput" style="display:;"> 
- 	<div id="txtMsg" contenteditable="true" rows="5" placeholder="Input Text"></div> 
-    
-	<script>
-      	  insertImage();
-    	</script>  
-
-        <div>
-	  <div class="container">
-	    <button onclick="startSpeechRecognition()" id="micButton" class="mic-button"></button>
-	  </div>
-
-	  <button type="button" onclick="sendData()" id="btnSend">Send</button>
-	    <select id="selModel" onchange="updateButton()">
-		<option value="auto" title="Default">auto</option>
-		<option value="gpt-4o-mini" title="gpt-4o-mini">gpt-4o-mini</option>
-		<option value="gpt-4o" title="gpt-4o">gpt-4o</option>
-		<option value="o1-preview" title="o1-preview">o1-preview</option>
-		<option value="o1-mini" title="o1-mini">o1-mini</option>
-		<option value="dall-e-3" title="Image Generation">dall-e-3</option> 
-		<option value="gemini" title="Google Gemini">gemini</option>
-		<!-- <option value="palm" title="Legacy Google PaLM ie Bard">palm</option> -->
+            <div id="txtOutput" rows="10" wrap="soft" placeholder="Output"></div>
+            <div class="container">
+                <button class="speakSend" aria-label="Speak the text" onClick="speakText(); document.getElementById('audioPlayback').setAttribute('autoplay', true);" id="speakSend" title="Speak This"></button>
+            </div>
+            
+            <label for="selEngine">Select Engine:</label>
+            <select id="selEngine" aria-label="Select speech engine" onchange="ChangeLang(this)">
+                <option value="standard">Standard</option>
+                <option value="neural">Neural</option>
+                <option value="generative">Generative</option>
+                <option value="bark">Bark</option>
             </select>
 
-            <select id="selPers" onchange="ChangeLang(this)"> 
+            <label for="selVoice">Select Voice:</label>
+            <select id="selVoice" aria-label="Select voice" onchange="ChangeLang(this)">
+                <option value="Salli">English</option>
+                <option value="Ruth">English(gen)</option>
+                <option value="Seoyeon">Korean</option>
+                <option value="Mia">Spanish</option>
+                <option value="Tatyana">Ukrainian</option>
+            </select>
+
+            <!-- Checkbox with label -->
+            <label for="autoSpeak">Auto Speak:</label>
+            <input type="checkbox" id="autoSpeak" aria-label="Enable auto speak">
+            <p id="result"></p>
+        </div>
+
+        <audio id="audioPlayback" class="audio" controls aria-label="Audio playback">
+            <source id="audioSource" type="audio/mp3" src="">
+        </audio>
+
+        <p></p>
+
+        <label for="imgInput">Upload Image:</label>
+        <input type="file" id="imgInput" style="display:;" aria-label="Upload image"> 
+        <div id="txtMsg" contenteditable="true" rows="5" placeholder="Input Text" aria-label="Input text"></div>
+
+        <script>
+            insertImage();
+        </script>
+
+        <div>
+            <div class="container">
+                <button onclick="startSpeechRecognition()" id="micButton" class="mic-button" aria-label="Start speech recognition"></button>
+            </div>
+
+            <button type="button" onclick="sendData()" id="btnSend" aria-label="Send data">Send</button>
+
+            <label for="selModel">Select Model:</label>
+            <select id="selModel" aria-label="Select model" onchange="updateButton()">
+                <option value="auto" title="Default">auto</option>
+                <option value="gpt-4o-mini" title="gpt-4o-mini">gpt-4o-mini</option>
+                <option value="gpt-4o" title="gpt-4o">gpt-4o</option>
+                <option value="o1-preview" title="o1-preview">o1-preview</option>
+                <option value="o1-mini" title="o1-mini">o1-mini</option>
+                <option value="dall-e-3" title="Image Generation">dall-e-3</option> 
+                <option value="gemini" title="Google Gemini">gemini</option>
+            </select>
+
+            <label for="selPers">Select Personality:</label>
+            <select id="selPers" aria-label="Select personality" onchange="ChangeLang(this)"> 
                 <option value="You are Eva, a knowledgeable AI assistant. Your goal is to provide accurate, and helpful responses to questions, while being honest and straightforward. You have access to provide updated real-time news, information and media. " title="Eva's Default Personality.">Default</option>
                 <option value="Eva is a large language model. Browsing: enabled. Instructions: Answer factual questions concisely. You have access to updated real-time news and information. " title="Eva will answer concisely">Concise</option> 
                 <option value="You are Eva. Your function is to generate human-like text based on the inputs given, and your goal is to assist users in generating informative, helpful and engaging responses to questions and requests. Please provide a detailed response with lists, where applicable. You have access to updated real-time news, information and media. " title="Eva will give detailed responses.">Advanced</option>   
-		<option value="I want you to act as a linux terminal. I will type commands and you will reply with what the terminal should show. I want you to only reply with the terminal output inside one unique code block, and nothing else. do not write explanations. do not type commands unless I instruct you to do so. when i need to tell you something in english, i will do so by putting text inside curly brackets {like this}. my first command is pwd" title="Emulate a Linux Bash Shell">Linux Terminal</option>
-            </select> 
-		<button  onclick="printMaster()">Print Output</button>
-	</div>
+                <option value="I want you to act as a linux terminal. I will type commands and you will reply with what the terminal should show. I want you to only reply with the terminal output inside one unique code block, and nothing else. do not write explanations. do not type commands unless I instruct you to do so. when i need to tell you something in english, i will do so by putting text inside curly brackets {like this}. my first command is pwd" title="Emulate a Linux Bash Shell">Linux Terminal</option>
+            </select>
 
-	<script>
-  	  // Capture CTRL + Enter Key Captures
-  	  shiftBreak();
-	</script>
+            <button onclick="printMaster()" aria-label="Print output">Print Output</button>
+        </div>
 
-	<div id="idText"></div>
+        <script>
+          // Capture CTRL + Enter Key Captures
+          shiftBreak();
+        </script>
+
+        <div id="idText"></div>
     </div>
 
+    <footer>
+      <img id="eEgg" src="core/img/eEgg.gif" alt="Image" style="display:none;">
+      <button id="clearMessagesBtn" onclick="clearMessages()" aria-label="Clear memory">Clear Memory</button>
+    </footer>
 </body>
-<footer>
-  <img id="eEgg" src="core/img/eEgg.gif" alt="Image" style="display:none;">
-  <button id="clearMessagesBtn" onclick="clearMessages()">Clear Memory</button>
-</footer>
-</center>
 </html>
