@@ -1,0 +1,28 @@
+name: Accessibility Test
+
+on:
+  workflow_dispatch:
+
+jobs:
+  accessibility:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20' # Use the appropriate Node.js version for your project
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Install pa11x Accessibility checker
+        run: |
+          npm install -g pa11y
+
+      - name: Run Pa11y on local site
+        run: |
+          pa11y /home/runner/work/appatalks/chatgpt-html/index.html --reporter=cli --threshold 25
+          
