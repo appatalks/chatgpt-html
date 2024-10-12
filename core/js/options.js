@@ -69,7 +69,8 @@ function autoSelect() {
             selModel.value = "gpt-4o"; // Long queries might not need more token resources
     	} 
     	else if (gptHuristics.some(keyword => userInput.includes(keyword))) {
-            selModel.value = "o1-mini"; // For coding-related, math, logic, science.
+            // selModel.value = "o1-mini"; // For coding-related, math, logic, science.
+	    selModel.value = "gpt-4o-mini"; // o1-mini and o1-preview is limited beta for the moment	 
     	}
     	else if (glHuristics.some(keyword => userInput.includes(keyword))) {
             selModel.value = "gemini"; // For Google Gemini's model
@@ -85,8 +86,8 @@ function autoSelect() {
     switch (selModel.value) {
         case "gpt-4o-mini":
         case "gpt-4o":
-        case "o1-mini":
-        case "o1-preview":
+        case "o1-mini": // limited beta 
+        case "o1-preview": // limited beta
             trboSend();
             break;
         case "gemini":
