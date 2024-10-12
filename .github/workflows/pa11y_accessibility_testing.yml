@@ -15,9 +15,6 @@ jobs:
         with:
           node-version: '20' # Use the appropriate Node.js version for your project
 
-      - name: Install dependencies
-        run: npm install
-
       - name: Install pa11x Accessibility checker
         run: |
           npm install -g pa11y
