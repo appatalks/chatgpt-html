@@ -21,7 +21,4 @@ jobs:
 
       - name: Run Pa11y on local site
         run: |
-          pwd 
-          ls -la
-          # pa11y /home/runner/work/appatalks/chatgpt-html/index.html --reporter=cli --threshold 25
-          
+          pa11y /home/runner/work/chatgpt-html/index.html --reporter=cli --threshold 25
