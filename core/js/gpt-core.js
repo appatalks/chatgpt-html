@@ -164,7 +164,7 @@ function trboSend() {
 
     // payload parameters
     var sModel = selModel.value; 
-    var iMaxTokens = 4096; // Try to set the max_tokens value as close to your expected response size as possible. 
+    var iMaxTokens = 4096; // Try to set the max_completion_tokens value as close to your expected response size as possible. 
 	// if (sModel === "gpt-4o") {
     	//    iMaxTokens = 4096;
 	// } else if (sModel === "gpt-3.5-turbo-16k") {
@@ -258,7 +258,7 @@ function trboSend() {
 		    var data = {
 		        model: sModel,
 		        messages: kMessages,
-		        max_tokens: iMaxTokens,
+		        max_completion_tokens: iMaxTokens,
 		        temperature:  dTemperature,
 		        frequency_penalty: eFrequency_penalty,
 		        presence_penalty: cPresence_penalty,
@@ -302,7 +302,7 @@ function trboSend() {
     var data = {
         model: sModel,
 	messages: kMessages,
-        max_tokens: iMaxTokens,
+        max_completion_tokens: iMaxTokens,
         temperature:  dTemperature,
         frequency_penalty: eFrequency_penalty,
         presence_penalty: cPresence_penalty,
