@@ -86,8 +86,9 @@ function autoSelect() {
     switch (selModel.value) {
         case "gpt-4o-mini":
         case "gpt-4o":
-        case "o1-mini": // limited beta 
-        case "o1-preview": // limited beta
+ 	case "o1": // tier liminted
+        case "o1-mini": 
+        case "o1-preview":
             trboSend();
             break;
         case "gemini":
@@ -116,7 +117,7 @@ function updateButton() {
             clearText();
             autoSelect();
         };
-    } else if (selModel.value == "gpt-4o-mini" || selModel.value == "o1-mini" || selModel.value == "gpt-4o" || selModel.value == "o1-preview") {
+    } else if (selModel.value == "gpt-4o-mini" || selModel.value == "o1" || selModel.value == "o1-mini" || selModel.value == "gpt-4o" || selModel.value == "o1-preview") {
         btnSend.onclick = function() {
             clearText();
             trboSend();
@@ -148,7 +149,7 @@ function sendData() {
     if (selModel.value == "auto") {
 	clearText();
         autoSelect();
-    } else if (selModel.value == "gpt-4o-mini" || selModel.value == "o1-mini" || selModel.value == "gpt-4o" || selModel.value == "o1-preview") {
+    } else if (selModel.value == "gpt-4o-mini" || selModel.value == "o1" || selModel.value == "o1-mini" || selModel.value == "gpt-4o" || selModel.value == "o1-preview") {
         clearText();
         trboSend();
     } else if (selModel.value == "gemini") {
