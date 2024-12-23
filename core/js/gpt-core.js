@@ -298,6 +298,13 @@ function trboSend() {
     var cStoredMessages = localStorage.getItem("messages");
     kMessages = cStoredMessages ? JSON.parse(cStoredMessages) : [];
 
+        // Exclude messages with the "developer" role see 
+        // https://github.com/appatalks/chatgpt-html/issues/63#issuecomment-2492821202 
+        if (sModel === 'o1-preview' || sModel === 'o1-mini') {
+          kMessages = kMessages.filter(msg => msg.role === 'user' || msg.role === 'assistant');
+          dTemperature = 1;
+        }
+	
     // API Payload
     var data = {
         model: sModel,
