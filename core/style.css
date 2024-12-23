@@ -1,43 +1,38 @@
-/* Default styles for desktop view */
+/* ------------------------------------------------------------
+ *    Base Styles
+ *    ------------------------------------------------------------- */
 body {
-  width: ;
-  height: 800px;
-  overflow: hidden;
-  background-image: url(img/background.jpg);
-  background-color: rgba(68,70,84);
-  color: #fff;
-  margin: 0; /* remove default margins */
-  display: flex; /* enable flexbox layout */
-  align-items: center; /* center elements vertically */
-  justify-content: center; /* center elements horizontally */
-  background-repeat: no-repeat; /* make image not repeat */
-  background-position: center center; /* center image */
-  background-size: 90% auto; /* set width and height of image */
-}
-
-#txtMsg {
-  width: 750px;
-  height: 100px;
-  margin-top: 10px;
-  border: 1px solid #ccc;
-  border-radius: 4px;
-  padding: 10px;
-  text-align: left;
   font-family: Arial, sans-serif;
-  font-size: 14px;
-  line-height: 1.5;
-  color: #333;
-  background-color: #fff;
-  overflow-y: scroll;
-  white-space: pre-wrap;
-  outline: none;
+  margin: 0; /* Remove default margins */
+  padding: 0;
+  color: #fff;
+  display: flex; /* Enable flexbox layout */
+  align-items: center; /* Center elements vertically */
+  justify-content: center; /* Center elements horizontally */
+  background-image: url(img/background.jpg);
+  background-color: rgba(68, 70, 84, 0.9);
+  background-repeat: no-repeat; /* Prevent image repetition */
+  background-position: center center; /* Center the image */
+  background-size: 90% auto; /* Set width and height of image */
+  height: 800px; /* Fixed height for desktop */
+  overflow: hidden;
+  text-align: center;
 }
 
-#txtMsg img {
-  width: 55px;
-  height: 55px;
+#idContainer {
+  background-color: ;
+  opacity: 100%;
+  max-width: 800px;
+  width: 90%;
+  margin: 30px auto;
+  padding: 20px;
+  border-radius: 8px;
+  box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
 }
 
+/* ------------------------------------------------------------
+ *    Chat Output and Message Styling
+ *    ------------------------------------------------------------- */
 #txtOutput {
   margin-top: 10px;
   width: 750px;
@@ -45,30 +40,30 @@ body {
   padding: 10px;
   border: 1px solid #ccc;
   border-radius: 4px;
+  background-color: #fafafa;
+  overflow-y: scroll;
   text-align: left; 
   font-family: Arial, sans-serif;
   font-size: 16px;
   line-height: 1.5;
   color: #333;
-  background-color: #fff;
-  overflow-y: scroll;
   white-space: pre-wrap;
 }
 
 .message {
   display: block; /* Makes the message a block-level element */
-  padding: 5px; /* Adds some padding around the messages */
+  padding: 5px; /* Adds padding around messages */
 }
 
 .user {
   color: #007bff; /* Blue color for the user */
-  font-weight: bold; /* Optional: makes the user text bold */
+  font-weight: bold; /* Bold text */
   text-align: right;
 }
 
 .eva {
   color: #28a745; /* Green color for Eva */
-  font-weight: bold; /* Optional: makes the Eva text bold */
+  font-weight: bold; /* Bold text */
   text-align: left;
 }
 
@@ -89,42 +84,153 @@ body {
   transform: translate(-50%, -50%);
 }
 
-/* Media query for screens smaller than 768px */
-@media only screen and (max-width: 768px) {
-  body {
-    width: ;
-    height: ;
-    display: flex;
-    background-color: blue;
-    background-image: url(img/background.jpg);
-    background-size: ; /* set background-size to cover for mobile view */
-  }
+/* ------------------------------------------------------------
+ *    Input Styling
+ *    ------------------------------------------------------------- */
+#txtMsg {
+  width: 750px;
+  height: 100px;
+  margin-top: 10px;
+  padding: 10px;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  background-color: #fff;
+  text-align: left;
+  font-family: Arial, sans-serif;
+  font-size: 14px;
+  line-height: 1.5;
+  color: #333;
+  overflow-y: scroll;
+  white-space: pre-wrap;
+  outline: none;
 }
 
-/* Mic */
-.container {
-  position: relative;
+#txtMsg img {
+  width: 55px;
+  height: 55px;
+}
+
+/* ------------------------------------------------------------
+ *    Interactive Elements
+ *    ------------------------------------------------------------- */
+label,
+select,
+input[type="checkbox"],
+button {
+  margin: 5px;
+  font-size: 1rem;
+}
+
+button,
+.speakSend,
+.mic-button {
+  cursor: pointer;
+  border: none;
+  background-color: #007bff;
+  color: #fff;
+  padding: 8px 16px;
+  border-radius: 5px;
+  font-size: 1rem;
+  transition: background-color 0.3s ease;
+}
+
+button:hover,
+.speakSend:hover,
+.mic-button:hover {
+  background-color: #0056b3;
+}
+
+.speakSend,
+.mic-button {
   width: 40px;
-  height: 0px;
+  height: 40px;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background-position: center;
+  background-size: contain;
+}
+
+.speakSend {
+  background-image: url('img/thumb-125.jpeg');
 }
 
 .mic-button {
-  position: absolute;
-  top: -60px;
-  right: -345px;
   background-image: url('img/mic.png');
-  background-repeat: no-repeat;
-  background-size: contain;
-  border: none;
-  width: 45px;
-  height: 45px;
-  cursor: pointer;
 }
 
 .mic-button.pulsate {
   animation: pulse 1s infinite;
 }
 
+/* ------------------------------------------------------------
+ *    Mic and Speak Button Positioning
+ *    ------------------------------------------------------------- */
+.container {
+  position: relative;
+  width: 40px;
+  height: 0px;
+  display: inline-block;
+}
+
+.audio {
+  position: relative;
+  display: none;
+  z-index: 1;
+  background-color: transparent;
+}
+
+#audioPlayback {
+  display: block;
+  margin: 10px 0;
+  width: 100%;
+}
+
+#imgInput {
+ background-color: transparent;
+}
+
+/* ------------------------------------------------------------
+ *    Additional Elements
+ *    ------------------------------------------------------------- */
+select {
+  padding: 5px;
+  border-radius: 5px;
+  border: 1px solid #ccc;
+  background-color: #fff;
+  color: #333;
+}
+
+input[type="file"] {
+  padding: 5px;
+  max-width: 200px;
+  border: none;
+  background-color: #fff;
+}
+
+footer {
+  margin-top: 20px;
+}
+
+#clearMessagesBtn {
+  background-color: #dc3545;
+  color: #fff;
+  padding: 8px 16px;
+  border-radius: 5px;
+  border: none;
+  cursor: pointer;
+  font-size: 1rem;
+  transition: background-color 0.3s ease;
+}
+
+#clearMessagesBtn:hover {
+  background-color: #b71c1c;
+}
+
+/* ------------------------------------------------------------
+ *    Keyframes
+ *    ------------------------------------------------------------- */
 @keyframes pulse {
   0% {
     opacity: 1;
@@ -137,23 +243,51 @@ body {
   }
 }
 
-/* Covert to Speech Button */
-.speakSend {
-  position: absolute;
-  display: block;
-  width: 45px;
-  height: 45px;
-  top: -65px;
-  right: -345px;
-  background-image: url(img/thumb-125.jpeg);
-  background-size: contain;
+/* ------------------------------------------------------------
+ *    Responsive Adjustments
+ *    ------------------------------------------------------------- */
+@media only screen and (max-width: 768px) {
+  body {
+    background-size: cover; /* Set background-size to cover for mobile view */
+    height: auto; /* Adjust height for mobile */
+    background-color: blue;
+  }
+
+  #idContainer {
+    width: 95%;
+    margin: 10px auto;
+    padding: 10px;
+  }
+
+  #txtMsg,
+  #txtOutput {
+    width: 100%;
+    height: auto;
+  }
+
+  .speakSend,
+  .mic-button {
+    width: 35px;
+    height: 35px;
+  }
+
+  .container {
+    width: 40px;
+    height: 40px;
+    display: flex;
+    gap: 10px; /* Space between buttons */
+    justify-content: center;
+    align-items: center;
+    margin-top: 20px;
+  }
+
+  .speakSend {
+    top: 60px;
+    right: 10px;
+  }
+
+  .mic-button {
+    top: 10px;
+    right: 10px;
+  }
 }
-
-/* Position the pseudo-element over the original button */
-.audio {
-  position: relative;
-  display: none;
-  z-index: 1;
-  background-color: transparent;
-} 
-
