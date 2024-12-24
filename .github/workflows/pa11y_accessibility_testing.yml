@@ -21,4 +21,5 @@ jobs:
 
       - name: Run Pa11y on local site
         run: |
+          export CHROME_DEVEL_SANDBOX=""
           pa11y /home/runner/work/chatgpt-html/chatgpt-html/index.html --reporter=cli --threshold 25 --no-sandbox
