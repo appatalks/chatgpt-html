@@ -1,9 +1,9 @@
 # ChatGPT HTML - Using OpenAI APIs; 
-![screenshot-catdog](core/img/screenshot-catdog.png)
+![Screenshot from 2024-12-23 22-14-32](https://github.com/user-attachments/assets/f26717ea-6048-4353-b668-7a10d66583f9)
 
-v.2.0
+v.2.0.6
 
-This allows you to easily interact with the OpenAI API.
+This allows you to easily interact with OpenAI and Google Generative APIs.
 
 ## Getting Started
 
@@ -14,9 +14,10 @@ This allows you to easily interact with the OpenAI API.
    
 ## Features
 
-- GPT-4 Support
-- Google Gemini Added
-- Google PaLM Legacy Support
+- Keeps conversation memory
+- OpenAI ```o1```, ```o1-*``` models supported
+- OpenAI ```gpt-4o``` models supported
+- Latest Google Gemini 2.0 ```Thinking``` modle Supported 
 - Google Vision API added (AI Image processing)
 - Model Selection, Multiple languages, and Print Conversation.
 - Convert to Speech using Amazon Polly's Text-to-Speech service.
