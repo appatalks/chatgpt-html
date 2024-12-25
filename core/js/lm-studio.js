@@ -8,7 +8,7 @@ function lmsSend() {
     let openAIMessages = [
         {
             "role": "system",
-            "content": selPers.value + " When you are asked to show an image, instead describe the image with [Image of <Description>]. " + dateContents
+            "content": selPers.value + " Images can be shown with this tag: [Image of <Description>]. " + dateContents
         },
         {
             "role": "assistant",
