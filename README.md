@@ -18,6 +18,7 @@ This allows you to easily interact with OpenAI and Google Generative APIs.
 - OpenAI ```o1```, ```o1-*``` models
 - OpenAI ```gpt-4o``` models
 - Latest Google Gemini 2.0 ```Thinking``` model
+- [lmstudio API](https://lmstudio.ai/docs/api/openai-api) local models 
 - Dall-E Image Generation
 - Google Vision 
 - Model Selection, Multiple languages, and Print Conversation.
