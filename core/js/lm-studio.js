@@ -81,9 +81,5 @@ function lmsSend() {
 
 // Function to handle sending data based on the selected model
 function sendData() {
-    if (selModel.value.startsWith("gpt")) {
-        geminiSend(); // Use Google Gemini if the model starts with "gpt"
-    } else {
-        lmsSend(); // Use OpenAI-like local endpoint otherwise
-    }
+        lmsSend(); // Use OpenAI-like local endpoint
 }
