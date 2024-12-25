@@ -94,6 +94,9 @@ function autoSelect() {
         case "gemini":
             geminiSend();
             break;
+        case "lm-studio": // offline models
+            lmsSend();
+            break;
         case "dall-e-3":
             dalle3Send();
             break;
@@ -127,6 +130,11 @@ function updateButton() {
             clearText();
             geminiSend();
         };
+   } else if (selModel.value == "lm-studio") {
+        btnSend.onclick = function() {
+            clearText();
+            lmsSend();
+        };
     } else if (selModel.value == "dall-e-3") {
         btnSend.onclick = function() {
             clearText();
@@ -155,6 +163,9 @@ function sendData() {
     } else if (selModel.value == "gemini") {
         clearText();
         geminiSend();
+    } else if (selModel.value == "lm-studio") {
+        clearText();
+        lmsSend();
     } else if (selModel.value == "dall-e-3") {
         clearText();
         dalle3Send();
