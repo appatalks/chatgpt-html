@@ -72,6 +72,14 @@ function lmsSend() {
             openAIMessages.push({ role: "user", content: sQuestion });
             openAIMessages.push({ role: "assistant", content: candidate });
             localStorage.setItem("openAIMessages", JSON.stringify(openAIMessages));
+
+            // Check the state of the checkbox and have fun
+            const checkbox = document.getElementById("autoSpeak");
+            if (checkbox.checked) {
+              speakText();
+              const audio = document.getElementById("audioPlayback");
+              audio.setAttribute("autoplay", true);
+            }
         })
         .catch(error => {
             console.error("Error:", error);
