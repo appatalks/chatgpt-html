@@ -5,7 +5,7 @@ function lmsSend() {
     // Remove occurrences of specific syntax from the txtMsg element
     txtMsg.innerHTML = txtMsg.innerHTML.replace(/<div[^>]*>.*<\/div>/g, '');
 
-    let openAIMessages = [
+    let openLLMessages = [
         {
             "role": "system",
             "content": selPers.value + " Images can be shown with this tag: [Image of <Description>]. " + dateContents
@@ -17,9 +17,9 @@ function lmsSend() {
     ];
 
     // Check if there are messages stored in local storage
-    const storedOpenAIMessages = localStorage.getItem("openAIMessages");
-    if (storedOpenAIMessages) {
-        openAIMessages = JSON.parse(storedOpenAIMessages);
+    const storedopenLLMessages = localStorage.getItem("openLLMessages");
+    if (storedopenLLMessages) {
+        openLLMessages = JSON.parse(storedopenLLMessages);
     }
 
     const sQuestion = document.getElementById("txtMsg").innerHTML.replace(/<br>/g, "\n").replace(/<[^>]+>/g, "").trim();
@@ -42,7 +42,7 @@ function lmsSend() {
         },
         body: JSON.stringify({
             model: "granite-3.1-8b-instruct", // Replace with your actual local model identifier
-            messages: openAIMessages.concat([
+            messages: openLLMessages.concat([
                 { role: "user", content: sQuestion }
             ]),
             temperature: 0.7, // Adjust as needed
@@ -69,9 +69,9 @@ function lmsSend() {
             }
 
             // Update conversation history
-            openAIMessages.push({ role: "user", content: sQuestion });
-            openAIMessages.push({ role: "assistant", content: candidate });
-            localStorage.setItem("openAIMessages", JSON.stringify(openAIMessages));
+            openLLMessages.push({ role: "user", content: sQuestion });
+            openLLMessages.push({ role: "assistant", content: candidate });
+            localStorage.setItem("openLLMessages", JSON.stringify(openLLMessages));
 
             // Check the state of the checkbox and have fun
             const checkbox = document.getElementById("autoSpeak");
