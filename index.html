@@ -20,10 +20,40 @@
     // Adjust for Mobile User Agents
     mobile_txtout();
     mobile_txtmsd();
+
+    function toggleSettings() {
+      const settingsMenu = document.getElementById("settingsMenu");
+      if (settingsMenu.style.display === "none" || !settingsMenu.style.display) {
+        settingsMenu.style.display = "block";
+      } else {
+        settingsMenu.style.display = "none";
+      }
+    }
   </script>
 
   <!-- Original CSS -->
   <link rel="stylesheet" type="text/css" href="core/style.css">
+
+  <style>
+    /* FLOATING SETTINGS MENU */
+    #settingsMenu {
+      display: none;  
+      position: absolute;
+      top: 40px;       
+      right: 269px;    
+      color: blue;
+      opacity: 89%;	
+      background-color: #ddd;
+      border: 1px solid #ccc;
+      padding: 1em;
+      z-index: 9999; /* Make sure it’s on top of other elements */
+      width: 250px; 
+      box-shadow: 0 2px 8px rgba(0, 0, 4, 2.0);
+    }
+    #settingsMenu h3 {
+      margin-top: 0;
+    }
+  </style>
 
 </head>
 
@@ -60,27 +90,6 @@
 
       </div>
 
-      <label for="selEngine">Engine:</label>
-      <select id="selEngine" aria-label="Select speech engine" onchange="ChangeLang(this)">
-        <option value="standard">Standard</option>
-        <option value="neural">Neural</option>
-        <option value="generative">Generative</option>
-        <option value="bark">Bark</option>
-      </select>
-
-      <label for="selVoice">Voice:</label>
-      <select id="selVoice" aria-label="Select voice" onchange="ChangeLang(this)">
-        <option value="Salli">English</option>
-        <option value="Ruth">English(gen)</option>
-        <option value="Seoyeon">Korean</option>
-        <option value="Mia">Spanish</option>
-        <option value="Tatyana">Ukrainian</option>
-      </select>
-
-      <!-- Checkbox with label -->
-      <label for="autoSpeak">Auto Speak:</label>
-      <input type="checkbox" id="autoSpeak" aria-label="Enable auto speak">
-
       <div class="container">
         <button class="speakSend" aria-label="Speak the text"
                 onClick="speakText(); document.getElementById('audioPlayback').setAttribute('autoplay', true);"
@@ -112,30 +121,11 @@
         Send
       </button>
 
-      <label for="selModel">Model:</label>
-      <select id="selModel" aria-label="Select model" onchange="updateButton()">
-        <option value="auto" title="Default">auto</option>
-        <option value="gpt-4o-mini" title="gpt-4o-mini">gpt-4o-mini</option>
-        <option value="gpt-4o" title="gpt-4o">gpt-4o</option>
-        <option value="o1" title="o1">o1</option>
-        <option value="o1-preview" title="o1-preview">o1-preview</option>
-        <option value="o1-mini" title="o1-mini">o1-mini</option>
-        <option value="dall-e-3" title="Image Generation">dall-e-3</option>
-        <option value="gemini" title="Google Gemini">gemini</option>
-        <option value="lm-studio" title="lm-studio">lm-studio</option>
-      </select>
-
-      <label for="selPers">Personality:</label>
-      <select id="selPers" aria-label="Select personality" onchange="ChangeLang(this)">
-        <option value="You are Eva..." title="Eva's Default Personality.">Default</option>
-        <option value="Eva is a large language model..." title="Eva will answer concisely">Concise</option>
-        <option value="You are Eva. Your function..." title="Eva will give detailed responses.">Advanced</option>
-        <option value="I want you to act as a linux terminal..." title="Emulate a Linux Bash Shell">Linux Terminal</option>
-      </select>
-
       <button onclick="printMaster()" aria-label="Print output">
         Print Output
       </button>
+
+      <button style="margin: 1em;" onclick="toggleSettings()">Settings</button>
 
       <div class="container">
         <button onclick="startSpeechRecognition()" id="micButton" class="mic-button" aria-label="Start speech recognition">
@@ -153,10 +143,59 @@
     <button id="clearMessagesBtn" onclick="clearMessages()" aria-label="Clear memory">
       Clear Memory
     </button>
+   </div> 
+
+  <!-- Settings Menu (initially hidden) -->
+  <div id="settingsMenu">
+    <h3>Settings</h3>
+    <label for="selEngine">Engine:</label>
+    <select id="selEngine" onchange="ChangeLang(this)">
+      <option value="standard">Standard</option>
+      <option value="neural">Neural</option>
+      <option value="generative">Generative</option>
+      <option value="bark">Bark</option>
+    </select>
+    <br/><br/>
+
+    <label for="selVoice">Voice:</label>
+    <select id="selVoice" onchange="ChangeLang(this)">
+      <option value="Salli">English</option>
+      <option value="Ruth">English(gen)</option>
+      <option value="Seoyeon">Korean</option>
+      <option value="Mia">Spanish</option>
+      <option value="Tatyana">Ukrainian</option>
+    </select>
+    <br/><br/>
+
+    <label for="autoSpeak">Auto Speak:</label>
+    <input type="checkbox" id="autoSpeak">
+    <br/><br/>
+
+    <label for="selModel">Model:</label>
+    <select id="selModel" onchange="updateButton()">
+      <option value="auto" title="Default">auto</option>
+      <option value="gpt-4o-mini" title="gpt-4o-mini">gpt-4o-mini</option>
+      <option value="gpt-4o" title="gpt-4o">gpt-4o</option>
+      <option value="o1" title="o1">o1</option>
+      <option value="o1-preview" title="o1-preview">o1-preview</option>
+      <option value="o1-mini" title="o1-mini">o1-mini</option>
+      <option value="dall-e-3" title="Image Generation">dall-e-3</option>
+      <option value="gemini" title="Google Gemini">gemini</option>
+      <option value="lm-studio" title="lm-studio">lm-studio</option>
+    </select>
+    <br/><br/>
+
+    <label for="selPers">Select Personality:</label>
+    <select id="selPers" aria-label="Select personality" onchange="ChangeLang(this)"> 
+      <option value="You are Eva, a knowledgeable AI assistant. Your goal is to provide accurate, and helpful responses to questions, while being honest and straightforward. You have access to provide updated real-time news, information and media. " title="Eva's Default Personality.">Default</option>
+      <option value="Eva is a large language model. Browsing: enabled. Instructions: Answer factual questions concisely. You have access to updated real-time news and information. " title="Eva will answer concisely">Concise</option> 
+      <option value="You are Eva. Your function is to generate human-like text based on the inputs given, and your goal is to assist users in generating informative, helpful and engaging responses to questions and requests. Please provide a detailed response with lists, where applicable. You have access to updated real-time news, information and media. " title="Eva will give detailed responses.">Advanced</option>   
+      <option value="I want you to act as a linux terminal. I will type commands and you will reply with what the terminal should show. I want you to only reply with the terminal output inside one unique code block, and nothing else. do not write explanations. do not type commands unless I instruct you to do so. when i need to tell you something in english, i will do so by putting text inside curly brackets {like this}. my first command is pwd" title="Emulate a Linux Bash Shell">Linux Terminal</option>
+    </select>
   </div>
 
   <footer>
     <img id="eEgg" src="core/img/eEgg.gif" alt="Image" style="display:none;">
-  </footer>
+  </footer> 
 </body>
 </html>
