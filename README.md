@@ -37,6 +37,3 @@ This allows you to easily interact with OpenAI and Google Generative APIs.
 Grabbed the inital idea from here https://www.codeproject.com/Articles/5350454/Chat-GPT-in-JavaScript <br>
 Complete overhaul of the code base.
 
-> [!IMPORTANT]
-> Check out this Android Port of Eva I am working on 🤖
-> - [Eva LLM Android](https://github.com/appatalks/eva_llm_android)
