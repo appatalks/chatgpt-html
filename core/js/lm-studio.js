@@ -34,14 +34,20 @@ function lmsSend() {
     document.getElementById("txtOutput").innerHTML += '<span class="user">You: </span>' + sQuestion + "<br>\n";
 
     const openAIUrl = `http://localhost:1234/v1/chat/completions`;
+    // const openAIUrl = `http://192.168.86.69:1234/v1/chat/completions`;
+    // const openAIUrl = "https://api.openai.com/v1/chat/completions" ;
     const requestOptions = {
         method: "POST",
         headers: { 
             "Content-Type": "application/json",
-            "Access-Control-Allow-Origin": "*"
+            "Access-Control-Allow-Origin": "*",
+            // "Authorization": "Bearer " + OPENAI_API_KEY
         },
         body: JSON.stringify({
             model: "granite-3.1-8b-instruct", // Replace with your actual local model identifier
+            // model: "gpt-4o-mini", // Proxy directly to OpenAI
+            // model: "tiger-gemma-9b-v3", // Good uncensored model
+
             messages: openLLMessages.concat([
                 { role: "user", content: sQuestion }
             ]),
@@ -87,7 +93,8 @@ function lmsSend() {
         });
 }
 
+// Redundant ?
 // Function to handle sending data based on the selected model
-function sendData() {
-        lmsSend(); // Use OpenAI-like local endpoint
-}
+// function sendData() {
+//         lmsSend(); // Use OpenAI-like local endpoint
+// }
