@@ -1,6 +1,6 @@
 /* ------------------------------------------------------------
- *    Base Styles
- *    ------------------------------------------------------------- */
+ *  *    Base Styles
+ *   *    ------------------------------------------------------------- */
 body {
   font-family: Arial, sans-serif;
   margin: 0; /* Remove default margins */
@@ -39,8 +39,8 @@ body {
 
 
 /* ------------------------------------------------------------
- *  *    Chat Output and Message Styling
- *  *    --------------------------------------------------- */
+ *  *  *    Chat Output and Message Styling
+ *   *  *    --------------------------------------------------- */
 #idContainer {
   display: flex;
   flex-direction: column;
@@ -137,19 +137,19 @@ body {
 }
 
 /* ------------------------------------------------------------
- *    Input Styling
- *    ------------------------------------------------------------- */
+ *  *    Input Styling
+ *   *    ------------------------------------------------------------- */
 
 /* A flexible container that holds the text input + buttons side by side */
 .chat-input-container {
   display: flex;
   align-items: center;
-  max-width: 760px;                /* Match the width of #txtMsg you had before */
+  max-width: 760px; 
   border: 1px solid #ccc;
   border-radius: 4px;
   background-color: #fff;
   margin-top: 1px;
-  padding: 5px;                /* Inner spacing so text & buttons aren’t jammed together */
+  padding: 5px;    
 }
 
 /* Let #txtMsg expand or shrink and fill available space */
@@ -211,8 +211,8 @@ body {
 }
 
 /* ------------------------------------------------------------
- *    Interactive Elements
- *    ------------------------------------------------------------- */
+ *  *    Interactive Elements
+ *   *    ------------------------------------------------------------- */
 label,
 select,
 input[type="checkbox"],
@@ -230,8 +230,8 @@ button {
 }
 
 /* ------------------------------------------------------------
- *    Mic and Speak Button Positioning
- *    ------------------------------------------------------------- */
+ *  *    Mic and Speak Button Positioning
+ *   *    ------------------------------------------------------------- */
 .container {
   position: relative;
   width: 40px;
@@ -247,7 +247,7 @@ button {
 }
 
 #audioPlayback {
-  display: block;
+  display: none;
   margin: 10px 0;
   width: 96%;
 }
@@ -258,8 +258,8 @@ button {
 
 
 /* ------------------------------------------------------------
- *    Additional Elements
- *    ------------------------------------------------------------- */
+ *  *    Additional Elements
+ *   *    ------------------------------------------------------------- */
 select {
   padding: 5px;
   border-radius: 5px;
@@ -295,8 +295,8 @@ footer {
 }
 
 /* ------------------------------------------------------------
- *    Keyframes
- *    ------------------------------------------------------------- */
+ *  *    Keyframes
+ *   *    ------------------------------------------------------------- */
 @keyframes pulse {
   0% {
     opacity: 1;
@@ -310,53 +310,48 @@ footer {
 }
 
 /* ------------------------------------------------------------
- *    Responsive Adjustments
- *    ------------------------------------------------------------- */
-@media only screen and (max-width: 768px) {
+ *  *    Responsive Adjustments
+ *   *    ------------------------------------------------------------- */
+// @media only screen and (max-width: 960px) {
+@media only screen and (max-device-width: 960px) {
+
   body {
-    background-size: cover; /* Set background-size to cover for mobile view */
-    height: auto; /* Adjust height for mobile */
-    background-color: blue;
+    background-size: cover; 
+    height: auto;
+    background-color: red;
   }
 
-  #idContainer {
-    width: 95%;
-    margin: 10px auto;
-    padding: 10px;
-  }
-
-  #txtMsg,
   #txtOutput {
     width: 100%;
     height: auto;
   }
 
-  .speakSend,
-  .mic-button {
-    width: 35px;
-    height: 35px;
-  }
 
   .container {
     width: 40px;
     height: 40px;
     display: flex;
-    gap: 10px; /* Space between buttons */
-    justify-content: center;
-    align-items: center;
+    gap: 0px; /* Space between buttons */
+    justify-content: right;
+    align-items: right;
     margin-top: 20px;
   }
 
   .speakSend {
-    top: 60px;
-    right: 10px;
+    left: 600px;
+    bottom: 65px;
+  }
+  .mic-button {
+    width: 35px;
+    height: 35px;	
+    top: 0px;
+    right: 0px;
   }
 
-  .mic-button {
-    top: 10px;
-    right: 10px;
+  label[for="imgInput"] {
+    display: absolute;
   }
-  
+
   #settingsMenu {
     position: fixed;
     top: 60px;           /* Adjust to push it below your header or other elements */
