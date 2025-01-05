@@ -8,7 +8,7 @@
   <title>Eva - ChatGPT</title>
 
   <!-- Scripts -->
-  <script src="core/js/options.js"></script>
+  <script src="core/js/options.js"></script> 
   <script src="core/js/external.js"></script>
   <script src="core/js/gpt-core.js"></script>
   <script src="core/js/gl-google.js"></script>
@@ -30,10 +30,9 @@
       }
     }
   </script>
-
+	
   <!-- Original CSS -->
   <link rel="stylesheet" type="text/css" href="core/style.css">
-
 </head>
 
 <body onload="OnLoad()">
@@ -67,7 +66,6 @@
                 id="speakSend" title="Speak This">
         </button>
       </div>
-
       <p id="result"></p>
    </div>
 
@@ -79,19 +77,17 @@
     
 <div class="chat-input-container">
     <div id="txtMsg" contenteditable="true" rows="2" placeholder="Input Text" aria-label="Input text"></div>
-    <script>
-      insertImage();
-    </script>
       <label for="imgInput">&#128206;</label>
 	<input type="file" id="imgInput" aria-label="Upload image" style="display:none;"> 
-
       <button type="button" onclick="sendData()" id="btnSend" aria-label="Send data">Send</button>
       <button onclick="startSpeechRecognition()" id="micButton" class="mic-button" aria-label="Start speech recognition"></button>
+   <script>
+      insertImage();
+    </script>
     <div>
 </div>
 
     </div>
-<!-- <input type="file" id="imgInput" aria-label="Upload image">  -->
 
     <script>
       // Capture CTRL + Enter Key
@@ -137,12 +133,12 @@
     </select>
     <br/><br/>
 
-    <label for="selPers">Select Personality:</label>
+<label for="selPers">Select Personality:</label>
     <select id="selPers" aria-label="Select personality" onchange="ChangeLang(this)"> 
-      <option value="You are Eva, a knowledgeable AI assistant. Your goal is to provide accurate, and helpful responses to questions, while being honest and straightforward. You have access to provide updated real-time news, information and media. " title="Eva's Default Personality.">Default</option>
-      <option value="Eva is a large language model. Browsing: enabled. Instructions: Answer factual questions concisely. You have access to updated real-time news and information. " title="Eva will answer concisely">Concise</option> 
-      <option value="You are Eva. Your function is to generate human-like text based on the inputs given, and your goal is to assist users in generating informative, helpful and engaging responses to questions and requests. Please provide a detailed response with lists, where applicable. You have access to updated real-time news, information and media. " title="Eva will give detailed responses.">Advanced</option>   
-      <option value="I want you to act as a linux terminal. I will type commands and you will reply with what the terminal should show. I want you to only reply with the terminal output inside one unique code block, and nothing else. do not write explanations. do not type commands unless I instruct you to do so. when i need to tell you something in english, i will do so by putting text inside curly brackets {like this}. my first command is pwd" title="Emulate a Linux Bash Shell">Linux Terminal</option>
+       <option value="You are Eva, a knowledgeable AI assistant. Your goal is to provide accurate, and helpful responses to questions, while being honest and straightforward. You have access to provide updated real-time news, information and media. " title="Eva's Default Personality.">Default</option>
+       <option value="Eva is a large language model. Browsing: enabled. Instructions: Answer factual questions concisely. You have access to updated real-time news and information. " title="Eva will answer concisely">Concise</option> 
+       <option value="You are Eva. Your function is to generate human-like text based on the inputs given, and your goal is to assist users in generating informative, helpful and engaging responses to questions and requests. Please provide a detailed response with lists, where applicable. You have access to updated real-time news, information and media. " title="Eva will give detailed responses.">Advanced</option>   
+       <option value="I want you to act as a linux terminal. I will type commands and you will reply with what the terminal should show. I want you to only reply with the terminal output inside one unique code block, and nothing else. do not write explanations. do not type commands unless I instruct you to do so. when i need to tell you something in english, i will do so by putting text inside curly brackets {like this}. my first command is pwd" title="Emulate a Linux Bash Shell">Linux Terminal</option>
     </select>
   </div>
 
@@ -155,5 +151,6 @@
     <button id="clearMessagesBtn" onclick="clearMessages()" aria-label="Clear memory">Clear Memory</button>
 
   </footer> 
+
 </body>
 </html>
