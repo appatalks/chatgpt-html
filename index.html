@@ -34,27 +34,6 @@
   <!-- Original CSS -->
   <link rel="stylesheet" type="text/css" href="core/style.css">
 
-  <style>
-    /* FLOATING SETTINGS MENU */
-    #settingsMenu {
-      display: none;  
-      position: absolute;
-      top: 40px;       
-      right: 269px;    
-      color: blue;
-      opacity: 89%;	
-      background-color: #ddd;
-      border: 1px solid #ccc;
-      padding: 1em;
-      z-index: 9999; /* Make sure it’s on top of other elements */
-      width: 250px; 
-      box-shadow: 0 2px 8px rgba(0, 0, 4, 2.0);
-    }
-    #settingsMenu h3 {
-      margin-top: 0;
-    }
-  </style>
-
 </head>
 
 <body onload="OnLoad()">
@@ -67,27 +46,19 @@
     <div id="textToSynth">
       <!-- Chat Output Area -->
       <div id="txtOutput" rows="10" wrap="soft" placeholder="Output">
-        
         <!-- Example Chat Messages -->
         <div class="chat-message user">
-          <div class="bubble">
-            Hi there, how's your day going?
-            <div class="bubble-time">9:00 AM</div>
+          <div class="bubble">Hi there, how's your day going?<div class="bubble-time">9:00 AM</div>
           </div>
         </div>
         <div class="chat-message eva">
-          <div class="bubble">
-            Busy but good! Working on some code. You?
-            <div class="bubble-time">9:02 AM</div>
+          <div class="bubble">Busy but good! Working on some code. You?<div class="bubble-time">9:02 AM</div>
           </div>
         </div>
         <div class="chat-message user">
-          <div class="bubble">
-            Same here! Let's catch up later.
-            <div class="bubble-time">9:05 AM</div>
+          <div class="bubble">Same here! Let's catch up later.<div class="bubble-time">9:05 AM</div>
           </div>
         </div>
-
       </div>
 
       <div class="container">
@@ -98,7 +69,6 @@
       </div>
 
       <p id="result"></p>
-    
    </div>
 
     <audio id="audioPlayback" class="audio" controls aria-label="Audio playback">
@@ -106,44 +76,27 @@
     </audio>
 
     <p></p>
-
-    <label for="imgInput">Upload Image:</label>
-    <input type="file" id="imgInput" aria-label="Upload image">
     
-    <div id="txtMsg" contenteditable="true" rows="5" placeholder="Input Text" aria-label="Input text"></div>
-
+<div class="chat-input-container">
+    <div id="txtMsg" contenteditable="true" rows="2" placeholder="Input Text" aria-label="Input text"></div>
     <script>
       insertImage();
     </script>
+      <label for="imgInput">&#128206;</label>
+	<input type="file" id="imgInput" aria-label="Upload image" style="display:none;"> 
 
+      <button type="button" onclick="sendData()" id="btnSend" aria-label="Send data">Send</button>
+      <button onclick="startSpeechRecognition()" id="micButton" class="mic-button" aria-label="Start speech recognition"></button>
     <div>
-      <button type="button" onclick="sendData()" id="btnSend" aria-label="Send data">
-        Send
-      </button>
-
-      <button onclick="printMaster()" aria-label="Print output">
-        Print Output
-      </button>
-
-      <button style="margin: 1em;" onclick="toggleSettings()">Settings</button>
-
-      <div class="container">
-        <button onclick="startSpeechRecognition()" id="micButton" class="mic-button" aria-label="Start speech recognition">
-        </button>
-      </div>
+</div>
 
     </div>
+<!-- <input type="file" id="imgInput" aria-label="Upload image">  -->
 
     <script>
       // Capture CTRL + Enter Key
       shiftBreak();
     </script>
-
-    <div id="idText"></div>
-    <button id="clearMessagesBtn" onclick="clearMessages()" aria-label="Clear memory">
-      Clear Memory
-    </button>
-   </div> 
 
   <!-- Settings Menu (initially hidden) -->
   <div id="settingsMenu">
@@ -173,15 +126,14 @@
 
     <label for="selModel">Model:</label>
     <select id="selModel" onchange="updateButton()">
-      <option value="auto" title="Default">auto</option>
-      <option value="gpt-4o-mini" title="gpt-4o-mini">gpt-4o-mini</option>
       <option value="gpt-4o" title="gpt-4o">gpt-4o</option>
       <option value="o1" title="o1">o1</option>
       <option value="o1-preview" title="o1-preview">o1-preview</option>
       <option value="o1-mini" title="o1-mini">o1-mini</option>
       <option value="dall-e-3" title="Image Generation">dall-e-3</option>
       <option value="gemini" title="Google Gemini">gemini</option>
-      <option value="lm-studio" title="lm-studio">lm-studio</option>
+      <option value="lm-studio" title="lm-studio">lm-studio</option> 
+      <option value="gpt-4o-mini" title="gpt-4o-mini">gpt-4o-mini</option>
     </select>
     <br/><br/>
 
@@ -196,6 +148,12 @@
 
   <footer>
     <img id="eEgg" src="core/img/eEgg.gif" alt="Image" style="display:none;">
+
+    <div id="idText"></div>
+    <button style="margin: 1em;" onclick="toggleSettings()">Settings</button>
+    <button onclick="printMaster()" aria-label="Print output">Print Output</button>
+    <button id="clearMessagesBtn" onclick="clearMessages()" aria-label="Clear memory">Clear Memory</button>
+
   </footer> 
 </body>
 </html>
