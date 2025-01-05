@@ -38,7 +38,12 @@ body {
     }
 
 
+/* ------------------------------------------------------------
+ *  *    Chat Output and Message Styling
+ *  *    --------------------------------------------------- */
 #idContainer {
+  display: flex;
+  flex-direction: column;
   background-color: ;
   opacity: 100%;
   max-width: 800px;
@@ -49,11 +54,9 @@ body {
   box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
 }
 
-/* ------------------------------------------------------------
- *    Chat Output and Message Styling
- *    ------------------------------------------------------------- */
 #txtOutput {
-  margin-top: 10px;
+  position: relative;
+  margin-top: 2px;
   width: 750px;
   height: 300px;
   padding: 10px;
@@ -67,6 +70,28 @@ body {
   line-height: 1.5;
   color: #333;
   white-space: pre-wrap;
+}
+
+.speakSend {
+  position: absolute;
+  background-image: url('img/thumb-125.jpeg');
+  background-size: contain;
+  background-position: center;
+  background-repeat: no-repeat;
+  bottom: 10px;   /* Adjust as desired */
+  left: 300px;    /* Adjust as desired */
+  width: 40px;
+  height: 40px;
+  margin-left: 10px;
+  cursor: pointer;
+  border: none;
+  background-color: #007bff;
+  color: #fff;
+  padding: 4px 8px;
+  border-radius: 5px;
+  font-size: 1rem;
+  transition: background-color 0.3s ease;
+  z-index: 999;
 }
 
 .message {
@@ -119,11 +144,11 @@ body {
 .chat-input-container {
   display: flex;
   align-items: center;
-  width: 750px;                /* Match the width of #txtMsg you had before */
+  max-width: 760px;                /* Match the width of #txtMsg you had before */
   border: 1px solid #ccc;
   border-radius: 4px;
   background-color: #fff;
-  margin-top: 10px;
+  margin-top: 1px;
   padding: 5px;                /* Inner spacing so text & buttons aren’t jammed together */
 }
 
@@ -131,7 +156,7 @@ body {
 #txtMsg {
   flex: 1;                     /* Takes up remaining space */
   text-align: left !important;
-  min-height: 40px;            /* Reasonable minimum height */
+  min-height: 55px;            /* Reasonable minimum height */
   max-height: 120px;           /* Adjust if you don’t want it to get too big */
   overflow-y: auto;
   border: none;                /* Remove default border */
@@ -196,15 +221,6 @@ button {
   font-size: 1rem;
 }
 
-.speakSend {
-  background-image: url('img/thumb-125.jpeg');
-  background-size: contain;   /* or cover */
-  background-position: center;
-  background-repeat: no-repeat;
-  width: 40px;
-  height: 40px;
-}
-
 .mic-button {
   background-image: url('img/mic.png');
 }
@@ -220,7 +236,7 @@ button {
   position: relative;
   width: 40px;
   height: 0px;
-  display: inline-block;
+  display: inline;
 }
 
 .audio {
