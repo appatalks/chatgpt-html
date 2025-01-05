@@ -19,7 +19,31 @@ body {
   text-align: center;
 }
 
+    #settingsMenu {
+      display: none;  
+      position: absolute;
+      top: 40px;       
+      right: 669px;    
+      color: blue;
+      opacity: 89%;	
+      background-color: #ddd;
+      border: 1px solid #ccc;
+      padding: 1em;
+      z-index: 9999;              /* Make sure it’s on top of other elements */
+      width: 250px;               /* Optional fixed width */
+      box-shadow: 0 2px 8px rgba(0, 0, 4, 2.0);
+    }
+    #settingsMenu h3 {
+      margin-top: 0;
+    }
+
+
+/* ------------------------------------------------------------
+ *  *    Chat Output and Message Styling
+ *  *    --------------------------------------------------- */
 #idContainer {
+  display: flex;
+  flex-direction: column;
   background-color: ;
   opacity: 100%;
   max-width: 800px;
@@ -30,11 +54,9 @@ body {
   box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
 }
 
-/* ------------------------------------------------------------
- *    Chat Output and Message Styling
- *    ------------------------------------------------------------- */
 #txtOutput {
-  margin-top: 10px;
+  position: relative;
+  margin-top: 2px;
   width: 750px;
   height: 300px;
   padding: 10px;
@@ -48,6 +70,28 @@ body {
   line-height: 1.5;
   color: #333;
   white-space: pre-wrap;
+}
+
+.speakSend {
+  position: absolute;
+  background-image: url('img/thumb-125.jpeg');
+  background-size: contain;
+  background-position: center;
+  background-repeat: no-repeat;
+  bottom: 10px;   /* Adjust as desired */
+  left: 300px;    /* Adjust as desired */
+  width: 40px;
+  height: 40px;
+  margin-left: 10px;
+  cursor: pointer;
+  border: none;
+  background-color: #007bff;
+  color: #fff;
+  padding: 4px 8px;
+  border-radius: 5px;
+  font-size: 1rem;
+  transition: background-color 0.3s ease;
+  z-index: 999;
 }
 
 .message {
@@ -74,6 +118,7 @@ body {
   text-align: left;
 }
 
+
 #txtOutput a {
   cursor: pointer;
 }
@@ -94,27 +139,75 @@ body {
 /* ------------------------------------------------------------
  *    Input Styling
  *    ------------------------------------------------------------- */
-#txtMsg {
-  width: 750px;
-  height: 100px;
-  margin-top: 10px;
-  padding: 10px;
+
+/* A flexible container that holds the text input + buttons side by side */
+.chat-input-container {
+  display: flex;
+  align-items: center;
+  max-width: 760px;                /* Match the width of #txtMsg you had before */
   border: 1px solid #ccc;
   border-radius: 4px;
   background-color: #fff;
-  text-align: left;
+  margin-top: 1px;
+  padding: 5px;                /* Inner spacing so text & buttons aren’t jammed together */
+}
+
+/* Let #txtMsg expand or shrink and fill available space */
+#txtMsg {
+  flex: 1;                     /* Takes up remaining space */
+  text-align: left !important;
+  min-height: 55px;            /* Reasonable minimum height */
+  max-height: 120px;           /* Adjust if you don’t want it to get too big */
+  overflow-y: auto;
+  border: none;                /* Remove default border */
+  outline: none;
   font-family: Arial, sans-serif;
   font-size: 14px;
   line-height: 1.5;
   color: #333;
-  overflow-y: scroll;
-  white-space: pre-wrap;
-  outline: none;
+  white-space: pre-wrap;       /* Makes text wrap nicely */
 }
 
 #txtMsg img {
   width: 55px;
   height: 55px;
+}
+
+/* Style the “Send” button so it visually appears part of the same container */
+#btnSend {
+  margin-left: 10px;           /* Spacing from the input field */
+  cursor: pointer;
+  border: none;
+  background-color: #007bff;
+  color: #fff;
+  padding: 4px 8px;
+  border-radius: 5px;
+  font-size: 1rem;
+  transition: background-color 0.3s ease;
+}
+
+#btnSend:hover {
+  background-color: #0056b3;
+}
+
+/* Style the mic button in the same row */
+.mic-button {
+  margin-left: 10px;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  /* background-image: url('img/mic.png'); */
+  background-size: contain;
+  background-position: center;
+  background-repeat: no-repeat;
+  border: none;
+  cursor: pointer;
+  transition: background-color 0.3s ease;
+}
+
+/* Optional hover state for the mic button */
+.mic-button:hover {
+  background-color: #0056b3;
 }
 
 /* ------------------------------------------------------------
@@ -126,41 +219,6 @@ input[type="checkbox"],
 button {
   margin: 5px;
   font-size: 1rem;
-}
-
-button,
-.speakSend,
-.mic-button {
-  cursor: pointer;
-  border: none;
-  background-color: #007bff;
-  color: #fff;
-  padding: 8px 16px;
-  border-radius: 5px;
-  font-size: 1rem;
-  transition: background-color 0.3s ease;
-}
-
-button:hover,
-.speakSend:hover,
-.mic-button:hover {
-  background-color: #0056b3;
-}
-
-.speakSend,
-.mic-button {
-  width: 40px;
-  height: 40px;
-  border-radius: 50%;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  background-position: center;
-  background-size: contain;
-}
-
-.speakSend {
-  background-image: url('img/thumb-125.jpeg');
 }
 
 .mic-button {
@@ -178,7 +236,7 @@ button:hover,
   position: relative;
   width: 40px;
   height: 0px;
-  display: inline-block;
+  display: inline;
 }
 
 .audio {
@@ -197,6 +255,7 @@ button:hover,
 #imgInput {
  background-color: transparent;
 }
+
 
 /* ------------------------------------------------------------
  *    Additional Elements
@@ -223,7 +282,7 @@ footer {
 #clearMessagesBtn {
   background-color: #dc3545;
   color: #fff;
-  padding: 8px 16px;
+  padding: 2px 6px;
   border-radius: 5px;
   border: none;
   cursor: pointer;
@@ -297,4 +356,16 @@ footer {
     top: 10px;
     right: 10px;
   }
+  
+  #settingsMenu {
+    position: fixed;
+    top: 60px;           /* Adjust to push it below your header or other elements */
+    left: 10px;          /* Add some breathing room on the sides */
+    right: 10px;
+    width: auto;         /* Let it resize for mobile screens */
+    margin: 0 auto;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+    z-index: 9999;
+  }
+
 }

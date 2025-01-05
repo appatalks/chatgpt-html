@@ -40,87 +40,12 @@ function OnLoad() {
     "      ";
 }
 
-// Select Engine Completion Endpoint
-function autoSelect() {
-    var userQuestionElement = document.getElementById("txtMsg").innerHTML;
-    if (!userQuestionElement) {
-        console.error('userQuestion element not found.');
-        return; // Exit the function if the element does not exist
-    }
-    var userInput = userQuestionElement; // Get the user's question
-    console.log(userQuestionElement);
-    // Check if userInput is indeed a string
-    if (typeof userInput === "string") {
-    	var selModel = document.getElementById("selModel");
-
-    	// Define keywords for different conditions
-
-	// coding-related, math, logic, math, science
-    	const gptHuristics = ["code", "programming", "debug", "bash", "python", "javascript", "script", "space", "solar", "math", "fraction", "problem", "+", "="];
-    	
-	// For complex queries
-	const glHuristics = ["gemini"];
-	
-	// Image generation
-	const dalHuristics =["show me an image of", "create an image of"];
-
-    	// Simple heuristic to select a model based on the user's input
-    	if (userInput.length > 500) {
-            selModel.value = "gpt-4o"; // Long queries might not need more token resources
-    	} 
-    	else if (gptHuristics.some(keyword => userInput.includes(keyword))) {
-            // selModel.value = "o1-mini"; // For coding-related, math, logic, science.
-	    selModel.value = "gpt-4o-mini"; // o1-mini and o1-preview is limited beta for the moment	 
-    	}
-    	else if (glHuristics.some(keyword => userInput.includes(keyword))) {
-            selModel.value = "gemini"; // For Google Gemini's model
-    	}
-        else if (dalHuristics.some(keyword => userInput.includes(keyword))) {
-            selModel.value = "dall-e-3"; // For dall-e-3 generated images
-        }
-    	else {
-            selModel.value = "gpt-4o-mini"; // Default to a different model if none of the above conditions are met
-    	}
-
-    // Now trigger the appropriate send function based on the selected model
-    switch (selModel.value) {
-        case "gpt-4o-mini":
-        case "gpt-4o":
- 	case "o1": // tier liminted
-        case "o1-mini": 
-        case "o1-preview":
-            trboSend();
-            break;
-        case "gemini":
-            geminiSend();
-            break;
-        case "lm-studio": // offline models
-            lmsSend();
-            break;
-        case "dall-e-3":
-            dalle3Send();
-            break;
-        default:
-            trboSend();
-    }
-    // Reset back to auto
-    selModel.value = "auto";
-    } else {
-        console.error('userInput is not a string. Actual type:', typeof userInput);
-    }
-}
-
 
 function updateButton() {
     var selModel = document.getElementById("selModel");
     var btnSend = document.getElementById("btnSend");
 
-    if (selModel.value == "auto") {
-        btnSend.onclick = function() {
-            clearText();
-            autoSelect();
-        };
-    } else if (selModel.value == "gpt-4o-mini" || selModel.value == "o1" || selModel.value == "o1-mini" || selModel.value == "gpt-4o" || selModel.value == "o1-preview") {
+    if (selModel.value == "gpt-4o-mini" || selModel.value == "o1" || selModel.value == "o1-mini" || selModel.value == "gpt-4o" || selModel.value == "o1-preview") {
         btnSend.onclick = function() {
             clearText();
             trboSend();
@@ -154,10 +79,7 @@ function sendData() {
     // Logic required for initial message
     var selModel = document.getElementById("selModel");
 
-    if (selModel.value == "auto") {
-	clearText();
-        autoSelect();
-    } else if (selModel.value == "gpt-4o-mini" || selModel.value == "o1" || selModel.value == "o1-mini" || selModel.value == "gpt-4o" || selModel.value == "o1-preview") {
+    if (selModel.value == "gpt-4o-mini" || selModel.value == "o1" || selModel.value == "o1-mini" || selModel.value == "gpt-4o" || selModel.value == "o1-preview") {
         clearText();
         trboSend();
     } else if (selModel.value == "gemini") {
@@ -301,6 +223,13 @@ function insertImage() {
   var imgInput = document.getElementById('imgInput');
   var txtMsg = document.getElementById('txtMsg');
 
+  // If either element is not found, just return instead of erroring out.
+  if (!imgInput || !txtMsg) {
+    console.warn("imgInput or txtMsg not found in the DOM yet.");
+    return;
+  }
+
+
   function addImage(file) {
     // Create a new image element
     var img = document.createElement("img");
@@ -327,20 +256,20 @@ function insertImage() {
       
       // Send to VisionAPI
       if (selModel.value == "gpt-3.5-turbo" || selModel.value == "gpt-4-turbo-preview") {
-	  sendToVisionAPI(imageData);
+          sendToVisionAPI(imageData);
           btnSend.onclick = function() {
-	      updateButton();
-	      sendData();
-	      clearSendText();
+              updateButton();
+              sendData();
+              clearSendText();
           };
-      } else if (selModel.value == "gpt-4o" || selModel.value == "auto") {
+      } else if (selModel.value == "gpt-4o" || selModel.value == "gpt-4o-mini" || selModel.value == "o1-mini") {
           sendToNative(imageData, sQuestion);
           btnSend.onclick = function() {
-	      updateButton();
-	      sendData();
-	      clearSendText();
+              updateButton();
+              sendData();
+              clearSendText();
           };
-      }	
+      } 
     };
     reader.readAsDataURL(file);
     // Return the file object
