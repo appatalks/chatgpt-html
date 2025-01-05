@@ -223,6 +223,13 @@ function insertImage() {
   var imgInput = document.getElementById('imgInput');
   var txtMsg = document.getElementById('txtMsg');
 
+  // If either element is not found, just return instead of erroring out.
+  if (!imgInput || !txtMsg) {
+    console.warn("imgInput or txtMsg not found in the DOM yet.");
+    return;
+  }
+
+
   function addImage(file) {
     // Create a new image element
     var img = document.createElement("img");
@@ -249,20 +256,20 @@ function insertImage() {
       
       // Send to VisionAPI
       if (selModel.value == "gpt-3.5-turbo" || selModel.value == "gpt-4-turbo-preview") {
-	  sendToVisionAPI(imageData);
+          sendToVisionAPI(imageData);
           btnSend.onclick = function() {
-	      updateButton();
-	      sendData();
-	      clearSendText();
+              updateButton();
+              sendData();
+              clearSendText();
           };
-      } else if (selModel.value == "gpt-4o" || selModel.value == "gpt-4o-mini") {
+      } else if (selModel.value == "gpt-4o" || selModel.value == "gpt-4o-mini" || selModel.value == "o1-mini") {
           sendToNative(imageData, sQuestion);
           btnSend.onclick = function() {
-	      updateButton();
-	      sendData();
-	      clearSendText();
+              updateButton();
+              sendData();
+              clearSendText();
           };
-      }	
+      } 
     };
     reader.readAsDataURL(file);
     // Return the file object
