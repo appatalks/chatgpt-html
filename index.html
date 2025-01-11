@@ -19,16 +19,6 @@
     auth();
     // Adjust for Mobile User Agents
     mobile_txtout();
-    //mobile_txtmsd();
-
-    function toggleSettings() {
-      const settingsMenu = document.getElementById("settingsMenu");
-      if (settingsMenu.style.display === "none" || !settingsMenu.style.display) {
-        settingsMenu.style.display = "block";
-      } else {
-        settingsMenu.style.display = "none";
-      }
-    }
   </script>
 
   <!-- Original CSS -->
@@ -70,7 +60,6 @@
 
 
   <!-- Settings Menu (initially hidden) -->
-
   <div class="settingsMenu" id="settingsMenu">
     <h3>Settings</h3>
     <label for="selEngine">Engine:</label>
@@ -118,7 +107,6 @@
     </select>
   </div>
 
-
       <p id="result"></p>
    </div>
 
@@ -150,12 +138,10 @@
 
   <footer>
     <img id="eEgg" src="core/img/eEgg.gif" alt="Image" style="display:none;">
-
     <div id="idText"></div>
-    <button style="margin: 1em;" onclick="toggleSettings()">Settings</button>
+    <button id="settingsButton" style="margin: 1em;" onclick="toggleSettings()">Settings</button>
     <button onclick="printMaster()" aria-label="Print output">Print Output</button>
     <button id="clearMessagesBtn" onclick="clearMessages()" aria-label="Clear memory">Clear Memory</button>
-
   </footer> 
 
 </body>
