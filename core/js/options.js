@@ -35,16 +35,17 @@ document.addEventListener('DOMContentLoaded', () => {
 
   function toggleSettings(event) {
     event.stopPropagation();
-    if (settingsMenu.style.display === 'none' || !settingsMenu.style.display) {
-      settingsMenu.style.display = 'block';
-    } else {
-      settingsMenu.style.display = 'none';
-    }
+    settingsMenu.style.display =
+      (settingsMenu.style.display === 'none' || !settingsMenu.style.display)
+        ? 'block'
+        : 'none';
   }
 
-  // Toggle on button click
+  // Attach event via JavaScript
   settingsButton.addEventListener('click', toggleSettings);
-  document.addEventListener('click', function(event) {
+
+  // Close the menu when clicking outside
+  document.addEventListener('click', (event) => {
     if (!settingsMenu.contains(event.target) && event.target !== settingsButton) {
       settingsMenu.style.display = 'none';
     }
