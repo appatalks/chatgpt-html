@@ -22,8 +22,8 @@ body {
     #settingsMenu {
       display: none;  
       position: absolute;
-      top: 40px;       
-      right: 669px;    
+      top: 60px;       
+      left: 60px;    
       color: blue;
       opacity: 89%;	
       background-color: #ddd;
@@ -350,17 +350,6 @@ footer {
 
   label[for="imgInput"] {
     display: absolute;
-  }
-
-  #settingsMenu {
-    position: fixed;
-    top: 60px;           /* Adjust to push it below your header or other elements */
-    left: 10px;          /* Add some breathing room on the sides */
-    right: 10px;
-    width: auto;         /* Let it resize for mobile screens */
-    margin: 0 auto;
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
-    z-index: 9999;
   }
 
 }
