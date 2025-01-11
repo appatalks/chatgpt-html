@@ -203,34 +203,13 @@ function mobile_txtout() {
         // Speech Button
         let speakSend = document.querySelector(".speakSend");
         speakSend.style.top = "-55px";
-        speakSend.style.right = "-145px";
+        speakSend.style.right = "105px";
 
  	} else {
   	  // Use Defaults
  	  }
 	})
 };
-
-function mobile_txtmsd() {
-  window.addEventListener("load", function() {
-    let txtMsg = document.getElementById("txtMsg");
-    let userAgent = navigator.userAgent;
-    if (userAgent.indexOf("iPhone") !== -1 || userAgent.indexOf("Android") !== -1 || userAgent.indexOf("Mobile") !== -1) {
-      txtMsg.style.minHeight = "169px";
-      txtMsg.style.width = "90%";
-
-              var input = document.getElementById("imgInput");
-              input.style.display = "block";
-
-      // Mic Button
-      let micButton = document.querySelector(".mic-button");
-      micButton.style.top = "-49px";
-      micButton.style.right = "-145px";
-    } else {
-      // Use defaults
-    }
-  });
-}
 
 function useragent_adjust() {
       	var userAgent = navigator.userAgent;
