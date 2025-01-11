@@ -28,6 +28,29 @@ fetch('./config.json')
  });
 }
 
+// Settings Menu Options 
+document.addEventListener('DOMContentLoaded', () => {
+  const settingsButton = document.getElementById('settingsButton');
+  const settingsMenu = document.getElementById('settingsMenu');
+
+  function toggleSettings(event) {
+    event.stopPropagation();
+    if (settingsMenu.style.display === 'none' || !settingsMenu.style.display) {
+      settingsMenu.style.display = 'block';
+    } else {
+      settingsMenu.style.display = 'none';
+    }
+  }
+
+  // Toggle on button click
+  settingsButton.addEventListener('click', toggleSettings);
+  document.addEventListener('click', function(event) {
+    if (!settingsMenu.contains(event.target) && event.target !== settingsButton) {
+      settingsMenu.style.display = 'none';
+    }
+  });
+});
+
 // Welcome Text
 function OnLoad() {
     document.getElementById("txtOutput").innerHTML = "\n" +
