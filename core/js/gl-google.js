@@ -50,15 +50,23 @@ function geminiSend() {
         document.getElementById("txtOutput").innerHTML += '<span class="user">You: </span>' + sQuestion + "<br>\n";
 
         const geminiUrl = `https://generativelanguage.googleapis.com/v1alpha/models/gemini-2.0-flash-thinking-exp:generateContent?key=${GOOGLE_GL_KEY}`;
-        const requestOptions = {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-                contents: geminiMessages.concat([
-                    { role: "user", parts: [{ text: sQuestion }] }
-                ])
-            }),
-        };
+
+	const requestOptions = {
+    	   method: "POST",
+    	   headers: { "Content-Type": "application/json" },
+    	   body: JSON.stringify({
+               contents: geminiMessages.concat([
+            	   { role: "user", parts: [{ text: sQuestion }] }
+        	]),
+        	systemInstruction: geminiMessages[0], // Assuming the first message is the system instruction
+        	generationConfig: {
+            	    temperature: 0.7, 
+            	    maxOutputTokens: 1024, 
+            	    responseMimeType: "text/plain",
+            	    thinking_config: { include_thoughts: true } // Enable thinking
+        	}
+    	   }),
+	};
 
         fetch(geminiUrl, requestOptions)
             .then(response => response.ok ? response.json() : Promise.reject(new Error(`Error: ${response.status}`))) // Updated Error handling
