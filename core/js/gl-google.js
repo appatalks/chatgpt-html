@@ -61,7 +61,7 @@ function geminiSend() {
         	systemInstruction: geminiMessages[0], // Assuming the first message is the system instruction
         	generationConfig: {
             	    temperature: 0.7, 
-            	    maxOutputTokens: 1024, 
+            	    // maxOutputTokens: 1024, 
             	    responseMimeType: "text/plain",
             	    thinking_config: { include_thoughts: true } // Enable thinking
         	}
