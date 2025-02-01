@@ -258,14 +258,14 @@ function insertImage() {
 
       
       // Send to VisionAPI
-      if (selModel.value == "gpt-3.5-turbo" || selModel.value == "gpt-4-turbo-preview") {
+      if (selModel.value == "o3-mini" || selModel.value == "gpt-4-turbo-preview") {
           sendToVisionAPI(imageData);
           btnSend.onclick = function() {
               updateButton();
               sendData();
               clearSendText();
           };
-      } else if (selModel.value == "gpt-4o" || selModel.value == "gpt-4o-mini" || selModel.value == "o1-mini" || selModel.value == "o3-mini") {
+      } else if (selModel.value == "gpt-4o" || selModel.value == "gpt-4o-mini" || selModel.value == "o1-mini") {
           sendToNative(imageData, sQuestion);
           btnSend.onclick = function() {
               updateButton();
