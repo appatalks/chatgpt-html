@@ -264,6 +264,11 @@ function trboSend() {
 		        presence_penalty: cPresence_penalty,
 		        stop: hStop
 		    }
+		    // If using the o3-mini model, add the reasoning_effort parameter (low, medium, high)
+		    if (sModel === "o3-mini") {
+  		      data.reasoning_effort = "high";
+		    }   
+		    // Send Payload		      
 		    oHttp.send(JSON.stringify(data));
 
 		// Check if imgSrcGlobal is not empty or undefined
@@ -315,10 +320,14 @@ function trboSend() {
         presence_penalty: cPresence_penalty,
 	stop: hStop
     }
+    // If using the o3-mini model, add the reasoning_effort parameter (low, medium, high)
+    if (sModel === "o3-mini") {
+      data.reasoning_effort = "medium";
+    }   
 
     // Sending API Payload
     oHttp.send(JSON.stringify(data));
-    // console.log("gpt-core.js Line 314" + JSON.stringify(data));
+    // console.log("gpt-core.js Line 330" + JSON.stringify(data));
 
     // Relay Send to Screen
 
