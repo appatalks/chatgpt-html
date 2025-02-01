@@ -69,7 +69,7 @@ function updateButton() {
     var selModel = document.getElementById("selModel");
     var btnSend = document.getElementById("btnSend");
 
-    if (selModel.value == "gpt-4o-mini" || selModel.value == "o1" || selModel.value == "o1-mini" || selModel.value == "gpt-4o" || selModel.value == "o1-preview") {
+    if (selModel.value == "gpt-4o-mini" || selModel.value == "o1" || selModel.value == "o1-mini" || selModel.value == "gpt-4o" || selModel.value == "o3-mini" || selModel.value == "o1-preview") {
         btnSend.onclick = function() {
             clearText();
             trboSend();
@@ -103,7 +103,7 @@ function sendData() {
     // Logic required for initial message
     var selModel = document.getElementById("selModel");
 
-    if (selModel.value == "gpt-4o-mini" || selModel.value == "o1" || selModel.value == "o1-mini" || selModel.value == "gpt-4o" || selModel.value == "o1-preview") {
+    if (selModel.value == "gpt-4o-mini" || selModel.value == "o1" || selModel.value == "o1-mini" || selModel.value == "gpt-4o" || selModel.value == "o3-mini" || selModel.value == "o1-preview") {
         clearText();
         trboSend();
     } else if (selModel.value == "gemini") {
@@ -258,7 +258,7 @@ function insertImage() {
 
       
       // Send to VisionAPI
-      if (selModel.value == "gpt-3.5-turbo" || selModel.value == "gpt-4-turbo-preview") {
+      if (selModel.value == "o3-mini" || selModel.value == "gpt-4-turbo-preview") {
           sendToVisionAPI(imageData);
           btnSend.onclick = function() {
               updateButton();
