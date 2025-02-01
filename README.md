@@ -1,7 +1,7 @@
 # ChatGPT HTML - Using OpenAI APIs; 
 ![screenshot](core/img/screenshot.png)
 
-v.2.0.8
+v.2.0.9
 
 This allows you to easily interact with OpenAI and Google Generative APIs.
 
@@ -16,6 +16,7 @@ This allows you to easily interact with OpenAI and Google Generative APIs.
 
 - Keeps conversation memory
 - OpenAI ```o1```, ```o1-*``` models
+- OpenAI ```o3-mini``` model added (great for code - tier 3+ API)
 - OpenAI ```gpt-4o``` models
 - Latest Google Gemini 2.0 ```Thinking``` model
 - [lmstudio API](https://lmstudio.ai/docs/api/openai-api) local models 
