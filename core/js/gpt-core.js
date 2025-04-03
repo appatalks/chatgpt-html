@@ -267,6 +267,7 @@ function trboSend() {
 		    // If using the o3-mini model, add the reasoning_effort parameter (low, medium, high)
 		    if (sModel === "o3-mini") {
   		      data.reasoning_effort = "high";
+		      delete data.temperature; // Exclude temperature for o3-mini	    
 		    }   
 		    // Send Payload		      
 		    oHttp.send(JSON.stringify(data));
