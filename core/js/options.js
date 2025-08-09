@@ -318,10 +318,7 @@ function insertImage() {
 
   function sendToVisionAPI(imageData) {
     // Send the image data to Google's Vision API
-    var visionBase = (typeof DEBUG_CORS !== 'undefined' && DEBUG_CORS && typeof DEBUG_PROXY_URL !== 'undefined' && DEBUG_PROXY_URL)
-      ? (DEBUG_PROXY_URL.replace(/\/$/, '') + "/google")
-      : "https://vision.googleapis.com";
-    var visionApiUrl = `${visionBase}/v1/images:annotate?key=${GOOGLE_VISION_KEY}`;
+  var visionApiUrl = `https://vision.googleapis.com/v1/images:annotate?key=${GOOGLE_VISION_KEY}`;
 
     // Create the API request payload
     var requestPayload = {
