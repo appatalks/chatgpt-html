@@ -34,6 +34,8 @@
     useragent_adjust();
   </script>
 
+  
+
   <div id="idContainer">
     <div id="textToSynth">
       <!-- Chat Output Area -->
@@ -100,6 +102,13 @@
       <option value="gemini" title="Google Gemini">gemini</option>
       <option value="lm-studio" title="lm-studio">lm-studio</option>
       <option value="gpt-4o-mini" title="gpt-4o-mini">gpt-4o-mini</option>
+    </select>
+    <br/><br/>
+
+    <label for="selTheme">Theme:</label>
+    <select id="selTheme" onchange="applyTheme(this.value)">
+      <option value="default" selected>Current</option>
+      <option value="lcars">LCARS</option>
     </select>
     <br/><br/>
 
