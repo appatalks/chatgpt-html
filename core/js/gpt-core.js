@@ -320,11 +320,8 @@ function trboSend() {
           kMessages = kMessages.filter(msg => msg.role === 'user' || msg.role === 'assistant');
           dTemperature = 1;
         }
-        // Potential gpt-5 guidance (adjust if OpenAI docs require different roles)
-        if (isGpt5) {
-          // Keep roles for now; if guidance changes, filter similar to o1 models
-          dTemperature = 0.8;
-        }
+  // Potential gpt-5 guidance (adjust if OpenAI docs require different roles)
+  // Keep roles for now; gpt-5 uses default temperature only; do not override.
 	
     // API Payload
     var data = {
@@ -336,14 +333,17 @@ function trboSend() {
         presence_penalty: cPresence_penalty,
 	stop: hStop
     }
-    // Additional parameters for GPT-5 family and 'latest' alias
-    if (isGpt5 || isLatest) {
-      data.top_p = topP;
-      // Do not send max_tokens for gpt-5; use max_completion_tokens only
-    }
+            // Additional parameters for GPT-5 family and 'latest' alias
+            if (isGpt5 || isLatest) {
+              data.top_p = topP;
+              // Do not send max_tokens for gpt-5; use max_completion_tokens only
+              delete data.temperature; // Exclude temperature for gpt-5/latest
+              delete data.stop; // Exclude stop for gpt-5/latest
+            }
     // If using the o3-mini model, add the reasoning_effort parameter (low, medium, high)
     if (sModel === "o3-mini") {
       data.reasoning_effort = "medium";
+      delete data.temperature; // Exclude temperature for o3-mini
     }   
 
     // Sending API Payload
