@@ -56,6 +56,7 @@ function applyConfig(config) {
 document.addEventListener('DOMContentLoaded', () => {
   const settingsButton = document.getElementById('settingsButton');
   const settingsMenu = document.getElementById('settingsMenu');
+  const themeSelect = document.getElementById('selTheme');
 
   function toggleSettings(event) {
     event.stopPropagation();
@@ -74,6 +75,17 @@ document.addEventListener('DOMContentLoaded', () => {
       settingsMenu.style.display = 'none';
     }
   });
+
+  // Initialize theme from localStorage
+  try {
+    const savedTheme = localStorage.getItem('theme') || 'default';
+    if (themeSelect) {
+      themeSelect.value = savedTheme;
+    }
+    applyTheme(savedTheme);
+  } catch (e) {
+    console.warn('Theme init failed:', e);
+  }
 });
 
 // Welcome Text
@@ -86,6 +98,23 @@ function OnLoad() {
     "   #4 Use punctuation, periods and question marks.\n" +
     "   #5 Keep it short: Occam's razor.\n" +
     "      ";
+}
+
+// Apply UI theme (default | lcars)
+function applyTheme(theme) {
+  const body = document.body;
+  if (!body) return;
+
+  // Remove known theme classes first
+  body.classList.remove('theme-lcars');
+
+  // Add selected theme class
+  if (theme === 'lcars') {
+    body.classList.add('theme-lcars');
+  }
+
+  // Persist
+  try { localStorage.setItem('theme', theme); } catch (e) {}
 }
 
 
@@ -576,6 +605,69 @@ function printMaster() {
         // printWindow.document.write(txtOutput.innerHTML.replace(/\n/g, "<br>"));
         printWindow.document.write(txtOutput.innerHTML);
 	// printWindow.print(txtOutput.innerHTML);
+}
+
+// Minimal Markdown -> HTML renderer (safe-ish)
+function renderMarkdown(md) {
+  if (!md) return '';
+  // Normalize newlines
+  md = md.replace(/\r\n/g, '\n');
+  // Extract fenced code blocks first
+  const blocks = [];
+  const langs = [];
+  md = md.replace(/```([\w.+-]+)?\n([\s\S]*?)```/g, (m, lang, code) => {
+    blocks.push(escapeHtml(code));
+    langs.push((lang || '').trim());
+    return `\u0000CODEBLOCK${blocks.length - 1}\u0000`;
+  });
+
+  // Escape HTML for safety
+  md = escapeHtml(md);
+
+  // Headings
+  md = md.replace(/^###\s+(.*)$/gm, '<h3>$1<\/h3>');
+  md = md.replace(/^##\s+(.*)$/gm, '<h2>$1<\/h2>');
+  md = md.replace(/^#\s+(.*)$/gm, '<h1>$1<\/h1>');
+
+  // Links [text](url)
+  md = md.replace(/\[(.+?)\]\((https?:[^\s)]+)\)/g, '<a href="$2" target="_blank" rel="noopener noreferrer">$1<\/a>');
+
+  // Bold and italic
+  md = md.replace(/\*\*([^\n*][\s\S]*?)\*\*/g, '<strong>$1<\/strong>');
+  md = md.replace(/_([^\n_][\s\S]*?)_/g, '<em>$1<\/em>');
+
+  // Inline code `code` (avoid matching across code fences tokens)
+  md = md.replace(/`([^`\n]+)`/g, '<code>$1<\/code>');
+
+  // Bulleted lists (avoid converting inside fenced blocks by running after block extraction)
+  md = md.replace(/(?:^|\n)([-*] [^\n`].*(?:\n[-*] [^\n`].*)*)/g, (m) => {
+    const items = m.trim().split(/\n/)
+      .map(li => li.replace(/^[-*]\s+/, ''))
+      .map(t => `<li>${t}<\/li>`)
+      .join('');
+    return `\n<ul>${items}<\/ul>`;
+  });
+
+  // Line breaks
+  md = md.replace(/\n/g, '<br>');
+
+  // Restore code blocks (include language class if provided)
+  md = md.replace(/\u0000CODEBLOCK(\d+)\u0000/g, (m, idx) => {
+    const i = Number(idx);
+    const lang = langs[i] ? ` class=\"language-${langs[i]}\"` : '';
+    return `<pre><code${lang}>${blocks[i]}<\/code><\/pre>`;
+  });
+
+  return md;
+}
+
+function escapeHtml(str) {
+  return String(str)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
 }
 
 // Capture Shift + Enter Keys for new line

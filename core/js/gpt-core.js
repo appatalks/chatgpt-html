@@ -47,7 +47,6 @@ function trboSend() {
           }
             //console.log(oHttp.status);
             var oJson = {}
-            if (txtOutput.innerHTML != "") txtOutput.innerHTML += "\n"; // User Send Data
             try {
                 oJson = JSON.parse(oHttp.responseText);  // API Response Data
 		console.log("oJson", oJson);
@@ -110,34 +109,36 @@ function trboSend() {
 		const imagePlaceholderRegex = /\[(Image of (.*?))\]/g;
 		const imagePlaceholders = formattedResult.match(imagePlaceholderRegex)?.slice(0, 3);
 
-		if (imagePlaceholders) {
-	  	  for (let i = 0; i < Math.min(imagePlaceholders.length, 3); i++) {
-    		  const placeholder = imagePlaceholders[i];
-	    	  const searchQuery = placeholder.substring(10, placeholder.length - 1).trim();
-	          try {
-        	    const searchResult = await fetchGoogleImages(searchQuery);
-                if (searchResult && searchResult.items && searchResult.items.length > 0) {
-                  const topImage = searchResult.items[0];
-                  const imageLink = topImage.link;
-		formattedResult = formattedResult.replace(placeholder, `<img src="${imageLink}" title="${searchQuery}" alt="${searchQuery}">`);
-                }
-              	  }	 
-		catch (error) {
-                console.error("Error fetching image:", error);
-                }
-            	  }
-        	 txtOutput.innerHTML += "<br>" + '<span class="eva">Eva: </span>' + formattedResult;
+        if (imagePlaceholders) {
+          for (let i = 0; i < Math.min(imagePlaceholders.length, 3); i++) {
+            const placeholder = imagePlaceholders[i];
+            const searchQuery = placeholder.substring(10, placeholder.length - 1).trim();
+            try {
+              const searchResult = await fetchGoogleImages(searchQuery);
+              if (searchResult && searchResult.items && searchResult.items.length > 0) {
+                const topImage = searchResult.items[0];
+                const imageLink = topImage.link;
+                formattedResult = formattedResult.replace(placeholder, `<img src="${imageLink}" title="${searchQuery}" alt="${searchQuery}">`);
+              }
+            } catch (error) {
+              console.error("Error fetching image:", error);
+            }
+          }
+          // Append without markdown transform to preserve inserted <img>
+          txtOutput.innerHTML += '<div class="chat-bubble eva-bubble">' + '<span class="eva">Eva:</span> ' + '<div class="md">' + formattedResult + '</div>' + '</div>';
 		   var element = document.getElementById("txtOutput");
     		   element.scrollTop = element.scrollHeight;
           	}
 		else {
-		    txtOutput.innerHTML += "<br>" + '<span class="eva">Eva: </span>' + s.content.trim();
+        const mdHtml = renderMarkdown(s.content.trim());
+        txtOutput.innerHTML += '<div class="chat-bubble eva-bubble">' + '<span class="eva">Eva:</span> ' + '<div class="md">' + mdHtml + '</div>' + '</div>';
                     var element = document.getElementById("txtOutput");
                     element.scrollTop = element.scrollHeight;
 		  }
 	      } // close s.content.includes 
 	      else {
-		  txtOutput.innerHTML += "<br>" + '<span class="eva">Eva: </span>' + s.content.trim();
+      const mdHtml = renderMarkdown(s.content.trim());
+      txtOutput.innerHTML += '<div class="chat-bubble eva-bubble">' + '<span class="eva">Eva:</span> ' + '<div class="md">' + mdHtml + '</div>' + '</div>';
                    var element = document.getElementById("txtOutput");
                    element.scrollTop = element.scrollHeight;
  	      }	
@@ -355,11 +356,15 @@ function trboSend() {
   if (imgSrcGlobal) {
     var responseImage = document.createElement("img");
     responseImage.src = imgSrcGlobal;
-    if (txtOutput.innerHTML != "") txtOutput.innerHTML += "\n";
-    txtOutput.innerHTML += '<span class="user">You: </span>' + sQuestion;
-    txtOutput.appendChild(responseImage);
+  // no leading newline to avoid extra gaps
+    // Wrap user message in bubble
+    const userWrap = document.createElement('div');
+    userWrap.className = 'chat-bubble user-bubble';
+    userWrap.innerHTML = '<span class="user">You:</span> ' + sQuestion;
+    userWrap.appendChild(responseImage);
+    txtOutput.appendChild(userWrap);
   } else {
-    txtOutput.innerHTML += '<span class="user">You: </span>' + sQuestion;
+    txtOutput.innerHTML += '<div class="chat-bubble user-bubble">' + '<span class="user">You:</span> ' + sQuestion + '</div>';
     txtMsg.innerHTML = "";
     var element = document.getElementById("txtOutput");
     element.scrollTop = element.scrollHeight;
