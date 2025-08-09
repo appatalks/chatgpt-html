@@ -170,10 +170,15 @@ function trboSend() {
 	// } else if (sModel === "gpt-3.5-turbo-16k") {
     	//     iMaxTokens = 12420;
 	// }
-    var dTemperature = 0.7; 
+  var dTemperature = 0.7; 
     var eFrequency_penalty = 0.0; 
     var cPresence_penalty = 0.0; 
     var hStop = "&*&"; 
+  var topP = 1.0; // Optional nucleus sampling
+
+  // Model flags
+  var isGpt5 = (sModel && sModel.indexOf('gpt-5') === 0);
+  var isLatest = (sModel === 'latest');
 
     // Messages payload
     // Check if the messages item exists in localStorage
@@ -254,16 +259,22 @@ function trboSend() {
       		existingMessages = existingMessages.concat(newMessages);
 	      	localStorage.setItem("messages", JSON.stringify(existingMessages));
 		    var cStoredMessages = localStorage.getItem("messages");
-		    kMessages = cStoredMessages ? JSON.parse(cStoredMessages) : [];
-		    var data = {
-		        model: sModel,
-		        messages: kMessages,
-		        max_completion_tokens: iMaxTokens,
-		        temperature:  dTemperature,
-		        frequency_penalty: eFrequency_penalty,
-		        presence_penalty: cPresence_penalty,
-		        stop: hStop
-		    }
+            kMessages = cStoredMessages ? JSON.parse(cStoredMessages) : [];
+            var data = {
+                model: sModel,
+                messages: kMessages,
+                max_completion_tokens: iMaxTokens,
+                temperature:  dTemperature,
+                frequency_penalty: eFrequency_penalty,
+                presence_penalty: cPresence_penalty,
+                stop: hStop
+            }
+            // Additional parameters for GPT-5 family and 'latest' alias
+            if (isGpt5 || isLatest) {
+              data.top_p = topP;
+              // Provide max_tokens for compatibility with Chat Completions
+              data.max_tokens = iMaxTokens;
+            }
 		    // If using the o3-mini model, add the reasoning_effort parameter (low, medium, high)
 		    if (sModel === "o3-mini") {
   		      data.reasoning_effort = "high";
@@ -310,6 +321,11 @@ function trboSend() {
           kMessages = kMessages.filter(msg => msg.role === 'user' || msg.role === 'assistant');
           dTemperature = 1;
         }
+        // Potential gpt-5 guidance (adjust if OpenAI docs require different roles)
+        if (isGpt5) {
+          // Keep roles for now; if guidance changes, filter similar to o1 models
+          dTemperature = 0.8;
+        }
 	
     // API Payload
     var data = {
@@ -320,6 +336,11 @@ function trboSend() {
         frequency_penalty: eFrequency_penalty,
         presence_penalty: cPresence_penalty,
 	stop: hStop
+    }
+    // Additional parameters for GPT-5 family and 'latest' alias
+    if (isGpt5 || isLatest) {
+      data.top_p = topP;
+      data.max_tokens = iMaxTokens; // explicit Chat Completions param
     }
     // If using the o3-mini model, add the reasoning_effort parameter (low, medium, high)
     if (sModel === "o3-mini") {
