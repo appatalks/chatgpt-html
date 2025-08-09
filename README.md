@@ -18,7 +18,7 @@ This allows you to easily interact with OpenAI and Google Generative APIs.
 - OpenAI ```o1```, ```o1-*``` models
 - OpenAI ```o3-mini``` model added (great for code - tier 4+ API)
 - OpenAI ```gpt-4o``` models
-- OpenAI ```gpt5-mini``` model (experimental)
+- OpenAI `latest` model alias (experimental, follows OpenAI latest-model guidance)
 - Latest Google Gemini 2.0 ```Thinking``` model
 - [lmstudio API](https://lmstudio.ai/docs/api/openai-api) local models 
 - Dall-E Image Generation

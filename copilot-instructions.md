@@ -22,6 +22,7 @@ This project is a simple web UI for interacting with OpenAI, Google Generative m
 - Wire routing in `updateButton()` and `sendData()` in `core/js/options.js`.
 - If a model uses the OpenAI Chat Completions API, route to `trboSend()`.
 - If a model uses a different API, create a new send function in `core/js/*.js` and route accordingly.
+ - "latest" alias: allowed in the selector; treated as an OpenAI model value. If OpenAI updates how `latest` resolves (e.g., via Responses API), adjust `gpt-core.js` accordingly.
 
 ## OpenAI Models
 - Endpoint: `POST https://api.openai.com/v1/chat/completions` (XMLHttpRequest is currently used).
