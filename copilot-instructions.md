@@ -32,6 +32,7 @@ This project is a simple web UI for interacting with OpenAI, Google Generative m
 - Special cases:
   - `o1*` models: filter out `developer` role messages and set `temperature = 1`.
   - `o3-mini`: include `reasoning_effort` and omit `temperature` in the Google-search branch.
+  - `gpt-5*`: do not include `max_tokens` (use `max_completion_tokens` only); `top_p` is allowed.
 
 ## Edge Cases
 - Image input: `options.js` pushes a text+image structured message for vision-capable models.
