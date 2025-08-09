@@ -15,11 +15,8 @@ function trboSend() {
     return;
   }
 
-    var oHttp = new XMLHttpRequest();
-    var openaiBase = (typeof DEBUG_CORS !== 'undefined' && DEBUG_CORS && typeof DEBUG_PROXY_URL !== 'undefined' && DEBUG_PROXY_URL)
-      ? (DEBUG_PROXY_URL.replace(/\/$/, '') + "/openai")
-      : "https://api.openai.com";
-    oHttp.open("POST", openaiBase + "/v1/chat/completions");
+  var oHttp = new XMLHttpRequest();
+  oHttp.open("POST", "https://api.openai.com/v1/chat/completions");
     oHttp.setRequestHeader("Accept", "application/json");
     oHttp.setRequestHeader("Content-Type", "application/json");
     oHttp.setRequestHeader("Authorization", "Bearer " + OPENAI_API_KEY)
@@ -244,10 +241,7 @@ function trboSend() {
 
 	let googleContents; 
 	if (sQuestion.includes(keyword_google) || sQuestion.includes(keyword_Google)) {
-    const googleBase = (typeof DEBUG_CORS !== 'undefined' && DEBUG_CORS && typeof DEBUG_PROXY_URL !== 'undefined' && DEBUG_PROXY_URL)
-      ? (DEBUG_PROXY_URL.replace(/\/$/, '') + "/google")
-      : "https://www.googleapis.com";
-    const apiUrl = `${googleBase}/customsearch/v1?key=${GOOGLE_SEARCH_KEY}&cx=${GOOGLE_SEARCH_ID}&q=${encodeURIComponent(query)}&fields=kind,items(title,snippet,link)&num=5`;
+  const apiUrl = `https://www.googleapis.com/customsearch/v1?key=${GOOGLE_SEARCH_KEY}&cx=${GOOGLE_SEARCH_ID}&q=${encodeURIComponent(query)}&fields=kind,items(title,snippet,link)&num=5`;
  	    fetch(apiUrl)
     	      .then(response => response.json())
     	      .then(data => {
@@ -378,10 +372,7 @@ function trboSend() {
 async function fetchGoogleImages(query) {
   const maxResults = 1;
 
-  const googleBase = (typeof DEBUG_CORS !== 'undefined' && DEBUG_CORS && typeof DEBUG_PROXY_URL !== 'undefined' && DEBUG_PROXY_URL)
-    ? (DEBUG_PROXY_URL.replace(/\/$/, '') + "/google")
-    : "https://www.googleapis.com";
-  return fetch(`${googleBase}/customsearch/v1?key=${GOOGLE_SEARCH_KEY}&cx=${GOOGLE_SEARCH_ID}&searchType=image&num=${maxResults}&sort_by=""&q=${encodeURIComponent(query)}`)
+  return fetch(`https://www.googleapis.com/customsearch/v1?key=${GOOGLE_SEARCH_KEY}&cx=${GOOGLE_SEARCH_ID}&searchType=image&num=${maxResults}&sort_by=""&q=${encodeURIComponent(query)}`)
     .then((response) => response.json())
     .then((result) => result)     
     .catch((error) => {
