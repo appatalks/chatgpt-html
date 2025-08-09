@@ -9,6 +9,8 @@ This allows you to easily interact with OpenAI and Google Generative APIs.
 
 1. Add your OpenAI API key to the "```OPENAI_API_KEY```" variable and (optionally) AWS, Google Keys in ```config.json``` for additional functionality. 
 2. Open ```index.html``` and have fun!
+	- If opening via file://, copy `config.local.example.js` to `config.local.js` and set your keys there (no fetch needed).
+	- Or, serve over http(s) and keep using `config.json`.
 3. Optional: - Suno-Ai's Bark TTS Engine. Run ```server.py``` (GPU Enabled)
 4. **Note: You may have to review/adjust the code for your specific env. ie ```CIDR ranges```, ```NGINX/webserver``` configuration,```scripting``` piece etc.**
 5. Local CORS debug (optional):

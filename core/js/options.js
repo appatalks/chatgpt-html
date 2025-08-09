@@ -19,19 +19,37 @@ var retryDelay = 2420; // milliseconds
 
 // API Access[OpenAI, AWS] 
 function auth() {
-fetch('./config.json')
- .then(response => response.json())
- .then(config => {
-   OPENAI_API_KEY = config.OPENAI_API_KEY;
-   GOOGLE_SEARCH_KEY = config.GOOGLE_SEARCH_KEY;
-   GOOGLE_SEARCH_ID = config.GOOGLE_SEARCH_ID;
-   GOOGLE_VISION_KEY = config.GOOGLE_VISION_KEY;
+  // Prefer inlined local config if provided (config.local.js)
+  if (typeof window !== 'undefined' && window.__LOCAL_CONFIG__) {
+    const config = window.__LOCAL_CONFIG__;
+    applyConfig(config);
+    return;
+  }
+
+  // Fallback: fetch config.json (requires http(s) server)
+  if (location.protocol === 'file:') {
+    console.warn('Running from file://, unable to fetch config.json due to browser security. Create config.local.js or serve over http.');
+  }
+
+  fetch('./config.json')
+    .then(response => response.json())
+    .then(config => applyConfig(config))
+    .catch(err => {
+      console.error('Failed to load config:', err);
+      document.getElementById('idText').innerText = 'Config not loaded. Use config.local.js or run a local server.';
+    });
+}
+
+function applyConfig(config) {
+  OPENAI_API_KEY = config.OPENAI_API_KEY;
+  GOOGLE_SEARCH_KEY = config.GOOGLE_SEARCH_KEY;
+  GOOGLE_SEARCH_ID = config.GOOGLE_SEARCH_ID;
+  GOOGLE_VISION_KEY = config.GOOGLE_VISION_KEY;
   // CORS debug
   DEBUG_CORS = !!config.DEBUG_CORS;
   DEBUG_PROXY_URL = config.DEBUG_PROXY_URL || "";
-   AWS.config.region = config.AWS_REGION;
-   AWS.config.credentials = new AWS.Credentials(config.AWS_ACCESS_KEY_ID, config.AWS_SECRET_ACCESS_KEY);
- });
+  AWS.config.region = config.AWS_REGION;
+  AWS.config.credentials = new AWS.Credentials(config.AWS_ACCESS_KEY_ID, config.AWS_SECRET_ACCESS_KEY);
 }
 
 // Settings Menu Options 
