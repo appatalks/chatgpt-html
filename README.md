@@ -38,7 +38,7 @@ This allows you to easily interact with OpenAI and Google Generative APIs.
 
 ## Contributing
 
-See `copilot-instructions.md` for contribution guidance and model wiring conventions.
+See `.github/copilot-instructions.md` for contribution guidance and model wiring conventions.
 
 ## Bugs
 - Check Issues
