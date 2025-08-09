@@ -8,6 +8,9 @@ var aiMasterResponse = "";
 var masterOutput = "";
 var storageAssistant = "";
 var imgSrcGlobal; // Declare a global variable for img.src
+// Debug/CORS flags (from config.json)
+var DEBUG_CORS = false;
+var DEBUG_PROXY_URL = "";
 
 // Error Handling Variables
 var retryCount = 0;
@@ -23,6 +26,9 @@ fetch('./config.json')
    GOOGLE_SEARCH_KEY = config.GOOGLE_SEARCH_KEY;
    GOOGLE_SEARCH_ID = config.GOOGLE_SEARCH_ID;
    GOOGLE_VISION_KEY = config.GOOGLE_VISION_KEY;
+  // CORS debug
+  DEBUG_CORS = !!config.DEBUG_CORS;
+  DEBUG_PROXY_URL = config.DEBUG_PROXY_URL || "";
    AWS.config.region = config.AWS_REGION;
    AWS.config.credentials = new AWS.Credentials(config.AWS_ACCESS_KEY_ID, config.AWS_SECRET_ACCESS_KEY);
  });
@@ -294,7 +300,10 @@ function insertImage() {
 
   function sendToVisionAPI(imageData) {
     // Send the image data to Google's Vision API
-    var visionApiUrl = `https://vision.googleapis.com/v1/images:annotate?key=${GOOGLE_VISION_KEY}`;
+    var visionBase = (typeof DEBUG_CORS !== 'undefined' && DEBUG_CORS && typeof DEBUG_PROXY_URL !== 'undefined' && DEBUG_PROXY_URL)
+      ? (DEBUG_PROXY_URL.replace(/\/$/, '') + "/google")
+      : "https://vision.googleapis.com";
+    var visionApiUrl = `${visionBase}/v1/images:annotate?key=${GOOGLE_VISION_KEY}`;
 
     // Create the API request payload
     var requestPayload = {

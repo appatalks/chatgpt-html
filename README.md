@@ -11,6 +11,13 @@ This allows you to easily interact with OpenAI and Google Generative APIs.
 2. Open ```index.html``` and have fun!
 3. Optional: - Suno-Ai's Bark TTS Engine. Run ```server.py``` (GPU Enabled)
 4. **Note: You may have to review/adjust the code for your specific env. ie ```CIDR ranges```, ```NGINX/webserver``` configuration,```scripting``` piece etc.**
+5. Local CORS debug (optional):
+	 - Set `DEBUG_CORS: true` and `DEBUG_PROXY_URL: "http://localhost:8787"` in `config.json`.
+	 - Run the proxy:
+		 - cd dev-proxy
+		 - npm install
+		 - npm start
+	 - Then open `index.html` in your browser.
    
 ## Features
 
