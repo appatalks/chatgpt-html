@@ -272,8 +272,7 @@ function trboSend() {
             // Additional parameters for GPT-5 family and 'latest' alias
             if (isGpt5 || isLatest) {
               data.top_p = topP;
-              // Provide max_tokens for compatibility with Chat Completions
-              data.max_tokens = iMaxTokens;
+              // Do not send max_tokens for gpt-5; use max_completion_tokens only
             }
 		    // If using the o3-mini model, add the reasoning_effort parameter (low, medium, high)
 		    if (sModel === "o3-mini") {
@@ -340,7 +339,7 @@ function trboSend() {
     // Additional parameters for GPT-5 family and 'latest' alias
     if (isGpt5 || isLatest) {
       data.top_p = topP;
-      data.max_tokens = iMaxTokens; // explicit Chat Completions param
+      // Do not send max_tokens for gpt-5; use max_completion_tokens only
     }
     // If using the o3-mini model, add the reasoning_effort parameter (low, medium, high)
     if (sModel === "o3-mini") {
