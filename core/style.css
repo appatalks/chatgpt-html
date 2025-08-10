@@ -430,23 +430,8 @@ body.theme-lcars #lcarsSidebar {
   border: 2px solid var(--ld-arctic-snow);
   border-right: 2px solid var(--ld-arctic-snow); /* visible seam near main */
 }
-/* Make the top chip act as a handle */
-body.theme-lcars #lcarsChipTop { cursor: pointer; position: relative; }
-/* Chevron indicator centered on the handle */
-body.theme-lcars #lcarsChipTop::after {
-  content: '◀';
-  position: absolute;
-  top: 50%;
-  left: 50%;
-  transform: translate(-50%, -50%);
-  font: 700 26px "Barlow Condensed", sans-serif;
-  color: #0b0e14;
-  opacity: 0.9;
-}
-/* When collapsed, point right to indicate expand */
-body.theme-lcars.lcars-collapsed #lcarsChipTop::after { content: '▶'; }
-/* Slight hover feedback */
-body.theme-lcars #lcarsChipTop:hover::after { opacity: 1; }
+/* Make the top chip act as a handle (tooltip provided via title attribute) */
+body.theme-lcars #lcarsChipTop { cursor: pointer; }
 body.theme-lcars #lcarsSidebar .lcars-rail { display: none; }
 /* Decorative chips to suggest LCARS bands */
 body.theme-lcars #lcarsSidebar .lcars-chip { height: 242px; border-radius: 90px 0 0 28px; background: var(--ld-alpha-blue); }

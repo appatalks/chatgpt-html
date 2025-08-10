@@ -195,19 +195,17 @@ document.addEventListener('DOMContentLoaded', () => {
   if (lcarsChipTop) {
     lcarsChipTop.setAttribute('role', 'button');
     lcarsChipTop.setAttribute('tabindex', '0');
-    // Helper to sync accessible label
-    function syncHandleAria() {
+    // Helper to sync tooltip title only
+    function syncHandleTooltip() {
       var collapsed = document.body.classList.contains('lcars-collapsed');
-      lcarsChipTop.setAttribute('aria-expanded', (!collapsed).toString());
-      lcarsChipTop.setAttribute('aria-label', collapsed ? 'Expand LCARS sidebar' : 'Collapse LCARS sidebar');
-      lcarsChipTop.title = collapsed ? 'Expand' : 'Collapse';
+      lcarsChipTop.title = collapsed ? 'Expand LCARS sidebar' : 'Collapse LCARS sidebar';
     }
-    syncHandleAria();
+    syncHandleTooltip();
     lcarsChipTop.addEventListener('click', function(e){
       e.stopPropagation();
       document.body.classList.toggle('lcars-collapsed');
       try { localStorage.setItem('lcars_collapsed', document.body.classList.contains('lcars-collapsed') ? '1' : '0'); } catch (e) {}
-      syncHandleAria();
+      syncHandleTooltip();
     });
     lcarsChipTop.addEventListener('keydown', function(e){
       if (e.key === 'Enter' || e.key === ' ') {
