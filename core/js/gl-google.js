@@ -7,10 +7,19 @@ function geminiSend() {
     // Remove occurrences of specific syntax from the txtMsg element
     txtMsg.innerHTML = txtMsg.innerHTML.replace(/<div[^>]*>.*<\/div>/g, '');
 
-    function auth() {
+    function getGoogleGlKey() {
+        // Prefer local inline config if present
+        if (typeof window !== 'undefined' && window.__LOCAL_CONFIG__ && window.__LOCAL_CONFIG__.GOOGLE_GL_KEY) {
+            return Promise.resolve(window.__LOCAL_CONFIG__.GOOGLE_GL_KEY);
+        }
+        // If options.js loaded config already, use global variable
+        if (typeof GOOGLE_GL_KEY !== 'undefined' && GOOGLE_GL_KEY) {
+            return Promise.resolve(GOOGLE_GL_KEY);
+        }
+        // Fallback to config.json (requires http(s) server)
         return fetch('./config.json')
-            .then(response => response.json())
-            .then(config => config.GOOGLE_GL_KEY);
+            .then(r => r.ok ? r.json() : Promise.reject(new Error('Missing config.json')))
+            .then(cfg => cfg.GOOGLE_GL_KEY);
     }
 
     let geminiMessages = [
@@ -45,7 +54,7 @@ function geminiSend() {
         return;
     }
 
-    auth().then(GOOGLE_GL_KEY => {
+    getGoogleGlKey().then(GOOGLE_GL_KEY => {
         document.getElementById("txtMsg").innerHTML = "";
         document.getElementById("txtOutput").innerHTML += '<span class="user">You: </span>' + sQuestion + "<br>\n";
 
@@ -68,7 +77,7 @@ function geminiSend() {
     	   }),
 	};
 
-        fetch(geminiUrl, requestOptions)
+    fetch(geminiUrl, requestOptions)
             .then(response => response.ok ? response.json() : Promise.reject(new Error(`Error: ${response.status}`))) // Updated Error handling
             .then(result => {
                 if (result.candidates[0].finishReason === "RECITATION") {

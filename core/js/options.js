@@ -44,6 +44,8 @@ function applyConfig(config) {
   OPENAI_API_KEY = config.OPENAI_API_KEY;
   GOOGLE_SEARCH_KEY = config.GOOGLE_SEARCH_KEY;
   GOOGLE_SEARCH_ID = config.GOOGLE_SEARCH_ID;
+  // Google Gemini key if provided
+  GOOGLE_GL_KEY = config.GOOGLE_GL_KEY;
   GOOGLE_VISION_KEY = config.GOOGLE_VISION_KEY;
   // CORS debug
   DEBUG_CORS = !!config.DEBUG_CORS;
