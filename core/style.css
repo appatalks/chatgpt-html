@@ -481,7 +481,8 @@ body.theme-lcars #txtMsg { color: #eef5ff; }
 body.theme-lcars footer { background: var(--ld-night-rain); color: #eef5ff; }
 /* Hide duplicate footer controls under LCARS */
 body.theme-lcars footer #settingsButton,
-body.theme-lcars footer #clearMessagesBtn { display: none; }
+body.theme-lcars footer #clearMessagesBtn,
+body.theme-lcars footer #printButton { display: none; }
 body.theme-lcars button,
 body.theme-lcars select,
 body.theme-lcars input[type="checkbox"] {
