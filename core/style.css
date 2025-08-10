@@ -246,6 +246,24 @@ select,
 input[type="checkbox"] {
   border-radius: 16px;
 }
+/* Status panel base (footer #idText) */
+#idText {
+  display: block;
+  min-height: 28px;
+  margin: 6px 0 0;
+  padding: 6px 10px;
+  border-radius: 10px;
+  border: 1px solid #cfd8dc;
+  background: #f5f7fa;
+  color: #0b0e14;
+  font: 600 14px system-ui, Arial, sans-serif;
+}
+#idText.status-info { border-color: #90caf9; background: #e3f2fd; }
+#idText.status-warn { border-color: #ffcc80; background: #fff3e0; }
+#idText.status-error { border-color: #ef9a9a; background: #ffebee; }
+#idText::before { content: ""; display: inline-block; width: 10px; height: 10px; border-radius: 50%; background: #90caf9; margin-right: 8px; vertical-align: -1px; }
+#idText.status-warn::before { background: #ffb74d; }
+#idText.status-error::before { background: #ef5350; }
 /* revert speak button to original size/placement */
 .speakSend {
   position: absolute;
@@ -574,6 +592,18 @@ body.theme-lcars #txtOutput { background: #000; }
 body.theme-lcars .chat-input-container { background: #000; border-color: var(--ld-arctic-snow); }
 body.theme-lcars #txtMsg { color: #eef5ff; }
 body.theme-lcars footer { background: var(--ld-night-rain); color: #eef5ff; }
+/* LCARS-styled status panel */
+body.theme-lcars #idText {
+  border: 2px solid var(--ld-arctic-snow);
+  background: var(--ld-night-rain);
+  color: #eef5ff;
+}
+body.theme-lcars #idText.status-info { border-color: var(--ld-arctic-ice); background: rgba(153,204,255,0.10); }
+body.theme-lcars #idText.status-warn { border-color: var(--cl-amber); background: rgba(255,204,102,0.10); }
+body.theme-lcars #idText.status-error { border-color: var(--ld-sunset-red); background: rgba(255,53,0,0.10); }
+body.theme-lcars #idText::before { background: var(--ld-arctic-ice); }
+body.theme-lcars #idText.status-warn::before { background: var(--cl-amber); }
+body.theme-lcars #idText.status-error::before { background: var(--ld-sunset-red); }
 /* Hide duplicate footer controls under LCARS */
 body.theme-lcars footer #settingsButton,
 body.theme-lcars footer #clearMessagesBtn,

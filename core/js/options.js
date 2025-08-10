@@ -234,6 +234,22 @@ document.addEventListener('DOMContentLoaded', () => {
       });
     });
   }
+
+  // Initialize status panel with any pending config/init notes
+  setStatus('info', document.getElementById('idText') && document.getElementById('idText').textContent ? document.getElementById('idText').textContent : '');
+
+  // Global error handlers -> footer status
+  window.addEventListener('error', function(ev){
+    try {
+      setStatus('error', (ev && ev.message) ? ev.message : 'An error occurred');
+    } catch(_){}
+  });
+  window.addEventListener('unhandledrejection', function(ev){
+    try {
+      var msg = (ev && ev.reason && (ev.reason.message || ev.reason)) ? (ev.reason.message || String(ev.reason)) : 'Unhandled promise rejection';
+      setStatus('error', msg);
+    } catch(_){}
+  });
 });
 
 // Welcome Text
@@ -357,6 +373,17 @@ function sendData() {
         document.getElementById("txtOutput").innerHTML = "\n" + "Invalid Model"
         console.error('Invalid Model')
     }
+}
+
+// Footer status helper
+function setStatus(type, text) {
+  var el = document.getElementById('idText');
+  if (!el) return;
+  el.classList.remove('status-info','status-warn','status-error');
+  if (type === 'warn') el.classList.add('status-warn');
+  else if (type === 'error') el.classList.add('status-error');
+  else el.classList.add('status-info');
+  if (text) el.textContent = text;
 }
 
 // --- Lightweight token/context window monitor ---
