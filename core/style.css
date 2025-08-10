@@ -299,6 +299,11 @@ body.theme-lcars .speakSend::before {
   background-position: center;
   border-radius: 50%;
 }
+/* Bigger icon for speak when collapsed and label is hidden */
+body.theme-lcars.lcars-collapsed .speakSend::before {
+  width: 24px;
+  height: 24px;
+}
 
 #clearMessagesBtn {
   background-color: #dc3545;
@@ -418,7 +423,7 @@ body.theme-lcars {
 body.theme-lcars #lcarsSidebar {
   display: flex;
   position: sticky; /* stays visible while main scrolls */
-  top: 16px;
+  top: 20px;
   align-self: start;
   height: calc(95vh - 32px);
   flex-direction: column;
@@ -478,11 +483,31 @@ body.theme-lcars.lcars-collapsed #lcarsSidebar {
   gap: 8px;
 }
 body.theme-lcars.lcars-collapsed #lcarsSidebar .lcars-label { display: none; }
-body.theme-lcars.lcars-collapsed #lcarsSidebar .lcars-chip { display: none; }
-body.theme-lcars.lcars-collapsed #lcarsSidebar #lcarsChipTop {
+/* Keep chips visible but compact in collapsed mode */
+body.theme-lcars.lcars-collapsed #lcarsSidebar .lcars-chip {
   display: block;
-  height: 120px;
-  border-radius: 90px; /* show a pill as the handle */
+  height: 48px;
+  border-radius: 999px;
+  padding: 0;
+}
+body.theme-lcars.lcars-collapsed #lcarsSidebar #lcarsChipTop {
+  height: 120px; /* handle stays larger */
+}
+/* Icon-only presentation inside chips (text hidden, tooltip via title) */
+body.theme-lcars.lcars-collapsed #lcarsSidebar .lcars-chip > button,
+body.theme-lcars.lcars-collapsed #lcarsSidebar .lcars-chip > .speakSend {
+  justify-content: center;
+  padding: 0;
+  min-height: 48px;
+  height: 48px;
+  font-size: 0; /* hide labels */
+}
+/* Ensure emoji/icon pseudo-elements are readable */
+body.theme-lcars.lcars-collapsed #sidebarSettingsBtn::before,
+body.theme-lcars.lcars-collapsed #sidebarClearBtn::before,
+body.theme-lcars.lcars-collapsed #lcarsChipPrint #printButton::before {
+  font-size: 22px;
+  margin: 0;
 }
 
 /* Hide original speak container in LCARS when moved to sidebar */
