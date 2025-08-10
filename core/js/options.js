@@ -195,10 +195,19 @@ document.addEventListener('DOMContentLoaded', () => {
   if (lcarsChipTop) {
     lcarsChipTop.setAttribute('role', 'button');
     lcarsChipTop.setAttribute('tabindex', '0');
+    // Helper to sync accessible label
+    function syncHandleAria() {
+      var collapsed = document.body.classList.contains('lcars-collapsed');
+      lcarsChipTop.setAttribute('aria-expanded', (!collapsed).toString());
+      lcarsChipTop.setAttribute('aria-label', collapsed ? 'Expand LCARS sidebar' : 'Collapse LCARS sidebar');
+      lcarsChipTop.title = collapsed ? 'Expand' : 'Collapse';
+    }
+    syncHandleAria();
     lcarsChipTop.addEventListener('click', function(e){
       e.stopPropagation();
       document.body.classList.toggle('lcars-collapsed');
       try { localStorage.setItem('lcars_collapsed', document.body.classList.contains('lcars-collapsed') ? '1' : '0'); } catch (e) {}
+      syncHandleAria();
     });
     lcarsChipTop.addEventListener('keydown', function(e){
       if (e.key === 'Enter' || e.key === ' ') {
