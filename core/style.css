@@ -136,6 +136,7 @@ body {
 #txtMsg {
   flex: 1;                     /* Takes up remaining space */
   text-align: left !important;
+  margin-left: 15px;
   min-height: 200px;            /* Reasonable minimum height */
   max-height: 200px;           /* Default theme cap to preserve legacy look */
   overflow-y: auto;
@@ -143,7 +144,7 @@ body {
   outline: none;
   font-family: Arial, sans-serif;
   font-size: 14px;
-  line-height: 1.5;
+  line-height: 3.5;
   color: #111;                 /* Higher contrast while typing */
   white-space: pre-wrap;       /* Makes text wrap nicely */
 }
