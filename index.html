@@ -35,6 +35,24 @@
   </script>
 
   
+  
+  <!-- LCARS Left Sidebar (shown in LCARS theme) -->
+  <nav id="lcarsSidebar" aria-label="LCARS sidebar">
+    <div class="lcars-rail" aria-hidden="true"></div>
+    <!-- Decorative LCARS chips -->
+    <div class="lcars-chip" id="lcarsChipTop"></div>
+    <div class="lcars-chip peach" id="lcarsChipPeach">
+      <button id="sidebarSettingsBtn" type="button" title="Settings">Settings</button>
+    </div>
+    <div class="lcars-chip red" id="lcarsChipRed">
+      <button id="sidebarClearBtn" type="button" title="Clear Memory">Clear</button>
+    </div>
+    <div class="lcars-chip sand" id="lcarsChipSand">
+      <!-- Speak button will be moved here at runtime in LCARS -->
+    </div>
+
+    <div class="lcars-label" aria-hidden="true">Access • 49204.3</div>
+  </nav>
 
   <div id="idContainer">
     <div id="textToSynth">
@@ -121,7 +139,7 @@
     </select>
   </div>
 
-      <p id="result"></p>
+    <!--  <p id="result"></p> -->
    </div>
 
     <audio id="audioPlayback" class="audio" controls aria-label="Audio playback">

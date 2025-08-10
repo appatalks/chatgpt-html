@@ -124,13 +124,20 @@ function trboSend() {
               console.error("Error fetching image:", error);
             }
           }
-          // Append without markdown transform to preserve inserted <img>
-          txtOutput.innerHTML += '<div class="chat-bubble eva-bubble">' + '<span class="eva">Eva:</span> ' + '<div class="md">' + formattedResult + '</div>' + '</div>';
+          // Tokenize inserted <img> tags, run markdown safely, then restore <img>
+          const imgFragments = [];
+          const tokenized = formattedResult.replace(/<img[^>]*>/g, (m) => {
+            imgFragments.push(m);
+            return `\u0000IMG${imgFragments.length - 1}\u0000`;
+          });
+          const mdSafe = renderMarkdown(tokenized);
+          const restored = mdSafe.replace(/\u0000IMG(\d+)\u0000/g, (m, idx) => imgFragments[Number(idx)] || m);
+          txtOutput.innerHTML += '<div class="chat-bubble eva-bubble">' + '<span class="eva">Eva:</span> ' + '<div class="md">' + restored + '</div>' + '</div>';
 		   var element = document.getElementById("txtOutput");
     		   element.scrollTop = element.scrollHeight;
           	}
 		else {
-        const mdHtml = renderMarkdown(s.content.trim());
+  const mdHtml = renderMarkdown(s.content.trim());
         txtOutput.innerHTML += '<div class="chat-bubble eva-bubble">' + '<span class="eva">Eva:</span> ' + '<div class="md">' + mdHtml + '</div>' + '</div>';
                     var element = document.getElementById("txtOutput");
                     element.scrollTop = element.scrollHeight;
@@ -360,11 +367,29 @@ function trboSend() {
     // Wrap user message in bubble
     const userWrap = document.createElement('div');
     userWrap.className = 'chat-bubble user-bubble';
-    userWrap.innerHTML = '<span class="user">You:</span> ' + sQuestion;
+    const safeUserImg = (function escapeHtmlLite(str){
+      return String(str)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+    })(sQuestion.replace(/<br>/g, '\n')).replace(/\n/g, '<br>');
+    userWrap.innerHTML = '<span class="user">You:</span> ' + safeUserImg;
     userWrap.appendChild(responseImage);
     txtOutput.appendChild(userWrap);
   } else {
-    txtOutput.innerHTML += '<div class="chat-bubble user-bubble">' + '<span class="user">You:</span> ' + sQuestion + '</div>';
+    // Sanitize user HTML to avoid breaking the bubble but preserve line breaks
+    const safeUser = (function escapeHtmlLite(str){
+      return String(str)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+    })(sQuestion.replace(/<br>/g, '\n'))
+      .replace(/\n/g, '<br>');
+    txtOutput.innerHTML += '<div class="chat-bubble user-bubble">' + '<span class="user">You:</span> ' + safeUser + '</div>';
     txtMsg.innerHTML = "";
     var element = document.getElementById("txtOutput");
     element.scrollTop = element.scrollHeight;
