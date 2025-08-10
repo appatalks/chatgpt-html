@@ -7,6 +7,8 @@
   <meta http-equiv="Expires" content="0" />
   <title>Eva - ChatGPT</title>
 
+  <!-- Optional local config override (prevents file:// fetch issues) -->
+  <script src="config.local.js"></script>
   <!-- Scripts -->
   <script src="core/js/options.js"></script> 
   <script src="core/js/external.js"></script>
@@ -31,6 +33,30 @@
     // Adjust for Mobile User Agents
     useragent_adjust();
   </script>
+
+  
+  
+  <!-- LCARS Left Sidebar (shown in LCARS theme) -->
+  <nav id="lcarsSidebar" aria-label="LCARS sidebar">
+    <div class="lcars-rail" aria-hidden="true"></div>
+    <!-- Decorative LCARS chips -->
+    <div class="lcars-chip" id="lcarsChipTop"></div>
+    <div class="lcars-chip peach" id="lcarsChipPeach">
+      <button id="sidebarSettingsBtn" type="button" title="Settings">Settings</button>
+    </div>
+    <div class="lcars-chip red" id="lcarsChipRed">
+      <button id="sidebarClearBtn" type="button" title="Clear Memory">Clear</button>
+    </div>
+    <div class="lcars-chip sand" id="lcarsChipSand">
+      <!-- Speak button will be moved here at runtime in LCARS -->
+    </div>
+
+  <div class="lcars-chip print" id="lcarsChipPrint">
+      <!-- Print button will be moved here at runtime in LCARS -->
+    </div>
+
+    <div class="lcars-label" aria-hidden="true">Access • 49204.3</div>
+  </nav>
 
   <div id="idContainer">
     <div id="textToSynth">
@@ -91,11 +117,20 @@
       <option value="o1" title="o1">o1</option>
       <option value="o1-preview" title="o1-preview">o1-preview</option>
       <option value="o1-mini" title="o1-mini">o1-mini</option>
-      <option value="o3-mini" title="o3-mini">o3-mini</option>	    
+  <option value="o3-mini" title="o3-mini">o3-mini</option>	    
+  <option value="gpt-5-mini" title="gpt-5-mini">gpt-5-mini</option>
+  <option value="latest" title="OpenAI latest model alias">latest</option>
       <option value="dall-e-3" title="Image Generation">dall-e-3</option>
       <option value="gemini" title="Google Gemini">gemini</option>
       <option value="lm-studio" title="lm-studio">lm-studio</option>
       <option value="gpt-4o-mini" title="gpt-4o-mini">gpt-4o-mini</option>
+    </select>
+    <br/><br/>
+
+    <label for="selTheme">Theme:</label>
+    <select id="selTheme" onchange="applyTheme(this.value)">
+      <option value="default" selected>Default</option>
+      <option value="lcars">LCARS</option>
     </select>
     <br/><br/>
 
@@ -108,7 +143,7 @@
     </select>
   </div>
 
-      <p id="result"></p>
+    <!--  <p id="result"></p> -->
    </div>
 
     <audio id="audioPlayback" class="audio" controls aria-label="Audio playback">
@@ -141,7 +176,7 @@
     <img id="eEgg" src="core/img/eEgg.gif" alt="Image" style="display:none;">
     <div id="idText"></div>
     <button id="settingsButton" style="margin: 1em;">Settings</button>
-    <button onclick="printMaster()" aria-label="Print output">Print Output</button>
+  <button id="printButton" onclick="printMaster()" aria-label="Print output">Print Output</button>
     <button id="clearMessagesBtn" onclick="clearMessages()" aria-label="Clear memory">Clear Memory</button>
   </footer> 
 

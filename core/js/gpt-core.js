@@ -15,8 +15,8 @@ function trboSend() {
     return;
   }
 
-    var oHttp = new XMLHttpRequest();
-    oHttp.open("POST", "https://api.openai.com/v1/chat/completions");
+  var oHttp = new XMLHttpRequest();
+  oHttp.open("POST", "https://api.openai.com/v1/chat/completions");
     oHttp.setRequestHeader("Accept", "application/json");
     oHttp.setRequestHeader("Content-Type", "application/json");
     oHttp.setRequestHeader("Authorization", "Bearer " + OPENAI_API_KEY)
@@ -47,7 +47,6 @@ function trboSend() {
           }
             //console.log(oHttp.status);
             var oJson = {}
-            if (txtOutput.innerHTML != "") txtOutput.innerHTML += "\n"; // User Send Data
             try {
                 oJson = JSON.parse(oHttp.responseText);  // API Response Data
 		console.log("oJson", oJson);
@@ -110,34 +109,43 @@ function trboSend() {
 		const imagePlaceholderRegex = /\[(Image of (.*?))\]/g;
 		const imagePlaceholders = formattedResult.match(imagePlaceholderRegex)?.slice(0, 3);
 
-		if (imagePlaceholders) {
-	  	  for (let i = 0; i < Math.min(imagePlaceholders.length, 3); i++) {
-    		  const placeholder = imagePlaceholders[i];
-	    	  const searchQuery = placeholder.substring(10, placeholder.length - 1).trim();
-	          try {
-        	    const searchResult = await fetchGoogleImages(searchQuery);
-                if (searchResult && searchResult.items && searchResult.items.length > 0) {
-                  const topImage = searchResult.items[0];
-                  const imageLink = topImage.link;
-		formattedResult = formattedResult.replace(placeholder, `<img src="${imageLink}" title="${searchQuery}" alt="${searchQuery}">`);
-                }
-              	  }	 
-		catch (error) {
-                console.error("Error fetching image:", error);
-                }
-            	  }
-        	 txtOutput.innerHTML += "<br>" + '<span class="eva">Eva: </span>' + formattedResult;
+        if (imagePlaceholders) {
+          for (let i = 0; i < Math.min(imagePlaceholders.length, 3); i++) {
+            const placeholder = imagePlaceholders[i];
+            const searchQuery = placeholder.substring(10, placeholder.length - 1).trim();
+            try {
+              const searchResult = await fetchGoogleImages(searchQuery);
+              if (searchResult && searchResult.items && searchResult.items.length > 0) {
+                const topImage = searchResult.items[0];
+                const imageLink = topImage.link;
+                formattedResult = formattedResult.replace(placeholder, `<img src="${imageLink}" title="${searchQuery}" alt="${searchQuery}">`);
+              }
+            } catch (error) {
+              console.error("Error fetching image:", error);
+            }
+          }
+          // Tokenize inserted <img> tags, run markdown safely, then restore <img>
+          const imgFragments = [];
+          const tokenized = formattedResult.replace(/<img[^>]*>/g, (m) => {
+            imgFragments.push(m);
+            return `\u0000IMG${imgFragments.length - 1}\u0000`;
+          });
+          const mdSafe = renderMarkdown(tokenized);
+          const restored = mdSafe.replace(/\u0000IMG(\d+)\u0000/g, (m, idx) => imgFragments[Number(idx)] || m);
+          txtOutput.innerHTML += '<div class="chat-bubble eva-bubble">' + '<span class="eva">Eva:</span> ' + '<div class="md">' + restored + '</div>' + '</div>';
 		   var element = document.getElementById("txtOutput");
     		   element.scrollTop = element.scrollHeight;
           	}
 		else {
-		    txtOutput.innerHTML += "<br>" + '<span class="eva">Eva: </span>' + s.content.trim();
+  const mdHtml = renderMarkdown(s.content.trim());
+        txtOutput.innerHTML += '<div class="chat-bubble eva-bubble">' + '<span class="eva">Eva:</span> ' + '<div class="md">' + mdHtml + '</div>' + '</div>';
                     var element = document.getElementById("txtOutput");
                     element.scrollTop = element.scrollHeight;
 		  }
 	      } // close s.content.includes 
 	      else {
-		  txtOutput.innerHTML += "<br>" + '<span class="eva">Eva: </span>' + s.content.trim();
+      const mdHtml = renderMarkdown(s.content.trim());
+      txtOutput.innerHTML += '<div class="chat-bubble eva-bubble">' + '<span class="eva">Eva:</span> ' + '<div class="md">' + mdHtml + '</div>' + '</div>';
                    var element = document.getElementById("txtOutput");
                    element.scrollTop = element.scrollHeight;
  	      }	
@@ -170,10 +178,15 @@ function trboSend() {
 	// } else if (sModel === "gpt-3.5-turbo-16k") {
     	//     iMaxTokens = 12420;
 	// }
-    var dTemperature = 0.7; 
+  var dTemperature = 0.7; 
     var eFrequency_penalty = 0.0; 
     var cPresence_penalty = 0.0; 
     var hStop = "&*&"; 
+  var topP = 1.0; // Optional nucleus sampling
+
+  // Model flags
+  var isGpt5 = (sModel && sModel.indexOf('gpt-5') === 0);
+  var isLatest = (sModel === 'latest');
 
     // Messages payload
     // Check if the messages item exists in localStorage
@@ -236,7 +249,7 @@ function trboSend() {
 
 	let googleContents; 
 	if (sQuestion.includes(keyword_google) || sQuestion.includes(keyword_Google)) {
-	const apiUrl = `https://www.googleapis.com/customsearch/v1?key=${GOOGLE_SEARCH_KEY}&cx=${GOOGLE_SEARCH_ID}&q=${encodeURIComponent(query)}&fields=kind,items(title,snippet,link)&num=5`;
+  const apiUrl = `https://www.googleapis.com/customsearch/v1?key=${GOOGLE_SEARCH_KEY}&cx=${GOOGLE_SEARCH_ID}&q=${encodeURIComponent(query)}&fields=kind,items(title,snippet,link)&num=5`;
  	    fetch(apiUrl)
     	      .then(response => response.json())
     	      .then(data => {
@@ -254,16 +267,21 @@ function trboSend() {
       		existingMessages = existingMessages.concat(newMessages);
 	      	localStorage.setItem("messages", JSON.stringify(existingMessages));
 		    var cStoredMessages = localStorage.getItem("messages");
-		    kMessages = cStoredMessages ? JSON.parse(cStoredMessages) : [];
-		    var data = {
-		        model: sModel,
-		        messages: kMessages,
-		        max_completion_tokens: iMaxTokens,
-		        temperature:  dTemperature,
-		        frequency_penalty: eFrequency_penalty,
-		        presence_penalty: cPresence_penalty,
-		        stop: hStop
-		    }
+            kMessages = cStoredMessages ? JSON.parse(cStoredMessages) : [];
+            var data = {
+                model: sModel,
+                messages: kMessages,
+                max_completion_tokens: iMaxTokens,
+                temperature:  dTemperature,
+                frequency_penalty: eFrequency_penalty,
+                presence_penalty: cPresence_penalty,
+                stop: hStop
+            }
+            // Additional parameters for GPT-5 family and 'latest' alias
+            if (isGpt5 || isLatest) {
+              data.top_p = topP;
+              // Do not send max_tokens for gpt-5; use max_completion_tokens only
+            }
 		    // If using the o3-mini model, add the reasoning_effort parameter (low, medium, high)
 		    if (sModel === "o3-mini") {
   		      data.reasoning_effort = "high";
@@ -310,6 +328,8 @@ function trboSend() {
           kMessages = kMessages.filter(msg => msg.role === 'user' || msg.role === 'assistant');
           dTemperature = 1;
         }
+  // Potential gpt-5 guidance (adjust if OpenAI docs require different roles)
+  // Keep roles for now; gpt-5 uses default temperature only; do not override.
 	
     // API Payload
     var data = {
@@ -321,9 +341,17 @@ function trboSend() {
         presence_penalty: cPresence_penalty,
 	stop: hStop
     }
+            // Additional parameters for GPT-5 family and 'latest' alias
+            if (isGpt5 || isLatest) {
+              data.top_p = topP;
+              // Do not send max_tokens for gpt-5; use max_completion_tokens only
+              delete data.temperature; // Exclude temperature for gpt-5/latest
+              delete data.stop; // Exclude stop for gpt-5/latest
+            }
     // If using the o3-mini model, add the reasoning_effort parameter (low, medium, high)
     if (sModel === "o3-mini") {
       data.reasoning_effort = "medium";
+      delete data.temperature; // Exclude temperature for o3-mini
     }   
 
     // Sending API Payload
@@ -335,11 +363,33 @@ function trboSend() {
   if (imgSrcGlobal) {
     var responseImage = document.createElement("img");
     responseImage.src = imgSrcGlobal;
-    if (txtOutput.innerHTML != "") txtOutput.innerHTML += "\n";
-    txtOutput.innerHTML += '<span class="user">You: </span>' + sQuestion;
-    txtOutput.appendChild(responseImage);
+  // no leading newline to avoid extra gaps
+    // Wrap user message in bubble
+    const userWrap = document.createElement('div');
+    userWrap.className = 'chat-bubble user-bubble';
+    const safeUserImg = (function escapeHtmlLite(str){
+      return String(str)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+    })(sQuestion.replace(/<br>/g, '\n')).replace(/\n/g, '<br>');
+    userWrap.innerHTML = '<span class="user">You:</span> ' + safeUserImg;
+    userWrap.appendChild(responseImage);
+    txtOutput.appendChild(userWrap);
   } else {
-    txtOutput.innerHTML += '<span class="user">You: </span>' + sQuestion;
+    // Sanitize user HTML to avoid breaking the bubble but preserve line breaks
+    const safeUser = (function escapeHtmlLite(str){
+      return String(str)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+    })(sQuestion.replace(/<br>/g, '\n'))
+      .replace(/\n/g, '<br>');
+    txtOutput.innerHTML += '<div class="chat-bubble user-bubble">' + '<span class="user">You:</span> ' + safeUser + '</div>';
     txtMsg.innerHTML = "";
     var element = document.getElementById("txtOutput");
     element.scrollTop = element.scrollHeight;

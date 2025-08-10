@@ -1,5 +1,5 @@
 # ChatGPT HTML - Using OpenAI APIs; 
-![screenshot](core/img/screenshot.png)
+![screenshot](core/img/lcars.png)
 
 v.2.1.0
 
@@ -9,8 +9,13 @@ This allows you to easily interact with OpenAI and Google Generative APIs.
 
 1. Add your OpenAI API key to the "```OPENAI_API_KEY```" variable and (optionally) AWS, Google Keys in ```config.json``` for additional functionality. 
 2. Open ```index.html``` and have fun!
+	- If opening via file://, copy `config.local.example.js` to `config.local.js` and set your keys there (no fetch needed).
+	- Or, serve over http(s) and keep using `config.json`.
 3. Optional: - Suno-Ai's Bark TTS Engine. Run ```server.py``` (GPU Enabled)
 4. **Note: You may have to review/adjust the code for your specific env. ie ```CIDR ranges```, ```NGINX/webserver``` configuration,```scripting``` piece etc.**
+5. Local usage without a server:
+	- Copy `config.local.example.js` to `config.local.js` and fill your keys.
+	- Open `index.html` directly (file://). No fetch call to config.json is needed.
    
 ## Features
 
@@ -18,6 +23,7 @@ This allows you to easily interact with OpenAI and Google Generative APIs.
 - OpenAI ```o1```, ```o1-*``` models
 - OpenAI ```o3-mini``` model added (great for code - tier 4+ API)
 - OpenAI ```gpt-4o``` models
+- OpenAI `gpt-5-mini` (experimental) and `latest` alias (per OpenAI latest-model guidance)
 - Latest Google Gemini 2.0 ```Thinking``` model
 - [lmstudio API](https://lmstudio.ai/docs/api/openai-api) local models 
 - Dall-E Image Generation
@@ -29,6 +35,10 @@ This allows you to easily interact with OpenAI and Google Generative APIs.
 - Images served with Google Image Search
 - Additional scraped data with scripts
 - Basic Error handling
+
+## Contributing
+
+See `.github/copilot-instructions.md` for contribution guidance and model wiring conventions.
 
 ## Bugs
 - Check Issues

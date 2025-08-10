@@ -19,6 +19,9 @@ body {
   text-align: center;
 }
 
+/* LCARS side accents */
+/* removed lcars side accents */
+
     #settingsMenu {
       display: none;  
       position: absolute;
@@ -44,7 +47,7 @@ body {
 #idContainer {
   display: flex;
   flex-direction: column;
-  background-color: ;
+  background-color: transparent;
   opacity: 100%;
   max-width: 800px;
   width: 90%;
@@ -70,28 +73,6 @@ body {
   line-height: 1.5;
   color: #333;
   white-space: pre-wrap;
-}
-
-.speakSend {
-  position: absolute;
-  background-image: url('img/thumb-125.jpeg');
-  background-size: contain;
-  background-position: center;
-  background-repeat: no-repeat;
-  bottom: 10px;   /* Adjust as desired */
-  left: 300px;    /* Adjust as desired */
-  width: 40px;
-  height: 40px;
-  margin-left: 10px;
-  cursor: pointer;
-  border: none;
-  background-color: #007bff;
-  color: #fff;
-  padding: 4px 8px;
-  border-radius: 5px;
-  font-size: 1rem;
-  transition: background-color 0.3s ease;
-  z-index: 999;
 }
 
 .message {
@@ -139,32 +120,31 @@ body {
 /* ------------------------------------------------------------
  *  *    Input Styling
  *   *    ------------------------------------------------------------- */
-
 /* A flexible container that holds the text input + buttons side by side */
 .chat-input-container {
   display: flex;
   align-items: center;
-  max-width: 760px; 
+  max-width: 760px;
   border: 1px solid #ccc;
   border-radius: 4px;
   background-color: #fff;
   margin-top: 1px;
-  padding: 5px;    
+  padding: inherit;    
 }
 
 /* Let #txtMsg expand or shrink and fill available space */
 #txtMsg {
   flex: 1;                     /* Takes up remaining space */
   text-align: left !important;
-  min-height: 55px;            /* Reasonable minimum height */
-  max-height: 120px;           /* Adjust if you don’t want it to get too big */
+  min-height: 200px;            /* Reasonable minimum height */
+  max-height: 200px;           /* Adjust if you don’t want it to get too big */
   overflow-y: auto;
   border: none;                /* Remove default border */
   outline: none;
   font-family: Arial, sans-serif;
   font-size: 14px;
   line-height: 1.5;
-  color: #333;
+  color: #111;                 /* Higher contrast while typing */
   white-space: pre-wrap;       /* Makes text wrap nicely */
 }
 
@@ -260,23 +240,69 @@ button {
 /* ------------------------------------------------------------
  *  *    Additional Elements
  *   *    ------------------------------------------------------------- */
-select {
-  padding: 5px;
-  border-radius: 5px;
-  border: 1px solid #ccc;
-  background-color: #fff;
-  color: #333;
+.btn,
+button,
+select,
+input[type="checkbox"] {
+  border-radius: 16px;
 }
-
-input[type="file"] {
-  padding: 5px;
-  max-width: 200px;
+/* revert speak button to original size/placement */
+.speakSend {
+  position: absolute;
+  background-image: url('img/thumb-125.jpeg');
+  background-size: contain;
+  background-position: center;
+  background-repeat: no-repeat;
+  bottom: 10px;
+  left: 300px;
+  width: 40px;
+  height: 40px;
+  margin-left: 10px;
+  cursor: pointer;
   border: none;
-  background-color: #fff;
+  background-color: #007bff;
+  color: #fff;
+  padding: 4px 8px;
+  border-radius: 5px;
+  font-size: 1rem;
+  transition: background-color 0.3s ease;
+  z-index: 999;
 }
-
-footer {
-  margin-top: 20px;
+/* LCARS speak button: pill with Eva icon, overrides base */
+body.theme-lcars .speakSend {
+  background-image: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  position: static;
+  top: auto; right: auto; bottom: auto; left: auto;
+  z-index: auto;
+  margin: 0;
+  width: 100%;
+  height: 100%;
+  min-height: 32px;
+  box-sizing: border-box;
+  padding: 0 10px;
+  border-radius: 999px;
+  border: 2px none rgba(255,255,255,0.9);
+  background-color: transparent;
+  color: #0b0e14;
+}
+body.theme-lcars .speakSend:hover { background-color: transparent; }
+body.theme-lcars .speakSend::before {
+  content: '';
+  width: 22px;
+  height: 22px;
+  display: inline-block;
+  background-image: url('img/thumb-125.jpeg');
+  background-size: cover;
+  background-position: center;
+  border-radius: 50%;
+}
+/* Bigger icon for speak when collapsed and label is hidden */
+body.theme-lcars.lcars-collapsed .speakSend::before {
+  width: 24px;
+  height: 24px;
 }
 
 #clearMessagesBtn {
@@ -312,7 +338,7 @@ footer {
 /* ------------------------------------------------------------
  *  *    Responsive Adjustments
  *   *    ------------------------------------------------------------- */
-// @media only screen and (max-width: 960px) {
+/* @media only screen and (max-width: 960px) { */
 @media only screen and (max-device-width: 960px) {
 
   body {
@@ -353,3 +379,321 @@ footer {
   }
 
 }
+
+/* ------------------------------------------------------------
+ *  *    Theme: LCARS and Markdown styling
+ *   *    ------------------------------------------------------------- */
+:root {
+  /* Classic LCARS palette */
+  --cl-black: #000000;
+  --cl-panel: #1a1a1a;
+  --cl-amber: #ffcc66;
+  --cl-orange: #ff9966;
+  --cl-magenta: #cc99ff;
+  --cl-cyan: #66ccff;
+  --cl-text: #f5f5f5;
+  --cl-danger: #ff3500;
+
+  /* Lower Decks palette */
+  --ld-alpha-blue: #5588ee;
+  --ld-arctic-ice: #66ccff;
+  --ld-arctic-snow: #99ccff;
+  --ld-radioactive: #88ffff;
+  --ld-beta-blue: #7799dd;
+  --ld-night-cloud: #344470;
+  --ld-night-rain: #455580;
+  --ld-sunset-red: #ff3500;
+}
+
+/* LCARS (Unified: Lower Decks palette + black background) */
+body.theme-lcars { background: #000 !important; color: #eef5ff; }
+/* LCARS layout: grid with left rail + main app container */
+#lcarsSidebar { display: none; }
+body.theme-lcars {
+  display: grid;
+  grid-template-columns: 220px minmax(720px, 1100px); /* left rail, centered main */
+  grid-template-rows: 1fr auto; /* main fills, footer anchors bottom */
+  gap: 8px; /* thin LCARS-style gap between rail and main */
+  align-items: start;
+  justify-content: center; /* center the two-column layout on screen */
+  height: 100vh;
+  padding: 16px;
+  background-size: cover;
+}
+body.theme-lcars #lcarsSidebar {
+  display: flex;
+  position: sticky; /* stays visible while main scrolls */
+  top: 20px;
+  align-self: start;
+  height: calc(95vh - 32px);
+  flex-direction: column;
+  gap: 12px;
+  background: var(--ld-night-rain);
+  border-top-left-radius: 120px;
+  border-bottom-left-radius: 120px;
+  padding: 12px 12px 16px 20px;
+  border: 2px solid var(--ld-arctic-snow);
+  border-right: 2px solid var(--ld-arctic-snow); /* visible seam near main */
+}
+/* Make the top chip act as a handle (tooltip provided via title attribute) */
+body.theme-lcars #lcarsChipTop { cursor: pointer; }
+body.theme-lcars #lcarsSidebar .lcars-rail { display: none; }
+/* Decorative chips to suggest LCARS bands */
+body.theme-lcars #lcarsSidebar .lcars-chip { height: 242px; border-radius: 90px 0 0 28px; background: var(--ld-alpha-blue); }
+body.theme-lcars #lcarsSidebar .lcars-chip.peach { background: var(--ld-arctic-ice); height: 50px; border-radius: 0 0 0 0px; }
+body.theme-lcars #lcarsSidebar .lcars-chip.red { background: var(--ld-sunset-red); height: 50px; border-radius: 0 0 0 0px;}
+body.theme-lcars #lcarsSidebar .lcars-chip.sand { background: var(--cl-amber); height: 50px; border-radius: 0 0 0 0px; }
+
+/* Sidebar controls */
+body.theme-lcars #lcarsSidebar .lcars-chip.print { background: var(--ld-radioactive); height: 50px; border-radius: 0 0 0 0px; }
+/* Sidebar controls inside chips */
+body.theme-lcars #lcarsSidebar .lcars-chip > button,
+body.theme-lcars #lcarsSidebar .lcars-chip > .speakSend {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  height: 100%;
+  min-height: 32px;
+  border-radius: 999px;
+  border: 2px none rgba(255,255,255,0.9);
+  background: transparent; /* show chip color */
+  color: #0b0e14;
+  cursor: pointer;
+  font: 700 14px "Barlow Condensed",sans-serif;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+body.theme-lcars #lcarsSidebar .lcars-chip > button:hover,
+body.theme-lcars #lcarsSidebar .lcars-chip > .speakSend:hover {
+  border-color: #fff;
+}
+body.theme-lcars #lcarsSidebar .lcars-label {
+  margin-top: inherit; font: 700 14px "Barlow Condensed",sans-serif;
+  letter-spacing: .12em; text-transform: uppercase; color: #d0defa;
+}
+
+/* Collapsed LCARS sidebar state */
+body.theme-lcars.lcars-collapsed {
+  grid-template-columns: 56px minmax(720px, 1100px);
+}
+body.theme-lcars.lcars-collapsed #lcarsSidebar {
+  padding: 8px;
+  gap: 8px;
+}
+body.theme-lcars.lcars-collapsed #lcarsSidebar .lcars-label { display: none; }
+/* Keep chips visible but compact in collapsed mode */
+body.theme-lcars.lcars-collapsed #lcarsSidebar .lcars-chip {
+  display: block;
+  height: 48px;
+  /* border-radius: 0; */
+  padding: 0;
+}
+body.theme-lcars.lcars-collapsed #lcarsSidebar #lcarsChipTop {
+  height: 120px; /* handle stays larger */
+  /* border-radius: 999px; */ /* keep rounded for the handle */
+}
+/* Icon-only presentation inside chips (text hidden, tooltip via title) */
+body.theme-lcars.lcars-collapsed #lcarsSidebar .lcars-chip > button,
+body.theme-lcars.lcars-collapsed #lcarsSidebar .lcars-chip > .speakSend {
+  justify-content: center;
+  padding: 0;
+  min-height: 48px;
+  height: 48px;
+  font-size: 0; /* hide labels */
+}
+/* Ensure emoji/icon pseudo-elements are readable */
+body.theme-lcars.lcars-collapsed #sidebarSettingsBtn::before,
+body.theme-lcars.lcars-collapsed #sidebarClearBtn::before,
+body.theme-lcars.lcars-collapsed #lcarsChipPrint #printButton::before {
+  font-size: 22px;
+  margin: 0;
+}
+
+/* Hide original speak container in LCARS when moved to sidebar */
+body.theme-lcars .container { display: none; }
+/* Main app container styling under LCARS */
+body.theme-lcars #idContainer,
+body.theme-lcars .settingsMenu,
+body.theme-lcars .chat-input-container,
+body.theme-lcars #txtOutput {
+  background: var(--ld-night-rain);
+  color: #eef5ff;
+  border-radius: 18px;
+  border: 2px solid var(--ld-arctic-snow);
+}
+/* Per request: make txtOutput and chat-input-container black in LCARS */
+body.theme-lcars #txtOutput { background: #000; }
+body.theme-lcars .chat-input-container { background: #000; border-color: var(--ld-arctic-snow); }
+body.theme-lcars #txtMsg { color: #eef5ff; }
+body.theme-lcars footer { background: var(--ld-night-rain); color: #eef5ff; }
+/* Hide duplicate footer controls under LCARS */
+body.theme-lcars footer #settingsButton,
+body.theme-lcars footer #clearMessagesBtn,
+body.theme-lcars footer #printButton { display: none; }
+body.theme-lcars button,
+body.theme-lcars select,
+body.theme-lcars input[type="checkbox"] {
+  background: var(--ld-arctic-ice);
+  color: #000;
+  border: none;
+  border-radius: 16px;
+  padding: 8px 12px;
+}
+body.theme-lcars button#micButton { background: var(--ld-beta-blue); }
+body.theme-lcars button#btnSend { background: var(--ld-arctic-snow); }
+body.theme-lcars #clearMessagesBtn { background: var(--ld-sunset-red); }
+body.theme-lcars .chat-message.user .bubble { background: var(--ld-alpha-blue); color: #000; }
+body.theme-lcars .chat-message.eva .bubble { background: var(--ld-beta-blue); color: #000; }
+body.theme-lcars .bubble-time { color: #dbe7ff; }
+
+/* LCARS sidebar button icons (emoji-based) */
+body.theme-lcars #sidebarSettingsBtn::before,
+body.theme-lcars #sidebarClearBtn::before,
+body.theme-lcars #lcarsChipPrint #printButton::before {
+  display: inline-block;
+  margin-right: 6px;
+}
+body.theme-lcars #sidebarSettingsBtn::before { content: '⚙️'; }
+body.theme-lcars #sidebarClearBtn::before    { content: '🗑️'; }
+body.theme-lcars #lcarsChipPrint #printButton::before { content: '🖨️'; }
+
+/* Markdown inside #txtOutput */
+#txtOutput .md h1,
+#txtOutput .md h2,
+#txtOutput .md h3 { margin: 0.6em 0 0.3em; }
+#txtOutput .md code {
+  background: rgba(0,0,0,0.15);
+  padding: 2px 4px;
+  border-radius: 4px;
+  word-wrap: break-word;
+  overflow-wrap: anywhere;
+}
+#txtOutput .md pre code {
+  display: block;
+  background: rgba(0,0,0,0.35);
+  padding: 10px;
+  overflow: auto;
+  color: #e6e6e6;
+  white-space: pre-wrap;   /* allow wrapping to prevent overflow */
+  word-break: break-word;
+}
+#txtOutput .md ul { margin-left: 1.2em; }
+#txtOutput .md a { color: var(--ld-arctic-snow); }
+
+/* LCARS chat bubbles inside txtOutput */
+body.theme-lcars #txtOutput .chat-bubble {
+  margin: 6px 0;
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: transparent;
+  border: 1px solid rgba(255,255,255,0.18);
+  box-shadow: none;
+  color: #eef5ff;
+}
+body.theme-lcars #txtOutput .chat-bubble .eva,
+body.theme-lcars #txtOutput .chat-bubble .user { font-weight: 700; margin-right: 6px; }
+body.theme-lcars #txtOutput .eva-bubble { border-color: var(--ld-beta-blue); }
+body.theme-lcars #txtOutput .user-bubble { border-color: var(--ld-alpha-blue); }
+body.theme-lcars #txtOutput .chat-bubble .md code { background: rgba(255,255,255,0.12); color: #e6e6e6; }
+
+/* LCARS-only responsive scaling and modern markdown */
+body.theme-lcars {
+  min-height: 100vh;
+  height: auto;
+  overflow: hidden;
+  background-size: cover;
+}
+/* Place sidebar in col 1 and main content in col 2; let main fill available space */
+body.theme-lcars #lcarsSidebar { grid-column: 1; }
+body.theme-lcars #idContainer {
+  grid-column: 2;
+  max-width: none;
+  width: 100%;
+  justify-self: stretch;
+  align-self: stretch;
+  height: 92%;
+  margin: 0; /* remove base margins that create gaps */
+  border-left: 2px solid var(--ld-arctic-snow);
+  border-top-left-radius: 18px;
+  border-bottom-left-radius: 18px;
+  display: flex;           /* ensure column layout inside main */
+  flex-direction: column;
+}
+body.theme-lcars footer { grid-column: 2; }
+body.theme-lcars #txtOutput {
+  width: 98%;
+  /* Flex to fill remaining space, scroll internally */
+  flex: 1 1 auto;
+  min-height: 0;          /* allow flex item to shrink and enable scrolling */
+  height: auto;
+  overflow-y: auto;
+}
+body.theme-lcars .chat-input-container {
+  width: 100%;
+  margin-top: 8px;        /* small separation from chat */
+  align-self: flex-end;   /* LCARS-only alignment, avoids impacting default theme */
+}
+
+/* Ensure inner wrapper lets #txtOutput grow */
+body.theme-lcars #textToSynth {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+/* Phone */
+@media (max-width: 599px) {
+  body.theme-lcars #idContainer { width: 95%; padding: 12px; }
+  body.theme-lcars #txtOutput { min-height: 40vh; max-height: 62vh; font-size: 15px; }
+  body.theme-lcars #btnSend { padding: 6px 10px; }
+  body.theme-lcars .mic-button { width: 28px; height: 28px; }
+  body.theme-lcars #settingsMenu { left: 10px; top: 60px; width: 85vw; }
+}
+
+/* Tablet */
+@media (min-width: 600px) and (max-width: 1023px) {
+  body.theme-lcars #idContainer { width: 92%; }
+  body.theme-lcars #txtOutput { min-height: 45vh; max-height: 65vh; }
+}
+
+/* Desktop/Widescreen */
+@media (min-width: 1024px) {
+  body.theme-lcars #idContainer { max-width: 1200px; }
+  body.theme-lcars #txtOutput { min-height: 50vh; max-height: 68vh; }
+}
+
+/* Modern markdown polish under LCARS */
+body.theme-lcars #txtOutput .md {
+  line-height: 1.6;
+}
+body.theme-lcars #txtOutput .md h1,
+body.theme-lcars #txtOutput .md h2,
+body.theme-lcars #txtOutput .md h3 { border-bottom: 1px solid rgba(255,255,255,0.08); padding-bottom: 4px; }
+body.theme-lcars #txtOutput .md blockquote {
+  margin: 0.6em 0;
+  padding: 6px 10px;
+  border-left: 4px solid var(--ld-arctic-ice);
+  background: rgba(255,255,255,0.05);
+  color: #e8f2ff;
+}
+body.theme-lcars #txtOutput .md pre code {
+  background: #0c0f14;
+  border: 1px solid rgba(255,255,255,0.06);
+  border-radius: 6px;
+}
+body.theme-lcars #txtOutput .md table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 0.6em 0;
+}
+body.theme-lcars #txtOutput .md th,
+body.theme-lcars #txtOutput .md td {
+  border: 1px solid rgba(255,255,255,0.08);
+  padding: 6px 8px;
+}
+body.theme-lcars #txtOutput .md tr:nth-child(even) { background: rgba(255,255,255,0.03); }
+
+/* removed experimental responsive overrides to preserve original theme */

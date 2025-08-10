@@ -8,6 +8,9 @@ var aiMasterResponse = "";
 var masterOutput = "";
 var storageAssistant = "";
 var imgSrcGlobal; // Declare a global variable for img.src
+// Debug/CORS flags (from config.json)
+var DEBUG_CORS = false;
+var DEBUG_PROXY_URL = "";
 
 // Error Handling Variables
 var retryCount = 0;
@@ -16,22 +19,113 @@ var retryDelay = 2420; // milliseconds
 
 // API Access[OpenAI, AWS] 
 function auth() {
-fetch('./config.json')
- .then(response => response.json())
- .then(config => {
-   OPENAI_API_KEY = config.OPENAI_API_KEY;
-   GOOGLE_SEARCH_KEY = config.GOOGLE_SEARCH_KEY;
-   GOOGLE_SEARCH_ID = config.GOOGLE_SEARCH_ID;
-   GOOGLE_VISION_KEY = config.GOOGLE_VISION_KEY;
-   AWS.config.region = config.AWS_REGION;
-   AWS.config.credentials = new AWS.Credentials(config.AWS_ACCESS_KEY_ID, config.AWS_SECRET_ACCESS_KEY);
- });
+  // Prefer inlined local config if provided (config.local.js)
+  if (typeof window !== 'undefined' && window.__LOCAL_CONFIG__) {
+    const config = window.__LOCAL_CONFIG__;
+    applyConfig(config);
+    return;
+  }
+
+  // Fallback: fetch config.json (requires http(s) server)
+  if (location.protocol === 'file:') {
+    console.warn('Running from file://, unable to fetch config.json due to browser security. Create config.local.js or serve over http.');
+  }
+
+  fetch('./config.json')
+    .then(response => response.json())
+    .then(config => applyConfig(config))
+    .catch(err => {
+      console.error('Failed to load config:', err);
+      document.getElementById('idText').innerText = 'Config not loaded. Use config.local.js or run a local server.';
+    });
+}
+
+function applyConfig(config) {
+  OPENAI_API_KEY = config.OPENAI_API_KEY;
+  GOOGLE_SEARCH_KEY = config.GOOGLE_SEARCH_KEY;
+  GOOGLE_SEARCH_ID = config.GOOGLE_SEARCH_ID;
+  GOOGLE_VISION_KEY = config.GOOGLE_VISION_KEY;
+  // CORS debug
+  DEBUG_CORS = !!config.DEBUG_CORS;
+  DEBUG_PROXY_URL = config.DEBUG_PROXY_URL || "";
+  AWS.config.region = config.AWS_REGION;
+  AWS.config.credentials = new AWS.Credentials(config.AWS_ACCESS_KEY_ID, config.AWS_SECRET_ACCESS_KEY);
+}
+
+// --- Model option filtering per theme (LCARS-restricted) ---
+// Cache of the original full model list and last non-LCARS selection
+var __originalModelOptions = null;
+var __modelBeforeLCARS = null;
+
+function captureOriginalModelOptions() {
+  if (__originalModelOptions) return;
+  var sel = document.getElementById('selModel');
+  if (!sel) return;
+  __originalModelOptions = Array.from(sel.options).map(function(o){
+    return { value: o.value, text: o.text, title: o.title || '' };
+  });
+}
+
+function setModelOptions(list) {
+  var sel = document.getElementById('selModel');
+  if (!sel) return;
+  var currentValue = sel.value;
+  // Rebuild options
+  sel.innerHTML = '';
+  list.forEach(function(item){
+    var opt = document.createElement('option');
+    opt.value = item.value;
+    opt.text = item.text;
+    if (item.title) opt.title = item.title;
+    sel.appendChild(opt);
+  });
+  // Try to keep current selection if still present; otherwise select first
+  var hasCurrent = list.some(function(i){ return i.value === currentValue; });
+  sel.value = hasCurrent ? currentValue : (list[0] ? list[0].value : '');
+  // Trigger change to rewire send behavior
+  sel.dispatchEvent(new Event('change', { bubbles: true }));
+}
+
+function updateModelOptionsForTheme(theme) {
+  captureOriginalModelOptions();
+  var sel = document.getElementById('selModel');
+  if (!sel) return;
+  if (theme === 'lcars') {
+    // Remember current model to restore when leaving LCARS
+    __modelBeforeLCARS = sel.value;
+    var allowed = new Set(['gpt-5-mini', 'o3-mini', 'dall-e-3', 'gemini', 'lm-studio']);
+    var filtered = (__originalModelOptions || []).filter(function(o){ return allowed.has(o.value); });
+    if (filtered.length) {
+      setModelOptions(filtered);
+    }
+  } else if (__originalModelOptions) {
+    setModelOptions(__originalModelOptions);
+    // Restore pre-LCARS selection if it exists
+    if (__modelBeforeLCARS) {
+      var hasPrev = Array.from(sel.options).some(function(o){ return o.value === __modelBeforeLCARS; });
+      if (hasPrev) {
+        sel.value = __modelBeforeLCARS;
+        sel.dispatchEvent(new Event('change', { bubbles: true }));
+      }
+    }
+  }
 }
 
 // Settings Menu Options 
 document.addEventListener('DOMContentLoaded', () => {
   const settingsButton = document.getElementById('settingsButton');
   const settingsMenu = document.getElementById('settingsMenu');
+  const themeSelect = document.getElementById('selTheme');
+  const lcarsChipSand = document.getElementById('lcarsChipSand');
+  const speakBtn = document.getElementById('speakSend');
+  const selModel = document.getElementById('selModel');
+  // LCARS sidebar controls (optional)
+  const sidebarSettingsBtn = document.getElementById('sidebarSettingsBtn');
+  const sidebarClearBtn = document.getElementById('sidebarClearBtn');
+  const lcarsLabel = document.querySelector('#lcarsSidebar .lcars-label');
+  const lcarsChipPrint = document.getElementById('lcarsChipPrint');
+  const printBtn = document.getElementById('printButton');
+  const lcarsChipTop = document.getElementById('lcarsChipTop');
 
   function toggleSettings(event) {
     event.stopPropagation();
@@ -44,12 +138,82 @@ document.addEventListener('DOMContentLoaded', () => {
   // Attach event via JavaScript
   settingsButton.addEventListener('click', toggleSettings);
 
+  // Mirror: sidebar Settings should toggle the same menu
+  if (sidebarSettingsBtn) {
+    sidebarSettingsBtn.addEventListener('click', toggleSettings);
+  }
+  // Mirror: sidebar Clear -> Clear Messages
+  if (sidebarClearBtn) {
+    sidebarClearBtn.addEventListener('click', (e) => { e.stopPropagation(); clearMessages(); });
+  }
+
   // Close the menu when clicking outside
   document.addEventListener('click', (event) => {
     if (!settingsMenu.contains(event.target) && event.target !== settingsButton) {
       settingsMenu.style.display = 'none';
     }
   });
+
+  // Initialize theme from localStorage
+  try {
+    const savedTheme = localStorage.getItem('theme') || 'lcars';
+  const savedCollapsed = localStorage.getItem('lcars_collapsed') === '1';
+    if (themeSelect) {
+      themeSelect.value = savedTheme;
+    }
+  // Capture full model list before any theme-based filtering
+  captureOriginalModelOptions();
+    applyTheme(savedTheme);
+  // Ensure model options reflect the saved theme on load
+  updateModelOptionsForTheme(savedTheme);
+    // Apply collapsed state if saved
+    if (savedTheme === 'lcars' && savedCollapsed) {
+      document.body.classList.add('lcars-collapsed');
+    }
+    // Move Speak button into LCARS sidebar if active
+    if (savedTheme === 'lcars' && lcarsChipSand && speakBtn && !lcarsChipSand.contains(speakBtn)) {
+      lcarsChipSand.appendChild(speakBtn);
+      speakBtn.title = 'Speak';
+      speakBtn.textContent = 'Speak';
+    }
+    // Move Print button under Speak when LCARS is active
+    if (savedTheme === 'lcars' && lcarsChipPrint && printBtn && !lcarsChipPrint.contains(printBtn)) {
+      lcarsChipPrint.appendChild(printBtn);
+      printBtn.title = 'Print Output';
+    }
+    // Update LCARS label with current date
+    if (lcarsLabel) {
+      const now = new Date();
+      const dateStr = now.toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: '2-digit' });
+      lcarsLabel.textContent = `Access • ${dateStr}`;
+    }
+  } catch (e) {
+    console.warn('Theme init failed:', e);
+  }
+
+  // Toggle LCARS sidebar collapse on top chip click
+  if (lcarsChipTop) {
+    lcarsChipTop.setAttribute('role', 'button');
+    lcarsChipTop.setAttribute('tabindex', '0');
+    // Helper to sync tooltip title only
+    function syncHandleTooltip() {
+      var collapsed = document.body.classList.contains('lcars-collapsed');
+      lcarsChipTop.title = collapsed ? 'Expand LCARS sidebar' : 'Collapse LCARS sidebar';
+    }
+    syncHandleTooltip();
+    lcarsChipTop.addEventListener('click', function(e){
+      e.stopPropagation();
+      document.body.classList.toggle('lcars-collapsed');
+      try { localStorage.setItem('lcars_collapsed', document.body.classList.contains('lcars-collapsed') ? '1' : '0'); } catch (e) {}
+      syncHandleTooltip();
+    });
+    lcarsChipTop.addEventListener('keydown', function(e){
+      if (e.key === 'Enter' || e.key === ' ') {
+        e.preventDefault();
+        lcarsChipTop.click();
+      }
+    });
+  }
 });
 
 // Welcome Text
@@ -64,12 +228,60 @@ function OnLoad() {
     "      ";
 }
 
+// Apply UI theme (default | lcars)
+function applyTheme(theme) {
+  const body = document.body;
+  if (!body) return;
+
+  // Remove known theme classes first
+  body.classList.remove('theme-lcars');
+
+  // Add selected theme class
+  if (theme === 'lcars') {
+    body.classList.add('theme-lcars');
+    // Move speak button into sidebar
+    const lcarsChipSand = document.getElementById('lcarsChipSand');
+    const speakBtn = document.getElementById('speakSend');
+    if (lcarsChipSand && speakBtn && !lcarsChipSand.contains(speakBtn)) {
+      lcarsChipSand.appendChild(speakBtn);
+      speakBtn.title = 'Speak';
+      speakBtn.textContent = 'Speak';
+    }
+    // Move Print button beneath Speak in sidebar
+    const lcarsChipPrint = document.getElementById('lcarsChipPrint');
+    const printBtn = document.getElementById('printButton');
+    if (lcarsChipPrint && printBtn && !lcarsChipPrint.contains(printBtn)) {
+      lcarsChipPrint.appendChild(printBtn);
+      printBtn.title = 'Print Output';
+    }
+  } else {
+    // Restore speak button to its original container when leaving LCARS
+    const container = document.querySelector('.container');
+    const speakBtn = document.getElementById('speakSend');
+    if (container && speakBtn && !container.contains(speakBtn)) {
+      container.appendChild(speakBtn);
+    }
+    // Restore Print button to footer when leaving LCARS
+    const footer = document.querySelector('footer');
+    const printBtn = document.getElementById('printButton');
+    if (footer && printBtn && !footer.contains(printBtn)) {
+      footer.appendChild(printBtn);
+    }
+  }
+
+  // Persist
+  try { localStorage.setItem('theme', theme); } catch (e) {}
+
+  // Update available model options according to theme
+  updateModelOptionsForTheme(theme);
+}
+
 
 function updateButton() {
     var selModel = document.getElementById("selModel");
     var btnSend = document.getElementById("btnSend");
 
-    if (selModel.value == "gpt-4o-mini" || selModel.value == "o1" || selModel.value == "o1-mini" || selModel.value == "gpt-4o" || selModel.value == "o3-mini" || selModel.value == "o1-preview") {
+  if (selModel.value == "gpt-4o-mini" || selModel.value == "o1" || selModel.value == "o1-mini" || selModel.value == "gpt-4o" || selModel.value == "o3-mini" || selModel.value == "o1-preview" || selModel.value == "gpt-5-mini" || selModel.value == "latest") {
         btnSend.onclick = function() {
             clearText();
             trboSend();
@@ -103,7 +315,7 @@ function sendData() {
     // Logic required for initial message
     var selModel = document.getElementById("selModel");
 
-    if (selModel.value == "gpt-4o-mini" || selModel.value == "o1" || selModel.value == "o1-mini" || selModel.value == "gpt-4o" || selModel.value == "o3-mini" || selModel.value == "o1-preview") {
+  if (selModel.value == "gpt-4o-mini" || selModel.value == "o1" || selModel.value == "o1-mini" || selModel.value == "gpt-4o" || selModel.value == "o3-mini" || selModel.value == "o1-preview" || selModel.value == "gpt-5-mini" || selModel.value == "latest") {
         clearText();
         trboSend();
     } else if (selModel.value == "gemini") {
@@ -294,7 +506,7 @@ function insertImage() {
 
   function sendToVisionAPI(imageData) {
     // Send the image data to Google's Vision API
-    var visionApiUrl = `https://vision.googleapis.com/v1/images:annotate?key=${GOOGLE_VISION_KEY}`;
+  var visionApiUrl = `https://vision.googleapis.com/v1/images:annotate?key=${GOOGLE_VISION_KEY}`;
 
     // Create the API request payload
     var requestPayload = {
@@ -552,6 +764,75 @@ function printMaster() {
         // printWindow.document.write(txtOutput.innerHTML.replace(/\n/g, "<br>"));
         printWindow.document.write(txtOutput.innerHTML);
 	// printWindow.print(txtOutput.innerHTML);
+}
+
+// Minimal Markdown -> HTML renderer (safe-ish)
+function renderMarkdown(md) {
+  if (!md) return '';
+  // Normalize newlines
+  md = md.replace(/\r\n/g, '\n');
+  // Support [code]...[/code] blocks (optionally [code lang=bash])
+  const blocks = [];
+  const langs = [];
+  md = md.replace(/\[code(?:\s+lang=([\w.+-]+))?\]\s*([\s\S]*?)\s*\[\/code\]/gi, (m, lang, code) => {
+    blocks.push(escapeHtml(code));
+    langs.push((lang || '').trim());
+    return `\u0000CODEBLOCK${blocks.length - 1}\u0000`;
+  });
+  // Extract fenced code blocks first
+  md = md.replace(/```([\w.+-]+)?\n([\s\S]*?)```/g, (m, lang, code) => {
+    blocks.push(escapeHtml(code));
+    langs.push((lang || '').trim());
+    return `\u0000CODEBLOCK${blocks.length - 1}\u0000`;
+  });
+
+  // Escape HTML for safety
+  md = escapeHtml(md);
+
+  // Headings
+  md = md.replace(/^###\s+(.*)$/gm, '<h3>$1<\/h3>');
+  md = md.replace(/^##\s+(.*)$/gm, '<h2>$1<\/h2>');
+  md = md.replace(/^#\s+(.*)$/gm, '<h1>$1<\/h1>');
+
+  // Links [text](url)
+  md = md.replace(/\[(.+?)\]\((https?:[^\s)]+)\)/g, '<a href="$2" target="_blank" rel="noopener noreferrer">$1<\/a>');
+
+  // Bold and italic
+  md = md.replace(/\*\*([^\n*][\s\S]*?)\*\*/g, '<strong>$1<\/strong>');
+  md = md.replace(/_([^\n_][\s\S]*?)_/g, '<em>$1<\/em>');
+
+  // Inline code `code` (avoid matching across code fences tokens)
+  md = md.replace(/`([^`\n]+)`/g, '<code>$1<\/code>');
+
+  // Bulleted lists (avoid converting inside fenced blocks by running after block extraction)
+  md = md.replace(/(?:^|\n)([-*] [^\n`].*(?:\n[-*] [^\n`].*)*)/g, (m) => {
+    const items = m.trim().split(/\n/)
+      .map(li => li.replace(/^[-*]\s+/, ''))
+      .map(t => `<li>${t}<\/li>`)
+      .join('');
+    return `\n<ul>${items}<\/ul>`;
+  });
+
+  // Line breaks
+  md = md.replace(/\n/g, '<br>');
+
+  // Restore code blocks (include language class if provided)
+  md = md.replace(/\u0000CODEBLOCK(\d+)\u0000/g, (m, idx) => {
+    const i = Number(idx);
+    const lang = langs[i] ? ` class=\"language-${langs[i]}\"` : '';
+    return `<pre><code${lang}>${blocks[i]}<\/code><\/pre>`;
+  });
+
+  return md;
+}
+
+function escapeHtml(str) {
+  return String(str)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
 }
 
 // Capture Shift + Enter Keys for new line
