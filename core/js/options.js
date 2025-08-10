@@ -295,8 +295,8 @@ function applyTheme(theme) {
   // Update available model options according to theme
   updateModelOptionsForTheme(theme);
 
-  // Ensure monitors are visible only on LCARS
-  var mon = document.getElementById('lcarsChipMonitor');
+  // Ensure monitors dock is visible only on LCARS
+  var mon = document.getElementById('lcarsMonitorsDock');
   if (mon) mon.style.display = (theme === 'lcars') ? 'block' : 'none';
 }
 
