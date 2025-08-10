@@ -51,6 +51,10 @@
       <!-- Speak button will be moved here at runtime in LCARS -->
     </div>
 
+    <div class="lcars-chip sand" id="lcarsChipPrint">
+      <!-- Print button will be moved here at runtime in LCARS -->
+    </div>
+
     <div class="lcars-label" aria-hidden="true">Access • 49204.3</div>
   </nav>
 
@@ -172,7 +176,7 @@
     <img id="eEgg" src="core/img/eEgg.gif" alt="Image" style="display:none;">
     <div id="idText"></div>
     <button id="settingsButton" style="margin: 1em;">Settings</button>
-    <button onclick="printMaster()" aria-label="Print output">Print Output</button>
+  <button id="printButton" onclick="printMaster()" aria-label="Print output">Print Output</button>
     <button id="clearMessagesBtn" onclick="clearMessages()" aria-label="Clear memory">Clear Memory</button>
   </footer> 
 

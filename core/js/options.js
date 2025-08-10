@@ -63,6 +63,8 @@ document.addEventListener('DOMContentLoaded', () => {
   const sidebarSettingsBtn = document.getElementById('sidebarSettingsBtn');
   const sidebarClearBtn = document.getElementById('sidebarClearBtn');
   const lcarsLabel = document.querySelector('#lcarsSidebar .lcars-label');
+  const lcarsChipPrint = document.getElementById('lcarsChipPrint');
+  const printBtn = document.getElementById('printButton');
 
   function toggleSettings(event) {
     event.stopPropagation();
@@ -103,6 +105,11 @@ document.addEventListener('DOMContentLoaded', () => {
       lcarsChipSand.appendChild(speakBtn);
       speakBtn.title = 'Speak';
       speakBtn.textContent = 'Speak';
+    }
+    // Move Print button under Speak when LCARS is active
+    if (savedTheme === 'lcars' && lcarsChipPrint && printBtn && !lcarsChipPrint.contains(printBtn)) {
+      lcarsChipPrint.appendChild(printBtn);
+      printBtn.title = 'Print Output';
     }
     // Update LCARS label with current date
     if (lcarsLabel) {
@@ -146,12 +153,25 @@ function applyTheme(theme) {
       speakBtn.title = 'Speak';
       speakBtn.textContent = 'Speak';
     }
+    // Move Print button beneath Speak in sidebar
+    const lcarsChipPrint = document.getElementById('lcarsChipPrint');
+    const printBtn = document.getElementById('printButton');
+    if (lcarsChipPrint && printBtn && !lcarsChipPrint.contains(printBtn)) {
+      lcarsChipPrint.appendChild(printBtn);
+      printBtn.title = 'Print Output';
+    }
   } else {
     // Restore speak button to its original container when leaving LCARS
     const container = document.querySelector('.container');
     const speakBtn = document.getElementById('speakSend');
     if (container && speakBtn && !container.contains(speakBtn)) {
       container.appendChild(speakBtn);
+    }
+    // Restore Print button to footer when leaving LCARS
+    const footer = document.querySelector('footer');
+    const printBtn = document.getElementById('printButton');
+    if (footer && printBtn && !footer.contains(printBtn)) {
+      footer.appendChild(printBtn);
     }
   }
 
