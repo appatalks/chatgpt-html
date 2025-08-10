@@ -560,6 +560,7 @@ body.theme-lcars #lcarsChipPrint #printButton::before {
   height: 18px;
   background-size: contain;
   background-repeat: no-repeat;
+  background-position: center;
   vertical-align: middle;
 }
 /* Use SVG icons instead of emoji for consistent rendering */
