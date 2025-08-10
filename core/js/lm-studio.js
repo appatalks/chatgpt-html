@@ -29,9 +29,22 @@ function lmsSend() {
         return;
     }
 
-    // Document the user's message
-    document.getElementById("txtMsg").innerHTML = "";
-    document.getElementById("txtOutput").innerHTML += '<span class="user">You: </span>' + sQuestion + "<br>\n";
+                // Document the user's message (match chat-bubble UI and sanitize)
+                document.getElementById("txtMsg").innerHTML = "";
+                (function appendUserBubble(raw){
+                    const safe = (function escapeHtmlLite(str){
+                        return String(str)
+                            .replace(/&/g, '&amp;')
+                            .replace(/</g, '&lt;')
+                            .replace(/>/g, '&gt;')
+                            .replace(/"/g, '&quot;')
+                            .replace(/'/g, '&#39;');
+                    })(raw).replace(/\n/g, '<br>');
+                    const wrap = '<div class="chat-bubble user-bubble">' + '<span class="user">You:</span> ' + safe + '</div>';
+                    const out = document.getElementById("txtOutput");
+                    out.innerHTML += wrap;
+                    out.scrollTop = out.scrollHeight;
+                })(sQuestion);
 
     const openAIUrl = `http://localhost:1234/v1/chat/completions`;
     // const openAIUrl = `http://192.168.86.69:1234/v1/chat/completions`;
@@ -55,38 +68,76 @@ function lmsSend() {
         }),
     };
 
-    fetch(openAIUrl, requestOptions)
-        .then(response => response.ok ? response.json() : Promise.reject(new Error(`Error: ${response.status}`)))
-        .then(result => {
-            const candidate = result.choices[0].message.content;
+        fetch(openAIUrl, requestOptions)
+                .then(response => response.ok ? response.json() : Promise.reject(new Error(`Error: ${response.status}`)))
+                .then(async (result) => {
+                        const candidate = (result && result.choices && result.choices[0] && result.choices[0].message && result.choices[0].message.content) || '';
 
-            document.getElementById("txtOutput").innerHTML += '<span class="eva">Eva: </span>' + candidate + "<br>\n";
+                        // Render Markdown like OpenAI path; inline image placeholders if present
+                        const out = document.getElementById("txtOutput");
+                        let content = String(candidate || '').trim();
 
-            // Check for [Image of ...] tags
-            const imageTagMatch = candidate.match(/\[Image of (.*?)\]/);
-            if (imageTagMatch) {
-                const imageQuery = imageTagMatch[1];
-                fetchGoogleImages(imageQuery).then(imageResult => {
-                    const imageUrl = imageResult.items[0].link;
-                    document.getElementById("txtOutput").innerHTML += `<br><a href="${imageUrl}" target="_blank"><img src="${imageUrl}" alt="${imageQuery}"></a>`;
-                }).catch(error => {
-                    console.error("Error fetching image:", error);
-                });
-            }
+                        try {
+                            if (content.includes("Image of")) {
+                                let formattedResult = content.replace(/\n\n/g, "\n").trim();
+                                const imagePlaceholderRegex = /\[(Image of (.*?))\]/g;
+                                const imagePlaceholders = formattedResult.match(imagePlaceholderRegex)?.slice(0, 3);
 
-            // Update conversation history
-            openLLMessages.push({ role: "user", content: sQuestion });
-            openLLMessages.push({ role: "assistant", content: candidate });
-            localStorage.setItem("openLLMessages", JSON.stringify(openLLMessages));
+                                if (imagePlaceholders && imagePlaceholders.length) {
+                                    for (let i = 0; i < Math.min(imagePlaceholders.length, 3); i++) {
+                                        const placeholder = imagePlaceholders[i];
+                                        const searchQuery = placeholder.substring(10, placeholder.length - 1).trim();
+                                        try {
+                                            const searchResult = await fetchGoogleImages(searchQuery);
+                                            if (searchResult && searchResult.items && searchResult.items.length > 0) {
+                                                const topImage = searchResult.items[0];
+                                                const imageLink = topImage.link;
+                                                formattedResult = formattedResult.replace(placeholder, `<img src="${imageLink}" title="${searchQuery}" alt="${searchQuery}">`);
+                                            }
+                                        } catch (err) {
+                                            console.error("Error fetching image:", err);
+                                        }
+                                    }
+                                    // Tokenize inserted <img> tags, run markdown safely, then restore <img>
+                                    const imgFragments = [];
+                                    const tokenized = formattedResult.replace(/<img[^>]*>/g, (m) => {
+                                        imgFragments.push(m);
+                                        return `\u0000IMG${imgFragments.length - 1}\u0000`;
+                                    });
+                                    const mdSafe = (typeof renderMarkdown === 'function') ? renderMarkdown(tokenized) : tokenized;
+                                    const restored = mdSafe.replace(/\u0000IMG(\d+)\u0000/g, (m, idx) => imgFragments[Number(idx)] || m);
+                                    out.innerHTML += '<div class="chat-bubble eva-bubble">' + '<span class="eva">Eva:</span> ' + '<div class="md">' + restored + '</div>' + '</div>';
+                                    out.scrollTop = out.scrollHeight;
+                                } else {
+                                    const mdHtml = (typeof renderMarkdown === 'function') ? renderMarkdown(content) : content;
+                                    out.innerHTML += '<div class="chat-bubble eva-bubble">' + '<span class="eva">Eva:</span> ' + '<div class="md">' + mdHtml + '</div>' + '</div>';
+                                    out.scrollTop = out.scrollHeight;
+                                }
+                            } else {
+                                const mdHtml = (typeof renderMarkdown === 'function') ? renderMarkdown(content) : content;
+                                out.innerHTML += '<div class="chat-bubble eva-bubble">' + '<span class="eva">Eva:</span> ' + '<div class="md">' + mdHtml + '</div>' + '</div>';
+                                out.scrollTop = out.scrollHeight;
+                            }
+                        } catch (e) {
+                            console.error('LM Studio render error:', e);
+                            // Fallback to plain text
+                            out.innerHTML += '<div class="chat-bubble eva-bubble">' + '<span class="eva">Eva:</span> ' + content + '</div>';
+                            out.scrollTop = out.scrollHeight;
+                        }
 
-            // Check the state of the checkbox and have fun
-            const checkbox = document.getElementById("autoSpeak");
-            if (checkbox.checked) {
-              speakText();
-              const audio = document.getElementById("audioPlayback");
-              audio.setAttribute("autoplay", true);
-            }
-        })
+                        // Update conversation history
+                        openLLMessages.push({ role: "user", content: sQuestion });
+                        openLLMessages.push({ role: "assistant", content: candidate });
+                        localStorage.setItem("openLLMessages", JSON.stringify(openLLMessages));
+
+                        // Auto-speak
+                        const checkbox = document.getElementById("autoSpeak");
+                        if (checkbox && checkbox.checked) {
+                            speakText();
+                            const audio = document.getElementById("audioPlayback");
+                            if (audio) audio.setAttribute("autoplay", true);
+                        }
+                })
         .catch(error => {
             console.error("Error:", error);
             document.getElementById("txtOutput").innerHTML += '<span class="error">Error: </span>' + error.message + "<br>\n";
