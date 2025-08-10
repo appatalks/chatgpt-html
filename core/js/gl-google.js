@@ -7,10 +7,19 @@ function geminiSend() {
     // Remove occurrences of specific syntax from the txtMsg element
     txtMsg.innerHTML = txtMsg.innerHTML.replace(/<div[^>]*>.*<\/div>/g, '');
 
-    function auth() {
+    function getGoogleGlKey() {
+        // Prefer local inline config if present
+        if (typeof window !== 'undefined' && window.__LOCAL_CONFIG__ && window.__LOCAL_CONFIG__.GOOGLE_GL_KEY) {
+            return Promise.resolve(window.__LOCAL_CONFIG__.GOOGLE_GL_KEY);
+        }
+        // If options.js loaded config already, use global variable
+        if (typeof GOOGLE_GL_KEY !== 'undefined' && GOOGLE_GL_KEY) {
+            return Promise.resolve(GOOGLE_GL_KEY);
+        }
+        // Fallback to config.json (requires http(s) server)
         return fetch('./config.json')
-            .then(response => response.json())
-            .then(config => config.GOOGLE_GL_KEY);
+            .then(r => r.ok ? r.json() : Promise.reject(new Error('Missing config.json')))
+            .then(cfg => cfg.GOOGLE_GL_KEY);
     }
 
     let geminiMessages = [
@@ -45,7 +54,7 @@ function geminiSend() {
         return;
     }
 
-    auth().then(GOOGLE_GL_KEY => {
+    getGoogleGlKey().then(GOOGLE_GL_KEY => {
         document.getElementById("txtMsg").innerHTML = "";
         document.getElementById("txtOutput").innerHTML += '<span class="user">You: </span>' + sQuestion + "<br>\n";
 
@@ -68,7 +77,7 @@ function geminiSend() {
     	   }),
 	};
 
-        fetch(geminiUrl, requestOptions)
+    fetch(geminiUrl, requestOptions)
             .then(response => response.ok ? response.json() : Promise.reject(new Error(`Error: ${response.status}`))) // Updated Error handling
             .then(result => {
                 if (result.candidates[0].finishReason === "RECITATION") {
@@ -85,21 +94,51 @@ function geminiSend() {
                         document.getElementById("txtOutput").innerHTML += '<span class="eva-thoughts">Eva\'s Thoughts:</span><br>' + thoughts + "<br><br>\n";
                     }
 
-                    // Display main response
-                    const mainResponse = nonThoughts.map(part => part.text).join("\n");
-                    document.getElementById("txtOutput").innerHTML += '<span class="eva">Eva: </span>' + mainResponse + "<br>\n";
-
-                    // Check for [Image of ...] tags
-                    const imageTagMatch = mainResponse.match(/\[Image of (.*?)\]/);
-                    if (imageTagMatch) {
-                        const imageQuery = imageTagMatch[1];
-                        fetchGoogleImages(imageQuery).then(imageResult => {
-                            const imageUrl = imageResult.items[0].link;
-                            document.getElementById("txtOutput").innerHTML += `<br><a href="${imageUrl}" target="_blank"><img src="${imageUrl}" alt="${imageQuery}"></a>`;
-                        }).catch(error => {
-                            console.error("Error fetching image:", error);
-                        });
-                    }
+                                        // Display main response as Markdown with optional inline images
+                                        (async () => {
+                                            let mainResponse = nonThoughts.map(part => part.text).join("\n").trim();
+                                            const out = document.getElementById("txtOutput");
+                                            try {
+                                                if (mainResponse.includes("Image of")) {
+                                                    let formatted = mainResponse.replace(/\n\n/g, "\n");
+                                                    const rx = /\[(Image of (.*?))\]/g;
+                                                    const matches = formatted.match(rx)?.slice(0, 3);
+                                                    if (matches && matches.length) {
+                                                        for (let i = 0; i < matches.length; i++) {
+                                                            const placeholder = matches[i];
+                                                            const q = placeholder.substring(10, placeholder.length - 1).trim();
+                                                            try {
+                                                                const res = await fetchGoogleImages(q);
+                                                                const link = res && res.items && res.items[0] && res.items[0].link;
+                                                                if (link) {
+                                                                    formatted = formatted.replace(placeholder, `<img src="${link}" title="${q}" alt="${q}">`);
+                                                                }
+                                                            } catch (e) {
+                                                                console.error('Error fetching image:', e);
+                                                            }
+                                                        }
+                                                    }
+                                                    // Tokenize <img>, render MD, restore
+                                                    const imgs = [];
+                                                    const tokenized = formatted.replace(/<img[^>]*>/g, m => {
+                                                        imgs.push(m);
+                                                        return `\u0000IMG${imgs.length - 1}\u0000`;
+                                                    });
+                                                    const mdSafe = (typeof renderMarkdown === 'function') ? renderMarkdown(tokenized) : tokenized;
+                                                    const restored = mdSafe.replace(/\u0000IMG(\d+)\u0000/g, (m, i) => imgs[Number(i)] || m);
+                                                    out.innerHTML += '<div class="chat-bubble eva-bubble">' + '<span class="eva">Eva:</span> ' + '<div class="md">' + restored + '</div>' + '</div>';
+                                                    out.scrollTop = out.scrollHeight;
+                                                } else {
+                                                    const mdHtml = (typeof renderMarkdown === 'function') ? renderMarkdown(mainResponse) : mainResponse;
+                                                    out.innerHTML += '<div class="chat-bubble eva-bubble">' + '<span class="eva">Eva:</span> ' + '<div class="md">' + mdHtml + '</div>' + '</div>';
+                                                    out.scrollTop = out.scrollHeight;
+                                                }
+                                            } catch (e) {
+                                                console.error('Gemini render error:', e);
+                                                out.innerHTML += '<div class="chat-bubble eva-bubble">' + '<span class="eva">Eva:</span> ' + mainResponse + '</div>';
+                                                out.scrollTop = out.scrollHeight;
+                                            }
+                                        })();
 
                     // Update conversation history: log both thoughts and non-thoughts
                     geminiMessages.push({ role: "user", parts: [{ text: sQuestion }] });

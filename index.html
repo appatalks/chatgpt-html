@@ -55,6 +55,8 @@
       <!-- Print button will be moved here at runtime in LCARS -->
     </div>
 
+    
+
     <div class="lcars-label" aria-hidden="true">Access • 49204.3</div>
   </nav>
 
@@ -152,20 +154,81 @@
 
 <!--    <p></p> -->
     
-<div class="chat-input-container">
-    <div id="txtMsg" contenteditable="true" rows="2" placeholder="Input Text" aria-label="Input text"></div>
-      <label for="imgInput">&#128206;</label>
-	<input type="file" id="imgInput" aria-label="Upload image" style="display:none;"> 
+<div class="input-monitors-row">
+  <aside id="lcarsMonitorsDock" class="lcars-monitors" aria-label="Monitors">
+    <div id="lcarsMonitorTabs" role="tablist" aria-label="LCARS monitors tabs">
+      <button class="monitor-tab active" data-tab="tokens" role="tab" aria-selected="true" title="Token usage">Tkns</button>
+      <button class="monitor-tab" data-tab="net" role="tab" aria-selected="false" title="Network">Net</button>
+      <button class="monitor-tab" data-tab="sys" role="tab" aria-selected="false" title="System">Sys</button>
+      <button class="monitor-tab" data-tab="misc" role="tab" aria-selected="false" title="Misc">Misc</button>
+    </div>
+    <div id="lcarsMonitorPanels">
+      <div class="monitor-panel active" data-tab="tokens" role="tabpanel">
+        <div class="monitor-grid">
+          <div class="monitor-card">
+            <div class="monitor-title">Context fill</div>
+            <div class="progress"><div class="bar" id="ctxFillBar" style="width:0%"></div></div>
+            <div class="monitor-value" id="ctxFillText">0% (0 / 0)</div>
+          </div>
+          <div class="monitor-card">
+            <div class="monitor-title">Model window</div>
+            <div class="monitor-value" id="modelWindowText">—</div>
+          </div>
+          <div class="monitor-card">
+            <div class="monitor-title">Messages tokens</div>
+            <div class="monitor-value" id="messagesTokensText">0</div>
+          </div>
+          <div class="monitor-card">
+            <div class="monitor-title">Last response</div>
+            <div class="monitor-value" id="lastResponseTokensText">0</div>
+          </div>
+        </div>
+      </div>
+      <div class="monitor-panel" data-tab="net" role="tabpanel" aria-hidden="true">
+        <div class="monitor-grid">
+          <div class="monitor-card"><div class="monitor-title">Slot 1</div><div class="monitor-value">—</div></div>
+          <div class="monitor-card"><div class="monitor-title">Slot 2</div><div class="monitor-value">—</div></div>
+          <div class="monitor-card"><div class="monitor-title">Slot 3</div><div class="monitor-value">—</div></div>
+          <div class="monitor-card"><div class="monitor-title">Slot 4</div><div class="monitor-value">—</div></div>
+        </div>
+      </div>
+      <div class="monitor-panel" data-tab="sys" role="tabpanel" aria-hidden="true">
+        <div class="monitor-grid one-col">
+          <div class="monitor-card monitor-terminal">
+            <div id="idText" class="status-info">Config not loaded. Use config.local.js or run a local server.</div>
+          </div>
+        </div>
+      </div>
+      <div class="monitor-panel" data-tab="misc" role="tabpanel" aria-hidden="true">
+        <div class="monitor-grid">
+          <div class="monitor-card"><div class="monitor-title">Slot 1</div><div class="monitor-value">—</div></div>
+          <div class="monitor-card"><div class="monitor-title">Slot 2</div><div class="monitor-value">—</div></div>
+          <div class="monitor-card"><div class="monitor-title">Slot 3</div><div class="monitor-value">—</div></div>
+          <div class="monitor-card"><div class="monitor-title">Slot 4</div><div class="monitor-value">—</div></div>
+        </div>
+      </div>
+    </div>
+  </aside>
 
-      <button type="button" onclick="sendData()" id="btnSend" aria-label="Send data">Send</button>
-      <button onclick="startSpeechRecognition()" id="micButton" class="mic-button" aria-label="Start speech recognition"></button>
-   <script>
+  <div class="chat-input-container">
+    <div id="txtMsg" contenteditable="true" rows="2" placeholder="Input Text" aria-label="Input text"></div>
+    <div class="input-controls-window">
+      <div class="input-controls">
+        <div class="controls-top">
+          <button type="button" id="uploadButton" class="lcars-btn" onclick="document.getElementById('imgInput').click()" aria-label="Upload image">Upload</button>
+          <button type="button" onclick="startSpeechRecognition()" id="micButton" class="mic-button lcars-btn" aria-label="Start speech recognition">Mic</button>
+        </div>
+        <div class="controls-bottom">
+          <button type="button" onclick="sendData()" id="btnSend" class="lcars-btn" aria-label="Send data">Send</button>
+        </div>
+      </div>
+    </div>
+    <input type="file" id="imgInput" aria-label="Upload image" style="display:none;">
+    <script>
       insertImage();
     </script>
-    <div>
+  </div>
 </div>
-
-    </div>
 
     <script>
       // Capture CTRL + Enter Key
@@ -174,7 +237,6 @@
 
   <footer>
     <img id="eEgg" src="core/img/eEgg.gif" alt="Image" style="display:none;">
-    <div id="idText"></div>
     <button id="settingsButton" style="margin: 1em;">Settings</button>
   <button id="printButton" onclick="printMaster()" aria-label="Print output">Print Output</button>
     <button id="clearMessagesBtn" onclick="clearMessages()" aria-label="Clear memory">Clear Memory</button>

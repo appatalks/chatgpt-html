@@ -136,14 +136,15 @@ body {
 #txtMsg {
   flex: 1;                     /* Takes up remaining space */
   text-align: left !important;
+  margin-left: 15px;
   min-height: 200px;            /* Reasonable minimum height */
-  max-height: 200px;           /* Adjust if you don’t want it to get too big */
+  max-height: 200px;           /* Default theme cap to preserve legacy look */
   overflow-y: auto;
   border: none;                /* Remove default border */
   outline: none;
   font-family: Arial, sans-serif;
   font-size: 14px;
-  line-height: 1.5;
+  line-height: 3.5;
   color: #111;                 /* Higher contrast while typing */
   white-space: pre-wrap;       /* Makes text wrap nicely */
 }
@@ -155,7 +156,7 @@ body {
 
 /* Style the “Send” button so it visually appears part of the same container */
 #btnSend {
-  margin-left: 10px;           /* Spacing from the input field */
+  margin-left: 0px;           /* Spacing from the input field */
   cursor: pointer;
   border: none;
   background-color: #007bff;
@@ -246,6 +247,24 @@ select,
 input[type="checkbox"] {
   border-radius: 16px;
 }
+/* Status panel base (footer #idText) */
+#idText {
+  display: block;
+  min-height: 28px;
+  margin: 6px 0 0;
+  padding: 6px 10px;
+  border-radius: 10px;
+  border: 1px solid #cfd8dc;
+  background: #f5f7fa;
+  color: #0b0e14;
+  font: 600 14px system-ui, Arial, sans-serif;
+}
+#idText.status-info { border-color: #90caf9; background: #e3f2fd; }
+#idText.status-warn { border-color: #ffcc80; background: #fff3e0; }
+#idText.status-error { border-color: #ef9a9a; background: #ffebee; }
+#idText::before { content: ""; display: inline-block; width: 10px; height: 10px; border-radius: 50%; background: #90caf9; margin-right: 8px; vertical-align: -1px; }
+#idText.status-warn::before { background: #ffb74d; }
+#idText.status-error::before { background: #ef5350; }
 /* revert speak button to original size/placement */
 .speakSend {
   position: absolute;
@@ -446,6 +465,73 @@ body.theme-lcars #lcarsSidebar .lcars-chip.sand { background: var(--cl-amber); h
 
 /* Sidebar controls */
 body.theme-lcars #lcarsSidebar .lcars-chip.print { background: var(--ld-radioactive); height: 50px; border-radius: 0 0 0 0px; }
+/* Monitors dock next to chat input */
+/* Default theme: wrapper is inert to avoid layout changes */
+.input-monitors-row { display: block; }
+/* Hidden by default; shown when theme-lcars is active (via JS) */
+#lcarsMonitorsDock { display: none; }
+/* LCARS: place monitors dock next to chat input */
+body.theme-lcars .input-monitors-row {
+  display: flex;
+  align-items: stretch;
+  gap: 10px;
+  width: 100%;
+  margin-top: 8px;
+}
+body.theme-lcars .lcars-monitors {
+  background: var(--ld-night-cloud);
+  border: 2px solid var(--ld-arctic-snow);
+  border-radius: 16px;
+  padding: 10px;
+  width: 260px; /* fixed rail-like width */
+  flex: 0 0 260px;
+  /* Normalize total dock height so switching tabs doesn't move layout */
+  height: 280px;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+}
+body.theme-lcars #lcarsMonitorTabs {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 4px;
+  margin-bottom: 8px;
+  width: 100%;
+  box-sizing: border-box;
+  overflow: hidden;
+}
+body.theme-lcars .monitor-tab {
+  background: var(--ld-arctic-ice);
+  color: #000;
+  border: none;
+  border-radius: 999px;
+  padding: 5px 6px;
+  font: 700 12px "Barlow Condensed",sans-serif;
+  letter-spacing: .08em;
+  cursor: pointer;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+body.theme-lcars .monitor-tab.active { background: var(--ld-alpha-blue); }
+body.theme-lcars #lcarsMonitorPanels { background: rgba(0,0,0,0.2); border: 1px solid rgba(255,255,255,0.2); border-radius: 10px; padding: 8px; overflow: hidden; }
+/* Normalize panel height across tabs to avoid layout shift */
+body.theme-lcars #lcarsMonitorPanels { height: 210px; flex: 1 1 auto; min-height: 0; }
+body.theme-lcars .monitor-panel { height: 100%; }
+body.theme-lcars .monitor-grid { height: 100%; align-content: start; }
+body.theme-lcars .monitor-panel { display: none; }
+body.theme-lcars .monitor-panel.active { display: block; }
+body.theme-lcars .monitor-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; }
+/* Single-column variant for Sys panel terminal */
+body.theme-lcars .monitor-grid.one-col { grid-template-columns: 1fr; }
+body.theme-lcars .monitor-card { background: rgba(0,0,0,0.35); border: 1px solid rgba(255,255,255,0.25); border-radius: 10px; padding: 8px; min-height: 68px; color: #eef5ff; }
+/* Slightly taller card for terminal/status panel */
+body.theme-lcars .monitor-card.monitor-terminal { min-height: 120px; height: 100%; background: rgba(0,0,0,0.55); }
+body.theme-lcars .monitor-title { font: 700 12px "Barlow Condensed",sans-serif; letter-spacing: .1em; text-transform: uppercase; color: #d0defa; margin-bottom: 6px; }
+body.theme-lcars .monitor-value { font: 600 16px system-ui, Arial, sans-serif; }
+body.theme-lcars .progress { height: 10px; background: rgba(255,255,255,0.15); border-radius: 6px; overflow: hidden; border: 1px solid rgba(255,255,255,0.18); }
+body.theme-lcars .progress .bar { height: 100%; background: linear-gradient(90deg, var(--ld-arctic-ice), var(--ld-alpha-blue)); width: 0%; transition: width .3s ease; }
 /* Sidebar controls inside chips */
 body.theme-lcars #lcarsSidebar .lcars-chip > button,
 body.theme-lcars #lcarsSidebar .lcars-chip > .speakSend {
@@ -503,11 +589,15 @@ body.theme-lcars.lcars-collapsed #lcarsSidebar .lcars-chip > .speakSend {
   height: 48px;
   font-size: 0; /* hide labels */
 }
+/* Monitors are hidden in collapsed to preserve space */
+/* When LCARS sidebar collapsed, monitors dock still visible (independent of sidebar) */
 /* Ensure emoji/icon pseudo-elements are readable */
 body.theme-lcars.lcars-collapsed #sidebarSettingsBtn::before,
 body.theme-lcars.lcars-collapsed #sidebarClearBtn::before,
 body.theme-lcars.lcars-collapsed #lcarsChipPrint #printButton::before {
-  font-size: 22px;
+  /* icon-only in collapsed mode */
+  width: 22px;
+  height: 22px;
   margin: 0;
 }
 
@@ -528,6 +618,35 @@ body.theme-lcars #txtOutput { background: #000; }
 body.theme-lcars .chat-input-container { background: #000; border-color: var(--ld-arctic-snow); }
 body.theme-lcars #txtMsg { color: #eef5ff; }
 body.theme-lcars footer { background: var(--ld-night-rain); color: #eef5ff; }
+/* LCARS-styled status panel */
+body.theme-lcars #idText {
+  border: 2px solid var(--ld-arctic-snow);
+  /* Terminal-style dark surface with subtle scanlines */
+  background:
+    linear-gradient(rgba(255,255,255,0.04) 1px, transparent 1px),
+    #0c0f14;
+  background-size: 100% 18px, auto;
+  color: #dbe7ff;
+  /* width: 100%; */
+  min-height: 40px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+  box-shadow: inset 0 0 0 1px rgba(255,255,255,0.05);
+}
+body.theme-lcars #idText.status-info { border-color: var(--ld-arctic-ice); background: rgba(153,204,255,0.10); }
+body.theme-lcars #idText.status-warn { border-color: var(--cl-amber); background: rgba(255,204,102,0.10); }
+body.theme-lcars #idText.status-error { border-color: var(--ld-sunset-red); background: rgba(255,53,0,0.10); }
+/* Hide the info dot in LCARS and use a caret instead */
+body.theme-lcars #idText::before { display: none; }
+body.theme-lcars #idText::after {
+  content: '▍';
+  display: inline-block;
+  margin-left: 8px;
+  color: var(--ld-arctic-ice);
+  animation: lcars-caret-blink 1s step-start infinite;
+}
+@keyframes lcars-caret-blink { 50% { opacity: 0; } }
+body.theme-lcars #idText.status-warn::before { background: var(--cl-amber); }
+body.theme-lcars #idText.status-error::before { background: var(--ld-sunset-red); }
 /* Hide duplicate footer controls under LCARS */
 body.theme-lcars footer #settingsButton,
 body.theme-lcars footer #clearMessagesBtn,
@@ -554,10 +673,26 @@ body.theme-lcars #sidebarClearBtn::before,
 body.theme-lcars #lcarsChipPrint #printButton::before {
   display: inline-block;
   margin-right: 6px;
+  width: 18px;
+  height: 18px;
+  background-size: contain;
+  background-repeat: no-repeat;
+  background-position: center;
+  vertical-align: middle;
 }
-body.theme-lcars #sidebarSettingsBtn::before { content: '⚙️'; }
-body.theme-lcars #sidebarClearBtn::before    { content: '🗑️'; }
-body.theme-lcars #lcarsChipPrint #printButton::before { content: '🖨️'; }
+/* Use SVG icons instead of emoji for consistent rendering */
+body.theme-lcars #sidebarSettingsBtn::before {
+  content: '';
+  background-image: url('img/icon-gear.svg');
+}
+body.theme-lcars #sidebarClearBtn::before {
+  content: '';
+  background-image: url('img/icon-trash.svg');
+}
+body.theme-lcars #lcarsChipPrint #printButton::before {
+  content: '';
+  background-image: url('img/icon-print.svg');
+}
 
 /* Markdown inside #txtOutput */
 #txtOutput .md h1,
@@ -634,7 +769,88 @@ body.theme-lcars .chat-input-container {
   width: 100%;
   margin-top: 8px;        /* small separation from chat */
   align-self: flex-end;   /* LCARS-only alignment, avoids impacting default theme */
+  /* In the input-monitors-row, grow to fill remaining space beside the dock */
+  flex: 1 1 auto;
+  max-width: none;
+  min-height: 230px; /* align roughly with monitor dock */
+  align-items: stretch; /* allow #txtMsg to stretch vertically */
+  display: grid;
+  grid-template-columns: 1fr 170px; /* text area + windowed controls column */
+  gap: 6px;
 }
+/* LCARS: controls window panel */
+body.theme-lcars .input-controls-window {
+  background: var(--ld-night-cloud); /* distinct from black input area */
+  border: 2px solid var(--ld-arctic-snow);
+  border-radius: 10px;
+  padding: 8px;
+  display: flex;
+  box-sizing: border-box;
+}
+body.theme-lcars .input-controls-window .input-controls {
+  border: 1px solid rgba(255,255,255,0.25);
+  background: rgba(255,255,255,0.06); /* slightly lighter inner panel */
+  border-radius: 8px;
+  padding: 8px;
+  width: 100%;
+  box-sizing: border-box;
+  overflow: hidden; /* keep children fully inside rounded panel */
+}
+/* LCARS: let input fill the container vertically */
+body.theme-lcars #txtMsg { max-height: none; height: 100%; }
+/* LCARS input controls column */
+body.theme-lcars .input-controls {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  height: 100%;
+  padding: 2px; /* small border space around buttons */
+  box-sizing: border-box;
+}
+/* Top: two small buttons */
+body.theme-lcars .input-controls .controls-top {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px; /* visible separation between Upload and Mic */
+  flex: 0 0 34%; /* about half the height of Send below */
+  min-height: 0;
+  align-items: stretch;
+}
+body.theme-lcars .input-controls .controls-top .lcars-btn {
+  padding: 8px 6px;
+  font-size: 12px;
+  height: 100%;
+}
+/* Bottom: Send fills remaining vertical space */
+body.theme-lcars .input-controls .controls-bottom {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 66%;
+  min-height: 0;
+}
+body.theme-lcars .input-controls .controls-bottom #btnSend {
+  flex: 1 1 auto;
+  height: 100%;
+}
+body.theme-lcars .lcars-btn {
+  background: var(--ld-arctic-ice);
+  color: #000;
+  border: 0px solid var(--ld-arctic-snow); /* thinner, subtle border */
+  border-radius: 0; /* square corners per LCARS chip styling request */
+  padding: 10px 8px;
+  font: 700 13px "Barlow Condensed", sans-serif;
+  letter-spacing: .06em;
+  cursor: pointer;
+  width: 100%;
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 1.2;
+}
+body.theme-lcars .lcars-btn:hover { background: var(--ld-alpha-blue); }
+/* Mic button visuals match lcars-btn and drop icon image */
+body.theme-lcars .mic-button { background-image: none; width: 100%; height: 100%; border-radius: 0; margin-left: 0; }
 
 /* Ensure inner wrapper lets #txtOutput grow */
 body.theme-lcars #textToSynth {

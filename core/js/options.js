@@ -44,6 +44,8 @@ function applyConfig(config) {
   OPENAI_API_KEY = config.OPENAI_API_KEY;
   GOOGLE_SEARCH_KEY = config.GOOGLE_SEARCH_KEY;
   GOOGLE_SEARCH_ID = config.GOOGLE_SEARCH_ID;
+  // Google Gemini key if provided
+  GOOGLE_GL_KEY = config.GOOGLE_GL_KEY;
   GOOGLE_VISION_KEY = config.GOOGLE_VISION_KEY;
   // CORS debug
   DEBUG_CORS = !!config.DEBUG_CORS;
@@ -126,6 +128,8 @@ document.addEventListener('DOMContentLoaded', () => {
   const lcarsChipPrint = document.getElementById('lcarsChipPrint');
   const printBtn = document.getElementById('printButton');
   const lcarsChipTop = document.getElementById('lcarsChipTop');
+  const monitorTabs = document.getElementById('lcarsMonitorTabs');
+  const monitorPanels = document.getElementById('lcarsMonitorPanels');
 
   function toggleSettings(event) {
     event.stopPropagation();
@@ -214,6 +218,40 @@ document.addEventListener('DOMContentLoaded', () => {
       }
     });
   }
+
+  // Monitors: tab switching
+  if (monitorTabs && monitorPanels) {
+    monitorTabs.addEventListener('click', function(e){
+      const btn = e.target.closest('.monitor-tab');
+      if (!btn) return;
+      const tab = btn.getAttribute('data-tab');
+      monitorTabs.querySelectorAll('.monitor-tab').forEach(b=>{
+        b.classList.toggle('active', b === btn);
+        b.setAttribute('aria-selected', b === btn ? 'true' : 'false');
+      });
+      monitorPanels.querySelectorAll('.monitor-panel').forEach(p=>{
+        const match = p.getAttribute('data-tab') === tab;
+        p.classList.toggle('active', match);
+        p.setAttribute('aria-hidden', match ? 'false' : 'true');
+      });
+    });
+  }
+
+  // Initialize status panel with any pending config/init notes
+  setStatus('info', document.getElementById('idText') && document.getElementById('idText').textContent ? document.getElementById('idText').textContent : '');
+
+  // Global error handlers -> footer status
+  window.addEventListener('error', function(ev){
+    try {
+      setStatus('error', (ev && ev.message) ? ev.message : 'An error occurred');
+    } catch(_){}
+  });
+  window.addEventListener('unhandledrejection', function(ev){
+    try {
+      var msg = (ev && ev.reason && (ev.reason.message || ev.reason)) ? (ev.reason.message || String(ev.reason)) : 'Unhandled promise rejection';
+      setStatus('error', msg);
+    } catch(_){}
+  });
 });
 
 // Welcome Text
@@ -235,10 +273,14 @@ function applyTheme(theme) {
 
   // Remove known theme classes first
   body.classList.remove('theme-lcars');
+  // Unload any theme stylesheets we previously loaded
+  unloadThemeStylesheet('lcars');
 
   // Add selected theme class
   if (theme === 'lcars') {
     body.classList.add('theme-lcars');
+  // Ensure LCARS stylesheet is present (modular theme loader)
+  ensureThemeStylesheet('lcars', 'core/themes/lcars.css');
     // Move speak button into sidebar
     const lcarsChipSand = document.getElementById('lcarsChipSand');
     const speakBtn = document.getElementById('speakSend');
@@ -274,6 +316,27 @@ function applyTheme(theme) {
 
   // Update available model options according to theme
   updateModelOptionsForTheme(theme);
+
+  // Ensure monitors dock is visible only on LCARS
+  var mon = document.getElementById('lcarsMonitorsDock');
+  if (mon) mon.style.display = (theme === 'lcars') ? 'block' : 'none';
+}
+
+// Modular theme stylesheet loader (extensible for future themes)
+function ensureThemeStylesheet(themeName, href) {
+  const id = `theme-${themeName}-css`;
+  if (document.getElementById(id)) return;
+  const link = document.createElement('link');
+  link.rel = 'stylesheet';
+  link.id = id;
+  link.href = href;
+  document.head.appendChild(link);
+}
+
+function unloadThemeStylesheet(themeName) {
+  const id = `theme-${themeName}-css`;
+  const el = document.getElementById(id);
+  if (el && el.parentNode) el.parentNode.removeChild(el);
 }
 
 
@@ -334,6 +397,111 @@ function sendData() {
         console.error('Invalid Model')
     }
 }
+
+// Footer status helper
+function setStatus(type, text) {
+  var el = document.getElementById('idText');
+  if (!el) return;
+  el.classList.remove('status-info','status-warn','status-error');
+  if (type === 'warn') el.classList.add('status-warn');
+  else if (type === 'error') el.classList.add('status-error');
+  else el.classList.add('status-info');
+  if (text) el.textContent = text;
+}
+
+// --- Lightweight token/context window monitor ---
+// Simple per-character heuristic when tokenizer not available
+function estimateTokensFromText(str) {
+  if (!str) return 0;
+  // crude: ~4 chars per token
+  return Math.ceil(String(str).length / 4);
+}
+
+// Map of model -> context window size (approx) for display
+const MODEL_CONTEXT_WINDOWS = {
+  'gpt-4o': 128000,
+  'gpt-4o-mini': 128000,
+  'o1': 200000,
+  'o1-mini': 200000,
+  'o1-preview': 200000,
+  'o3-mini': 200000,
+  'gpt-5-mini': 200000,
+  'latest': 200000,
+  'gemini': 128000,
+  'lm-studio': 32768,
+  'dall-e-3': 0
+};
+
+function getSelectedModel() {
+  const sel = document.getElementById('selModel');
+  return sel ? sel.value : '';
+}
+
+function computeMessagesTokens() {
+  try {
+    const raw = localStorage.getItem('messages');
+    if (!raw) return 0;
+    const msgs = JSON.parse(raw);
+    let acc = 0;
+    msgs.forEach(m => {
+      if (!m) return;
+      if (typeof m.content === 'string') {
+        acc += estimateTokensFromText(m.content);
+      } else if (Array.isArray(m.content)) {
+        m.content.forEach(part => {
+          if (part.type === 'text' && part.text) acc += estimateTokensFromText(part.text);
+          // ignore images for now
+        });
+      }
+    });
+    return acc;
+  } catch(e) { return 0; }
+}
+
+function computeLastResponseTokens() {
+  try {
+    const txtOut = document.getElementById('txtOutput');
+    if (!txtOut) return 0;
+    // grab last Eva bubble text, fall back to all innerText
+    const evaSpans = txtOut.querySelectorAll('.eva');
+    let last = '';
+    if (evaSpans && evaSpans.length) {
+      last = evaSpans[evaSpans.length - 1].parentElement ? evaSpans[evaSpans.length - 1].parentElement.textContent : evaSpans[evaSpans.length - 1].textContent;
+    } else {
+      last = txtOut.textContent || '';
+    }
+    return estimateTokensFromText(last);
+  } catch(e) { return 0; }
+}
+
+function updateTokenMonitor() {
+  const model = getSelectedModel();
+  const windowSize = MODEL_CONTEXT_WINDOWS[model] || 128000;
+  const msgTokens = computeMessagesTokens();
+  const respTokens = computeLastResponseTokens();
+  const used = msgTokens + respTokens;
+  const pct = windowSize > 0 ? Math.min(100, Math.round((used / windowSize) * 100)) : 0;
+
+  const bar = document.getElementById('ctxFillBar');
+  const text = document.getElementById('ctxFillText');
+  const winText = document.getElementById('modelWindowText');
+  const msgText = document.getElementById('messagesTokensText');
+  const respText = document.getElementById('lastResponseTokensText');
+  if (bar) bar.style.width = pct + '%';
+  if (text) text.textContent = pct + '% (' + used + ' / ' + windowSize + ')';
+  if (winText) winText.textContent = windowSize ? (windowSize.toLocaleString() + ' tokens') : '—';
+  if (msgText) msgText.textContent = msgTokens.toLocaleString();
+  if (respText) respText.textContent = respTokens.toLocaleString();
+}
+
+// Periodic update
+setInterval(updateTokenMonitor, 1500);
+// Also update on model change
+document.addEventListener('DOMContentLoaded', function(){
+  const sel = document.getElementById('selModel');
+  if (sel) sel.addEventListener('change', updateTokenMonitor);
+  updateTokenMonitor();
+});
 
 // Languages
 function ChangeLang(elem) {
@@ -634,7 +802,8 @@ function insertImage() {
 
 // AWS Polly
 function speakText() {
-    var sText = txtOutput.innerHTML;
+  var txtOutputEl = document.getElementById('txtOutput');
+  var sText = txtOutputEl ? txtOutputEl.innerHTML : '';
     if (sText == "") {
         alert("No text to convert to speech!");
         return;
@@ -726,11 +895,17 @@ function speakText() {
     // Create presigned URL of synthesized speech file
     signer.getSynthesizeSpeechUrl(speechParams, function(error, url) {
         if (error) {
-            document.getElementById('result').innerHTML = error;
+            var resultEl = document.getElementById('result');
+            if (resultEl) {
+              resultEl.textContent = (error && (error.message || typeof error === 'string')) ? (error.message || error) : String(error);
+            } else {
+              console.error('Polly error:', error);
+            }
         } else {
             document.getElementById('audioSource').src = url;
             document.getElementById('audioPlayback').load();
-            document.getElementById('result').innerHTML = "";
+            var resultEl2 = document.getElementById('result');
+            if (resultEl2) { resultEl2.textContent = ""; }
 
             // Check the state of the checkbox and have fun
             const checkbox = document.getElementById("autoSpeak");
