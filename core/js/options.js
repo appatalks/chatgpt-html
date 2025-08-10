@@ -52,6 +52,65 @@ function applyConfig(config) {
   AWS.config.credentials = new AWS.Credentials(config.AWS_ACCESS_KEY_ID, config.AWS_SECRET_ACCESS_KEY);
 }
 
+// --- Model option filtering per theme (LCARS-restricted) ---
+// Cache of the original full model list and last non-LCARS selection
+var __originalModelOptions = null;
+var __modelBeforeLCARS = null;
+
+function captureOriginalModelOptions() {
+  if (__originalModelOptions) return;
+  var sel = document.getElementById('selModel');
+  if (!sel) return;
+  __originalModelOptions = Array.from(sel.options).map(function(o){
+    return { value: o.value, text: o.text, title: o.title || '' };
+  });
+}
+
+function setModelOptions(list) {
+  var sel = document.getElementById('selModel');
+  if (!sel) return;
+  var currentValue = sel.value;
+  // Rebuild options
+  sel.innerHTML = '';
+  list.forEach(function(item){
+    var opt = document.createElement('option');
+    opt.value = item.value;
+    opt.text = item.text;
+    if (item.title) opt.title = item.title;
+    sel.appendChild(opt);
+  });
+  // Try to keep current selection if still present; otherwise select first
+  var hasCurrent = list.some(function(i){ return i.value === currentValue; });
+  sel.value = hasCurrent ? currentValue : (list[0] ? list[0].value : '');
+  // Trigger change to rewire send behavior
+  sel.dispatchEvent(new Event('change', { bubbles: true }));
+}
+
+function updateModelOptionsForTheme(theme) {
+  captureOriginalModelOptions();
+  var sel = document.getElementById('selModel');
+  if (!sel) return;
+  if (theme === 'lcars') {
+    // Remember current model to restore when leaving LCARS
+    __modelBeforeLCARS = sel.value;
+    var allowed = new Set(['gpt-5-mini', 'o3-mini', 'dall-e-3', 'gemini', 'lm-studio']);
+    var filtered = (__originalModelOptions || []).filter(function(o){ return allowed.has(o.value); });
+    if (filtered.length) {
+      setModelOptions(filtered);
+    }
+  } else if (__originalModelOptions) {
+    setModelOptions(__originalModelOptions);
+    // Restore pre-LCARS selection if it exists
+    if (__modelBeforeLCARS) {
+      var hasPrev = Array.from(sel.options).some(function(o){ return o.value === __modelBeforeLCARS; });
+      if (hasPrev) {
+        sel.value = __modelBeforeLCARS;
+        sel.dispatchEvent(new Event('change', { bubbles: true }));
+      }
+    }
+  }
+}
+
 // Settings Menu Options 
 document.addEventListener('DOMContentLoaded', () => {
   const settingsButton = document.getElementById('settingsButton');
@@ -59,6 +118,7 @@ document.addEventListener('DOMContentLoaded', () => {
   const themeSelect = document.getElementById('selTheme');
   const lcarsChipSand = document.getElementById('lcarsChipSand');
   const speakBtn = document.getElementById('speakSend');
+  const selModel = document.getElementById('selModel');
   // LCARS sidebar controls (optional)
   const sidebarSettingsBtn = document.getElementById('sidebarSettingsBtn');
   const sidebarClearBtn = document.getElementById('sidebarClearBtn');
@@ -99,7 +159,11 @@ document.addEventListener('DOMContentLoaded', () => {
     if (themeSelect) {
       themeSelect.value = savedTheme;
     }
+  // Capture full model list before any theme-based filtering
+  captureOriginalModelOptions();
     applyTheme(savedTheme);
+  // Ensure model options reflect the saved theme on load
+  updateModelOptionsForTheme(savedTheme);
     // Move Speak button into LCARS sidebar if active
     if (savedTheme === 'lcars' && lcarsChipSand && speakBtn && !lcarsChipSand.contains(speakBtn)) {
       lcarsChipSand.appendChild(speakBtn);
@@ -177,6 +241,9 @@ function applyTheme(theme) {
 
   // Persist
   try { localStorage.setItem('theme', theme); } catch (e) {}
+
+  // Update available model options according to theme
+  updateModelOptionsForTheme(theme);
 }
 
 
