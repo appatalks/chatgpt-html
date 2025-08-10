@@ -125,6 +125,7 @@ document.addEventListener('DOMContentLoaded', () => {
   const lcarsLabel = document.querySelector('#lcarsSidebar .lcars-label');
   const lcarsChipPrint = document.getElementById('lcarsChipPrint');
   const printBtn = document.getElementById('printButton');
+  const lcarsChipTop = document.getElementById('lcarsChipTop');
 
   function toggleSettings(event) {
     event.stopPropagation();
@@ -156,6 +157,7 @@ document.addEventListener('DOMContentLoaded', () => {
   // Initialize theme from localStorage
   try {
     const savedTheme = localStorage.getItem('theme') || 'default';
+  const savedCollapsed = localStorage.getItem('lcars_collapsed') === '1';
     if (themeSelect) {
       themeSelect.value = savedTheme;
     }
@@ -164,6 +166,10 @@ document.addEventListener('DOMContentLoaded', () => {
     applyTheme(savedTheme);
   // Ensure model options reflect the saved theme on load
   updateModelOptionsForTheme(savedTheme);
+    // Apply collapsed state if saved
+    if (savedTheme === 'lcars' && savedCollapsed) {
+      document.body.classList.add('lcars-collapsed');
+    }
     // Move Speak button into LCARS sidebar if active
     if (savedTheme === 'lcars' && lcarsChipSand && speakBtn && !lcarsChipSand.contains(speakBtn)) {
       lcarsChipSand.appendChild(speakBtn);
@@ -183,6 +189,23 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   } catch (e) {
     console.warn('Theme init failed:', e);
+  }
+
+  // Toggle LCARS sidebar collapse on top chip click
+  if (lcarsChipTop) {
+    lcarsChipTop.setAttribute('role', 'button');
+    lcarsChipTop.setAttribute('tabindex', '0');
+    lcarsChipTop.addEventListener('click', function(e){
+      e.stopPropagation();
+      document.body.classList.toggle('lcars-collapsed');
+      try { localStorage.setItem('lcars_collapsed', document.body.classList.contains('lcars-collapsed') ? '1' : '0'); } catch (e) {}
+    });
+    lcarsChipTop.addEventListener('keydown', function(e){
+      if (e.key === 'Enter' || e.key === ' ') {
+        e.preventDefault();
+        lcarsChipTop.click();
+      }
+    });
   }
 });
 
