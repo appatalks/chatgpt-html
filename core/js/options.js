@@ -57,6 +57,12 @@ document.addEventListener('DOMContentLoaded', () => {
   const settingsButton = document.getElementById('settingsButton');
   const settingsMenu = document.getElementById('settingsMenu');
   const themeSelect = document.getElementById('selTheme');
+  const lcarsChipSand = document.getElementById('lcarsChipSand');
+  const speakBtn = document.getElementById('speakSend');
+  // LCARS sidebar controls (optional)
+  const sidebarSettingsBtn = document.getElementById('sidebarSettingsBtn');
+  const sidebarClearBtn = document.getElementById('sidebarClearBtn');
+  const lcarsLabel = document.querySelector('#lcarsSidebar .lcars-label');
 
   function toggleSettings(event) {
     event.stopPropagation();
@@ -68,6 +74,15 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // Attach event via JavaScript
   settingsButton.addEventListener('click', toggleSettings);
+
+  // Mirror: sidebar Settings should toggle the same menu
+  if (sidebarSettingsBtn) {
+    sidebarSettingsBtn.addEventListener('click', toggleSettings);
+  }
+  // Mirror: sidebar Clear -> Clear Messages
+  if (sidebarClearBtn) {
+    sidebarClearBtn.addEventListener('click', (e) => { e.stopPropagation(); clearMessages(); });
+  }
 
   // Close the menu when clicking outside
   document.addEventListener('click', (event) => {
@@ -83,6 +98,18 @@ document.addEventListener('DOMContentLoaded', () => {
       themeSelect.value = savedTheme;
     }
     applyTheme(savedTheme);
+    // Move Speak button into LCARS sidebar if active
+    if (savedTheme === 'lcars' && lcarsChipSand && speakBtn && !lcarsChipSand.contains(speakBtn)) {
+      lcarsChipSand.appendChild(speakBtn);
+      speakBtn.title = 'Speak';
+      speakBtn.textContent = 'Speak';
+    }
+    // Update LCARS label with current date
+    if (lcarsLabel) {
+      const now = new Date();
+      const dateStr = now.toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: '2-digit' });
+      lcarsLabel.textContent = `Access • ${dateStr}`;
+    }
   } catch (e) {
     console.warn('Theme init failed:', e);
   }
@@ -111,6 +138,21 @@ function applyTheme(theme) {
   // Add selected theme class
   if (theme === 'lcars') {
     body.classList.add('theme-lcars');
+    // Move speak button into sidebar
+    const lcarsChipSand = document.getElementById('lcarsChipSand');
+    const speakBtn = document.getElementById('speakSend');
+    if (lcarsChipSand && speakBtn && !lcarsChipSand.contains(speakBtn)) {
+      lcarsChipSand.appendChild(speakBtn);
+      speakBtn.title = 'Speak';
+      speakBtn.textContent = 'Speak';
+    }
+  } else {
+    // Restore speak button to its original container when leaving LCARS
+    const container = document.querySelector('.container');
+    const speakBtn = document.getElementById('speakSend');
+    if (container && speakBtn && !container.contains(speakBtn)) {
+      container.appendChild(speakBtn);
+    }
   }
 
   // Persist
@@ -612,9 +654,15 @@ function renderMarkdown(md) {
   if (!md) return '';
   // Normalize newlines
   md = md.replace(/\r\n/g, '\n');
-  // Extract fenced code blocks first
+  // Support [code]...[/code] blocks (optionally [code lang=bash])
   const blocks = [];
   const langs = [];
+  md = md.replace(/\[code(?:\s+lang=([\w.+-]+))?\]\s*([\s\S]*?)\s*\[\/code\]/gi, (m, lang, code) => {
+    blocks.push(escapeHtml(code));
+    langs.push((lang || '').trim());
+    return `\u0000CODEBLOCK${blocks.length - 1}\u0000`;
+  });
+  // Extract fenced code blocks first
   md = md.replace(/```([\w.+-]+)?\n([\s\S]*?)```/g, (m, lang, code) => {
     blocks.push(escapeHtml(code));
     langs.push((lang || '').trim());
