@@ -634,7 +634,8 @@ function insertImage() {
 
 // AWS Polly
 function speakText() {
-    var sText = txtOutput.innerHTML;
+  var txtOutputEl = document.getElementById('txtOutput');
+  var sText = txtOutputEl ? txtOutputEl.innerHTML : '';
     if (sText == "") {
         alert("No text to convert to speech!");
         return;
@@ -726,11 +727,17 @@ function speakText() {
     // Create presigned URL of synthesized speech file
     signer.getSynthesizeSpeechUrl(speechParams, function(error, url) {
         if (error) {
-            document.getElementById('result').innerHTML = error;
+            var resultEl = document.getElementById('result');
+            if (resultEl) {
+              resultEl.textContent = (error && (error.message || typeof error === 'string')) ? (error.message || error) : String(error);
+            } else {
+              console.error('Polly error:', error);
+            }
         } else {
             document.getElementById('audioSource').src = url;
             document.getElementById('audioPlayback').load();
-            document.getElementById('result').innerHTML = "";
+            var resultEl2 = document.getElementById('result');
+            if (resultEl2) { resultEl2.textContent = ""; }
 
             // Check the state of the checkbox and have fun
             const checkbox = document.getElementById("autoSpeak");
