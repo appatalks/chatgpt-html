@@ -156,7 +156,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // Initialize theme from localStorage
   try {
-    const savedTheme = localStorage.getItem('theme') || 'default';
+    const savedTheme = localStorage.getItem('theme') || 'lcars';
   const savedCollapsed = localStorage.getItem('lcars_collapsed') === '1';
     if (themeSelect) {
       themeSelect.value = savedTheme;
