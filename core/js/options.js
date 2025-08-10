@@ -271,10 +271,14 @@ function applyTheme(theme) {
 
   // Remove known theme classes first
   body.classList.remove('theme-lcars');
+  // Unload any theme stylesheets we previously loaded
+  unloadThemeStylesheet('lcars');
 
   // Add selected theme class
   if (theme === 'lcars') {
     body.classList.add('theme-lcars');
+  // Ensure LCARS stylesheet is present (modular theme loader)
+  ensureThemeStylesheet('lcars', 'core/themes/lcars.css');
     // Move speak button into sidebar
     const lcarsChipSand = document.getElementById('lcarsChipSand');
     const speakBtn = document.getElementById('speakSend');
@@ -314,6 +318,23 @@ function applyTheme(theme) {
   // Ensure monitors dock is visible only on LCARS
   var mon = document.getElementById('lcarsMonitorsDock');
   if (mon) mon.style.display = (theme === 'lcars') ? 'block' : 'none';
+}
+
+// Modular theme stylesheet loader (extensible for future themes)
+function ensureThemeStylesheet(themeName, href) {
+  const id = `theme-${themeName}-css`;
+  if (document.getElementById(id)) return;
+  const link = document.createElement('link');
+  link.rel = 'stylesheet';
+  link.id = id;
+  link.href = href;
+  document.head.appendChild(link);
+}
+
+function unloadThemeStylesheet(themeName) {
+  const id = `theme-${themeName}-css`;
+  const el = document.getElementById(id);
+  if (el && el.parentNode) el.parentNode.removeChild(el);
 }
 
 

@@ -1,0 +1,9 @@
+/* Modular LCARS theme overrides. This file is optional and safe to remove. */
+/* In this iteration, LCARS rules still live in core/style.css. We keep this file lightweight
+   and future-proof to load LCARS-specific incremental tweaks without affecting the default theme. */
+
+/* Example: normalize tab sizing further on small screens */
+@media (max-width: 599px) {
+  body.theme-lcars #lcarsMonitorTabs { gap: 2px; }
+  body.theme-lcars .monitor-tab { font-size: 11px; padding: 4px 6px; }
+}
