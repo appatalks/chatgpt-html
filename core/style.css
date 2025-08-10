@@ -430,6 +430,8 @@ body.theme-lcars #lcarsSidebar {
   border: 2px solid var(--ld-arctic-snow);
   border-right: 2px solid var(--ld-arctic-snow); /* visible seam near main */
 }
+/* Make the top chip act as a handle */
+body.theme-lcars #lcarsChipTop { cursor: pointer; }
 body.theme-lcars #lcarsSidebar .lcars-rail { display: none; }
 /* Decorative chips to suggest LCARS bands */
 body.theme-lcars #lcarsSidebar .lcars-chip { height: 242px; border-radius: 90px 0 0 28px; background: var(--ld-alpha-blue); }
@@ -465,6 +467,22 @@ body.theme-lcars #lcarsSidebar .lcars-chip > .speakSend:hover {
 body.theme-lcars #lcarsSidebar .lcars-label {
   margin-top: inherit; font: 700 14px "Barlow Condensed",sans-serif;
   letter-spacing: .12em; text-transform: uppercase; color: #d0defa;
+}
+
+/* Collapsed LCARS sidebar state */
+body.theme-lcars.lcars-collapsed {
+  grid-template-columns: 56px minmax(720px, 1100px);
+}
+body.theme-lcars.lcars-collapsed #lcarsSidebar {
+  padding: 8px;
+  gap: 8px;
+}
+body.theme-lcars.lcars-collapsed #lcarsSidebar .lcars-label { display: none; }
+body.theme-lcars.lcars-collapsed #lcarsSidebar .lcars-chip { display: none; }
+body.theme-lcars.lcars-collapsed #lcarsSidebar #lcarsChipTop {
+  display: block;
+  height: 120px;
+  border-radius: 90px; /* show a pill as the handle */
 }
 
 /* Hide original speak container in LCARS when moved to sidebar */
