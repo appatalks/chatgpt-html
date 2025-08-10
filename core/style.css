@@ -487,11 +487,12 @@ body.theme-lcars.lcars-collapsed #lcarsSidebar .lcars-label { display: none; }
 body.theme-lcars.lcars-collapsed #lcarsSidebar .lcars-chip {
   display: block;
   height: 48px;
-  border-radius: 999px;
+  border-radius: 0;
   padding: 0;
 }
 body.theme-lcars.lcars-collapsed #lcarsSidebar #lcarsChipTop {
   height: 120px; /* handle stays larger */
+  border-radius: 999px; /* keep rounded for the handle */
 }
 /* Icon-only presentation inside chips (text hidden, tooltip via title) */
 body.theme-lcars.lcars-collapsed #lcarsSidebar .lcars-chip > button,
