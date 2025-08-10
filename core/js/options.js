@@ -126,6 +126,8 @@ document.addEventListener('DOMContentLoaded', () => {
   const lcarsChipPrint = document.getElementById('lcarsChipPrint');
   const printBtn = document.getElementById('printButton');
   const lcarsChipTop = document.getElementById('lcarsChipTop');
+  const monitorTabs = document.getElementById('lcarsMonitorTabs');
+  const monitorPanels = document.getElementById('lcarsMonitorPanels');
 
   function toggleSettings(event) {
     event.stopPropagation();
@@ -214,6 +216,24 @@ document.addEventListener('DOMContentLoaded', () => {
       }
     });
   }
+
+  // Monitors: tab switching
+  if (monitorTabs && monitorPanels) {
+    monitorTabs.addEventListener('click', function(e){
+      const btn = e.target.closest('.monitor-tab');
+      if (!btn) return;
+      const tab = btn.getAttribute('data-tab');
+      monitorTabs.querySelectorAll('.monitor-tab').forEach(b=>{
+        b.classList.toggle('active', b === btn);
+        b.setAttribute('aria-selected', b === btn ? 'true' : 'false');
+      });
+      monitorPanels.querySelectorAll('.monitor-panel').forEach(p=>{
+        const match = p.getAttribute('data-tab') === tab;
+        p.classList.toggle('active', match);
+        p.setAttribute('aria-hidden', match ? 'false' : 'true');
+      });
+    });
+  }
 });
 
 // Welcome Text
@@ -274,6 +294,10 @@ function applyTheme(theme) {
 
   // Update available model options according to theme
   updateModelOptionsForTheme(theme);
+
+  // Ensure monitors are visible only on LCARS
+  var mon = document.getElementById('lcarsChipMonitor');
+  if (mon) mon.style.display = (theme === 'lcars') ? 'block' : 'none';
 }
 
 
@@ -334,6 +358,100 @@ function sendData() {
         console.error('Invalid Model')
     }
 }
+
+// --- Lightweight token/context window monitor ---
+// Simple per-character heuristic when tokenizer not available
+function estimateTokensFromText(str) {
+  if (!str) return 0;
+  // crude: ~4 chars per token
+  return Math.ceil(String(str).length / 4);
+}
+
+// Map of model -> context window size (approx) for display
+const MODEL_CONTEXT_WINDOWS = {
+  'gpt-4o': 128000,
+  'gpt-4o-mini': 128000,
+  'o1': 200000,
+  'o1-mini': 200000,
+  'o1-preview': 200000,
+  'o3-mini': 200000,
+  'gpt-5-mini': 200000,
+  'latest': 200000,
+  'gemini': 128000,
+  'lm-studio': 32768,
+  'dall-e-3': 0
+};
+
+function getSelectedModel() {
+  const sel = document.getElementById('selModel');
+  return sel ? sel.value : '';
+}
+
+function computeMessagesTokens() {
+  try {
+    const raw = localStorage.getItem('messages');
+    if (!raw) return 0;
+    const msgs = JSON.parse(raw);
+    let acc = 0;
+    msgs.forEach(m => {
+      if (!m) return;
+      if (typeof m.content === 'string') {
+        acc += estimateTokensFromText(m.content);
+      } else if (Array.isArray(m.content)) {
+        m.content.forEach(part => {
+          if (part.type === 'text' && part.text) acc += estimateTokensFromText(part.text);
+          // ignore images for now
+        });
+      }
+    });
+    return acc;
+  } catch(e) { return 0; }
+}
+
+function computeLastResponseTokens() {
+  try {
+    const txtOut = document.getElementById('txtOutput');
+    if (!txtOut) return 0;
+    // grab last Eva bubble text, fall back to all innerText
+    const evaSpans = txtOut.querySelectorAll('.eva');
+    let last = '';
+    if (evaSpans && evaSpans.length) {
+      last = evaSpans[evaSpans.length - 1].parentElement ? evaSpans[evaSpans.length - 1].parentElement.textContent : evaSpans[evaSpans.length - 1].textContent;
+    } else {
+      last = txtOut.textContent || '';
+    }
+    return estimateTokensFromText(last);
+  } catch(e) { return 0; }
+}
+
+function updateTokenMonitor() {
+  const model = getSelectedModel();
+  const windowSize = MODEL_CONTEXT_WINDOWS[model] || 128000;
+  const msgTokens = computeMessagesTokens();
+  const respTokens = computeLastResponseTokens();
+  const used = msgTokens + respTokens;
+  const pct = windowSize > 0 ? Math.min(100, Math.round((used / windowSize) * 100)) : 0;
+
+  const bar = document.getElementById('ctxFillBar');
+  const text = document.getElementById('ctxFillText');
+  const winText = document.getElementById('modelWindowText');
+  const msgText = document.getElementById('messagesTokensText');
+  const respText = document.getElementById('lastResponseTokensText');
+  if (bar) bar.style.width = pct + '%';
+  if (text) text.textContent = pct + '% (' + used + ' / ' + windowSize + ')';
+  if (winText) winText.textContent = windowSize ? (windowSize.toLocaleString() + ' tokens') : '—';
+  if (msgText) msgText.textContent = msgTokens.toLocaleString();
+  if (respText) respText.textContent = respTokens.toLocaleString();
+}
+
+// Periodic update
+setInterval(updateTokenMonitor, 1500);
+// Also update on model change
+document.addEventListener('DOMContentLoaded', function(){
+  const sel = document.getElementById('selModel');
+  if (sel) sel.addEventListener('change', updateTokenMonitor);
+  updateTokenMonitor();
+});
 
 // Languages
 function ChangeLang(elem) {
