@@ -507,7 +507,9 @@ body.theme-lcars.lcars-collapsed #lcarsSidebar .lcars-chip > .speakSend {
 body.theme-lcars.lcars-collapsed #sidebarSettingsBtn::before,
 body.theme-lcars.lcars-collapsed #sidebarClearBtn::before,
 body.theme-lcars.lcars-collapsed #lcarsChipPrint #printButton::before {
-  font-size: 22px;
+  /* icon-only in collapsed mode */
+  width: 22px;
+  height: 22px;
   margin: 0;
 }
 
@@ -554,10 +556,25 @@ body.theme-lcars #sidebarClearBtn::before,
 body.theme-lcars #lcarsChipPrint #printButton::before {
   display: inline-block;
   margin-right: 6px;
+  width: 18px;
+  height: 18px;
+  background-size: contain;
+  background-repeat: no-repeat;
+  vertical-align: middle;
 }
-body.theme-lcars #sidebarSettingsBtn::before { content: '⚙️'; }
-body.theme-lcars #sidebarClearBtn::before    { content: '🗑️'; }
-body.theme-lcars #lcarsChipPrint #printButton::before { content: '🖨️'; }
+/* Use SVG icons instead of emoji for consistent rendering */
+body.theme-lcars #sidebarSettingsBtn::before {
+  content: '';
+  background-image: url('img/icon-gear.svg');
+}
+body.theme-lcars #sidebarClearBtn::before {
+  content: '';
+  background-image: url('img/icon-trash.svg');
+}
+body.theme-lcars #lcarsChipPrint #printButton::before {
+  content: '';
+  background-image: url('img/icon-print.svg');
+}
 
 /* Markdown inside #txtOutput */
 #txtOutput .md h1,
