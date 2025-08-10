@@ -1,7 +1,7 @@
 # ChatGPT HTML - Using OpenAI APIs; 
-![screenshot](core/img/lcars.png)
+![screenshot](core/img/lcars-screenshot.png)
 
-v.2.1.0
+v.4.0
 
 This allows you to easily interact with OpenAI and Google Generative APIs.
 
