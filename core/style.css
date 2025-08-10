@@ -595,13 +595,30 @@ body.theme-lcars footer { background: var(--ld-night-rain); color: #eef5ff; }
 /* LCARS-styled status panel */
 body.theme-lcars #idText {
   border: 2px solid var(--ld-arctic-snow);
-  background: var(--ld-night-rain);
-  color: #eef5ff;
+  /* Terminal-style dark surface with subtle scanlines */
+  background:
+    linear-gradient(rgba(255,255,255,0.04) 1px, transparent 1px),
+    #0c0f14;
+  background-size: 100% 18px, auto;
+  color: #dbe7ff;
+  width: 100%;
+  min-height: 40px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+  box-shadow: inset 0 0 0 1px rgba(255,255,255,0.05);
 }
 body.theme-lcars #idText.status-info { border-color: var(--ld-arctic-ice); background: rgba(153,204,255,0.10); }
 body.theme-lcars #idText.status-warn { border-color: var(--cl-amber); background: rgba(255,204,102,0.10); }
 body.theme-lcars #idText.status-error { border-color: var(--ld-sunset-red); background: rgba(255,53,0,0.10); }
-body.theme-lcars #idText::before { background: var(--ld-arctic-ice); }
+/* Hide the info dot in LCARS and use a caret instead */
+body.theme-lcars #idText::before { display: none; }
+body.theme-lcars #idText::after {
+  content: '▍';
+  display: inline-block;
+  margin-left: 8px;
+  color: var(--ld-arctic-ice);
+  animation: lcars-caret-blink 1s step-start infinite;
+}
+@keyframes lcars-caret-blink { 50% { opacity: 0; } }
 body.theme-lcars #idText.status-warn::before { background: var(--cl-amber); }
 body.theme-lcars #idText.status-error::before { background: var(--ld-sunset-red); }
 /* Hide duplicate footer controls under LCARS */
