@@ -27,7 +27,7 @@ function geminiSend() {
             "role": "user",
             "parts": [
                 {
-                    "text": selPers.value + " When you are asked to show an image, instead describe the image with [Image of <Description>]. " + dateContents
+                    "text": ((typeof getSystemPrompt === 'function') ? getSystemPrompt() : '') + " When you are asked to show an image, instead describe the image with [Image of <Description>]. " + dateContents
                 }
             ]
         },

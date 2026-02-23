@@ -47,11 +47,176 @@ function applyConfig(config) {
   // Google Gemini key if provided
   GOOGLE_GL_KEY = config.GOOGLE_GL_KEY;
   GOOGLE_VISION_KEY = config.GOOGLE_VISION_KEY;
+  // GitHub Copilot PAT
+  if (config.GITHUB_PAT) GITHUB_PAT = config.GITHUB_PAT;
   // CORS debug
   DEBUG_CORS = !!config.DEBUG_CORS;
   DEBUG_PROXY_URL = config.DEBUG_PROXY_URL || "";
   AWS.config.region = config.AWS_REGION;
   AWS.config.credentials = new AWS.Credentials(config.AWS_ACCESS_KEY_ID, config.AWS_SECRET_ACCESS_KEY);
+  // Apply any localStorage auth overrides
+  loadAuthOverrides();
+}
+
+// --- Auth Key Management ---
+function getAuthKey(key) {
+  var stored = localStorage.getItem('auth_' + key);
+  if (stored) return stored;
+  if (typeof window[key] !== 'undefined') return window[key];
+  return '';
+}
+
+function loadAuthOverrides() {
+  var keys = ['OPENAI_API_KEY', 'GOOGLE_GL_KEY', 'GOOGLE_SEARCH_KEY', 'GOOGLE_SEARCH_ID', 'GOOGLE_VISION_KEY', 'GITHUB_PAT'];
+  keys.forEach(function(key) {
+    var val = localStorage.getItem('auth_' + key);
+    if (val) window[key] = val;
+  });
+}
+
+function saveAuthKeys() {
+  var map = {
+    'authOpenAI': 'OPENAI_API_KEY',
+    'authGitHub': 'GITHUB_PAT',
+    'authGemini': 'GOOGLE_GL_KEY',
+    'authGoogleSearch': 'GOOGLE_SEARCH_KEY',
+    'authGoogleCX': 'GOOGLE_SEARCH_ID',
+    'authGoogleVision': 'GOOGLE_VISION_KEY'
+  };
+  Object.keys(map).forEach(function(fieldId) {
+    var el = document.getElementById(fieldId);
+    var key = map[fieldId];
+    if (el && el.value.trim()) {
+      localStorage.setItem('auth_' + key, el.value.trim());
+      window[key] = el.value.trim();
+    } else if (el) {
+      localStorage.removeItem('auth_' + key);
+    }
+  });
+  setStatus('info', 'API keys saved to browser storage.');
+}
+
+function populateAuthFields() {
+  var map = {
+    'authOpenAI': 'OPENAI_API_KEY',
+    'authGitHub': 'GITHUB_PAT',
+    'authGemini': 'GOOGLE_GL_KEY',
+    'authGoogleSearch': 'GOOGLE_SEARCH_KEY',
+    'authGoogleCX': 'GOOGLE_SEARCH_ID',
+    'authGoogleVision': 'GOOGLE_VISION_KEY'
+  };
+  Object.keys(map).forEach(function(fieldId) {
+    var el = document.getElementById(fieldId);
+    var key = map[fieldId];
+    if (el) {
+      var val = localStorage.getItem('auth_' + key) || (typeof window[key] !== 'undefined' ? window[key] : '');
+      el.value = val || '';
+    }
+  });
+}
+
+function toggleAuthVis(btn) {
+  var input = btn.parentElement.querySelector('input');
+  if (input.type === 'password') {
+    input.type = 'text';
+    btn.textContent = 'Hide';
+  } else {
+    input.type = 'password';
+    btn.textContent = 'Show';
+  }
+}
+
+// --- System Prompt Management ---
+var PERSONALITY_PRESETS = {
+  'default': "You are Eva, a knowledgeable AI assistant. Your goal is to provide accurate, and helpful responses to questions, while being honest and straightforward. You have access to provide updated real-time news, information and media.",
+  'concise': "Eva is a large language model. Browsing: enabled. Instructions: Answer factual questions concisely. You have access to updated real-time news and information.",
+  'advanced': "You are Eva. Your function is to generate human-like text based on the inputs given, and your goal is to assist users in generating informative, helpful and engaging responses to questions and requests. Please provide a detailed response with lists, where applicable. You have access to updated real-time news, information and media.",
+  'terminal': "I want you to act as a linux terminal. I will type commands and you will reply with what the terminal should show. I want you to only reply with the terminal output inside one unique code block, and nothing else. do not write explanations. do not type commands unless I instruct you to do so. when i need to tell you something in english, i will do so by putting text inside curly brackets {like this}. my first command is pwd"
+};
+
+function getSystemPrompt() {
+  var txt = document.getElementById('txtSystemPrompt');
+  if (txt && txt.value.trim()) return txt.value.trim();
+  // Fallback to personality preset
+  return PERSONALITY_PRESETS['default'];
+}
+
+function applyPersonalityPreset() {
+  var sel = document.getElementById('selPers');
+  var txt = document.getElementById('txtSystemPrompt');
+  if (!sel || !txt) return;
+  var preset = PERSONALITY_PRESETS[sel.value];
+  if (preset) {
+    txt.value = preset;
+    localStorage.setItem('systemPrompt', preset);
+  }
+  // 'custom' leaves textarea as-is for user editing
+}
+
+function initSystemPrompt() {
+  var txt = document.getElementById('txtSystemPrompt');
+  if (!txt) return;
+  // Load from localStorage or use default preset
+  var saved = localStorage.getItem('systemPrompt');
+  if (saved) {
+    txt.value = saved;
+    // Sync preset selector
+    var sel = document.getElementById('selPers');
+    if (sel) {
+      var matched = false;
+      Object.keys(PERSONALITY_PRESETS).forEach(function(k) {
+        if (PERSONALITY_PRESETS[k] === saved.trim()) { sel.value = k; matched = true; }
+      });
+      if (!matched) sel.value = 'custom';
+    }
+  } else {
+    txt.value = PERSONALITY_PRESETS['default'];
+  }
+  // Save on change
+  txt.addEventListener('input', function() {
+    localStorage.setItem('systemPrompt', txt.value);
+    var sel = document.getElementById('selPers');
+    if (sel) {
+      var matched = false;
+      Object.keys(PERSONALITY_PRESETS).forEach(function(k) {
+        if (PERSONALITY_PRESETS[k] === txt.value.trim()) { sel.value = k; matched = true; }
+      });
+      if (!matched) sel.value = 'custom';
+    }
+  });
+}
+
+// --- Model Settings Helpers ---
+function getModelTemperature() {
+  var el = document.getElementById('sldTemperature');
+  return el ? parseFloat(el.value) : 0.7;
+}
+
+function getModelMaxTokens() {
+  var el = document.getElementById('txtMaxTokens');
+  return el ? (parseInt(el.value) || 4096) : 4096;
+}
+
+function getReasoningEffort() {
+  var el = document.getElementById('selReasoningEffort');
+  return el ? el.value : 'medium';
+}
+
+function onModelSettingsChange() {
+  var sel = document.getElementById('selModel');
+  if (!sel) return;
+  var model = sel.value;
+  // Show/hide reasoning effort (only for o3-mini variants)
+  var reOpt = document.getElementById('opt-reasoningEffort');
+  if (reOpt) {
+    reOpt.style.display = (model === 'o3-mini' || model === 'copilot-o3-mini') ? 'block' : 'none';
+  }
+  // Show/hide temperature (hidden for o3-mini, gpt-5-mini, latest)
+  var tempOpt = document.getElementById('opt-temperature');
+  if (tempOpt) {
+    var hideTemp = ['o3-mini', 'copilot-o3-mini', 'gpt-5-mini', 'latest'].indexOf(model) >= 0;
+    tempOpt.style.display = hideTemp ? 'none' : 'block';
+  }
 }
 
 // --- Model option filtering per theme (LCARS-restricted) ---
@@ -63,8 +228,18 @@ function captureOriginalModelOptions() {
   if (__originalModelOptions) return;
   var sel = document.getElementById('selModel');
   if (!sel) return;
-  __originalModelOptions = Array.from(sel.options).map(function(o){
-    return { value: o.value, text: o.text, title: o.title || '' };
+  __originalModelOptions = [];
+  // Walk through child nodes to preserve optgroup structure
+  Array.from(sel.children).forEach(function(child) {
+    if (child.tagName === 'OPTGROUP') {
+      var group = { label: child.label, options: [] };
+      Array.from(child.children).forEach(function(o) {
+        group.options.push({ value: o.value, text: o.text, title: o.title || '' });
+      });
+      __originalModelOptions.push({ type: 'optgroup', group: group });
+    } else if (child.tagName === 'OPTION') {
+      __originalModelOptions.push({ type: 'option', value: child.value, text: child.text, title: child.title || '' });
+    }
   });
 }
 
@@ -72,18 +247,31 @@ function setModelOptions(list) {
   var sel = document.getElementById('selModel');
   if (!sel) return;
   var currentValue = sel.value;
-  // Rebuild options
   sel.innerHTML = '';
-  list.forEach(function(item){
-    var opt = document.createElement('option');
-    opt.value = item.value;
-    opt.text = item.text;
-    if (item.title) opt.title = item.title;
-    sel.appendChild(opt);
+  list.forEach(function(item) {
+    if (item.type === 'optgroup') {
+      var grp = document.createElement('optgroup');
+      grp.label = item.group.label;
+      item.group.options.forEach(function(o) {
+        var opt = document.createElement('option');
+        opt.value = o.value;
+        opt.text = o.text;
+        if (o.title) opt.title = o.title;
+        grp.appendChild(opt);
+      });
+      sel.appendChild(grp);
+    } else {
+      var opt = document.createElement('option');
+      opt.value = item.value;
+      opt.text = item.text;
+      if (item.title) opt.title = item.title;
+      sel.appendChild(opt);
+    }
   });
   // Try to keep current selection if still present; otherwise select first
-  var hasCurrent = list.some(function(i){ return i.value === currentValue; });
-  sel.value = hasCurrent ? currentValue : (list[0] ? list[0].value : '');
+  var allOpts = Array.from(sel.options);
+  var hasCurrent = allOpts.some(function(o) { return o.value === currentValue; });
+  sel.value = hasCurrent ? currentValue : (allOpts[0] ? allOpts[0].value : '');
   // Trigger change to rewire send behavior
   sel.dispatchEvent(new Event('change', { bubbles: true }));
 }
@@ -95,11 +283,19 @@ function updateModelOptionsForTheme(theme) {
   if (theme === 'lcars') {
     // Remember current model to restore when leaving LCARS
     __modelBeforeLCARS = sel.value;
-    var allowed = new Set(['gpt-5-mini', 'o3-mini', 'dall-e-3', 'gemini', 'lm-studio']);
-    var filtered = (__originalModelOptions || []).filter(function(o){ return allowed.has(o.value); });
-    if (filtered.length) {
-      setModelOptions(filtered);
-    }
+    var allowed = new Set(['gpt-5-mini', 'o3-mini', 'dall-e-3', 'gemini', 'lm-studio', 'copilot-gpt-4o', 'copilot-gpt-4o-mini', 'copilot-o3-mini']);
+    var filtered = [];
+    (__originalModelOptions || []).forEach(function(item) {
+      if (item.type === 'optgroup') {
+        var filteredOpts = item.group.options.filter(function(o) { return allowed.has(o.value); });
+        if (filteredOpts.length) {
+          filtered.push({ type: 'optgroup', group: { label: item.group.label, options: filteredOpts } });
+        }
+      } else if (allowed.has(item.value)) {
+        filtered.push(item);
+      }
+    });
+    if (filtered.length) setModelOptions(filtered);
   } else if (__originalModelOptions) {
     setModelOptions(__originalModelOptions);
     // Restore pre-LCARS selection if it exists
@@ -133,10 +329,16 @@ document.addEventListener('DOMContentLoaded', () => {
 
   function toggleSettings(event) {
     event.stopPropagation();
-    settingsMenu.style.display =
-      (settingsMenu.style.display === 'none' || !settingsMenu.style.display)
-        ? 'block'
-        : 'none';
+    var overlay = document.getElementById('settingsOverlay');
+    var isOpen = settingsMenu.classList.contains('open');
+    if (isOpen) {
+      settingsMenu.classList.remove('open');
+      if (overlay) overlay.classList.remove('open');
+    } else {
+      settingsMenu.classList.add('open');
+      if (overlay) overlay.classList.add('open');
+      populateAuthFields();
+    }
   }
 
   // Attach event via JavaScript
@@ -154,7 +356,9 @@ document.addEventListener('DOMContentLoaded', () => {
   // Close the menu when clicking outside
   document.addEventListener('click', (event) => {
     if (!settingsMenu.contains(event.target) && event.target !== settingsButton) {
-      settingsMenu.style.display = 'none';
+      settingsMenu.classList.remove('open');
+      var overlay = document.getElementById('settingsOverlay');
+      if (overlay) overlay.classList.remove('open');
     }
   });
 
@@ -236,6 +440,47 @@ document.addEventListener('DOMContentLoaded', () => {
       });
     });
   }
+
+  // Settings panel tab switching
+  var settingsTabs = document.querySelectorAll('.settings-tab');
+  var settingsPanels = document.querySelectorAll('.settings-panel');
+  settingsTabs.forEach(function(tab) {
+    tab.addEventListener('click', function() {
+      var target = tab.getAttribute('data-stab');
+      settingsTabs.forEach(function(t) {
+        t.classList.toggle('active', t === tab);
+      });
+      settingsPanels.forEach(function(p) {
+        p.classList.toggle('active', p.getAttribute('data-stab') === target);
+      });
+    });
+  });
+
+  // Settings close button
+  var settingsCloseBtn = document.getElementById('settingsClose');
+  if (settingsCloseBtn) {
+    settingsCloseBtn.addEventListener('click', function(e) {
+      e.stopPropagation();
+      settingsMenu.classList.remove('open');
+      var overlay = document.getElementById('settingsOverlay');
+      if (overlay) overlay.classList.remove('open');
+    });
+  }
+
+  // Settings overlay click to close
+  var settingsOverlayEl = document.getElementById('settingsOverlay');
+  if (settingsOverlayEl) {
+    settingsOverlayEl.addEventListener('click', function() {
+      settingsMenu.classList.remove('open');
+      settingsOverlayEl.classList.remove('open');
+    });
+  }
+
+  // Init auth, system prompt, and model settings
+  loadAuthOverrides();
+  populateAuthFields();
+  initSystemPrompt();
+  onModelSettingsChange();
 
   // Initialize status panel with any pending config/init notes
   setStatus('info', document.getElementById('idText') && document.getElementById('idText').textContent ? document.getElementById('idText').textContent : '');
@@ -344,16 +589,17 @@ function updateButton() {
     var selModel = document.getElementById("selModel");
     var btnSend = document.getElementById("btnSend");
 
-  if (selModel.value == "gpt-4o-mini" || selModel.value == "o1" || selModel.value == "o1-mini" || selModel.value == "gpt-4o" || selModel.value == "o3-mini" || selModel.value == "o1-preview" || selModel.value == "gpt-5-mini" || selModel.value == "latest") {
+  if (selModel.value.indexOf('copilot-') === 0) {
+        btnSend.onclick = function() {
+            clearText();
+            copilotSend();
+        };
+    } else if (selModel.value == "gpt-4o-mini" || selModel.value == "o1" || selModel.value == "o1-mini" || selModel.value == "gpt-4o" || selModel.value == "o3-mini" || selModel.value == "o1-preview" || selModel.value == "gpt-5-mini" || selModel.value == "latest") {
         btnSend.onclick = function() {
             clearText();
             trboSend();
         };
     } else if (selModel.value == "gemini") {
-        btnSend.onclick = function() {
-            clearText();
-            geminiSend();
-        };
    } else if (selModel.value == "lm-studio") {
         btnSend.onclick = function() {
             clearText();
@@ -378,7 +624,10 @@ function sendData() {
     // Logic required for initial message
     var selModel = document.getElementById("selModel");
 
-  if (selModel.value == "gpt-4o-mini" || selModel.value == "o1" || selModel.value == "o1-mini" || selModel.value == "gpt-4o" || selModel.value == "o3-mini" || selModel.value == "o1-preview" || selModel.value == "gpt-5-mini" || selModel.value == "latest") {
+  if (selModel.value.indexOf('copilot-') === 0) {
+        clearText();
+        copilotSend();
+    } else if (selModel.value == "gpt-4o-mini" || selModel.value == "o1" || selModel.value == "o1-mini" || selModel.value == "gpt-4o" || selModel.value == "o3-mini" || selModel.value == "o1-preview" || selModel.value == "gpt-5-mini" || selModel.value == "latest") {
         clearText();
         trboSend();
     } else if (selModel.value == "gemini") {
@@ -427,6 +676,9 @@ const MODEL_CONTEXT_WINDOWS = {
   'o3-mini': 200000,
   'gpt-5-mini': 200000,
   'latest': 200000,
+  'copilot-gpt-4o': 128000,
+  'copilot-gpt-4o-mini': 128000,
+  'copilot-o3-mini': 200000,
   'gemini': 128000,
   'lm-studio': 32768,
   'dall-e-3': 0
@@ -1041,7 +1293,16 @@ document.querySelector("#txtMsg").addEventListener("keydown", function(event) {
 
 // Clear Messages for Clear Memory Button
 function clearMessages() {
+    // Preserve auth keys and settings across clear
+    var keysToKeep = [];
+    for (var i = 0; i < localStorage.length; i++) {
+      var key = localStorage.key(i);
+      if (key && (key.indexOf('auth_') === 0 || key === 'theme' || key === 'systemPrompt' || key === 'lcars_collapsed')) {
+        keysToKeep.push({ k: key, v: localStorage.getItem(key) });
+      }
+    }
     localStorage.clear();
+    keysToKeep.forEach(function(item) { localStorage.setItem(item.k, item.v); });
     document.getElementById("txtOutput").innerHTML = "\n" + "		MEMORY CLEARED";
 }
 

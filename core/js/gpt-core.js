@@ -172,13 +172,8 @@ function trboSend() {
 
     // payload parameters
     var sModel = selModel.value; 
-    var iMaxTokens = 4096; // Try to set the max_completion_tokens value as close to your expected response size as possible. 
-	// if (sModel === "gpt-4o") {
-    	//    iMaxTokens = 4096;
-	// } else if (sModel === "gpt-3.5-turbo-16k") {
-    	//     iMaxTokens = 12420;
-	// }
-  var dTemperature = 0.7; 
+    var iMaxTokens = (typeof getModelMaxTokens === 'function') ? getModelMaxTokens() : 4096;
+  var dTemperature = (typeof getModelTemperature === 'function') ? getModelTemperature() : 0.7; 
     var eFrequency_penalty = 0.0; 
     var cPresence_penalty = 0.0; 
     var hStop = "&*&"; 
@@ -194,7 +189,7 @@ function trboSend() {
       // If it does not exist, create an array with the initial messages
       const iMessages = [
         { role: 'developer', content: 'You are Eva. You have access to previous chats and responses. You have access to real-time news, information and media. You will keep conversation to a minimum and answer to the best of your abilities. When you are asked to show an image, instead describe the image with [Image of <Description>].' },
-        { role: 'user', content: selPers.value + " " + dateContents },
+        { role: 'user', content: ((typeof getSystemPrompt === 'function') ? getSystemPrompt() : '') + " " + dateContents },
       ];
 
       // Store the initial messages in localStorage
@@ -284,7 +279,7 @@ function trboSend() {
             }
 		    // If using the o3-mini model, add the reasoning_effort parameter (low, medium, high)
 		    if (sModel === "o3-mini") {
-  		      data.reasoning_effort = "high";
+  		      data.reasoning_effort = (typeof getReasoningEffort === 'function') ? getReasoningEffort() : "high";
 		      delete data.temperature; // Exclude temperature for o3-mini	    
 		    }   
 		    // Send Payload		      
@@ -348,9 +343,8 @@ function trboSend() {
               delete data.temperature; // Exclude temperature for gpt-5/latest
               delete data.stop; // Exclude stop for gpt-5/latest
             }
-    // If using the o3-mini model, add the reasoning_effort parameter (low, medium, high)
     if (sModel === "o3-mini") {
-      data.reasoning_effort = "medium";
+      data.reasoning_effort = (typeof getReasoningEffort === 'function') ? getReasoningEffort() : "medium";
       delete data.temperature; // Exclude temperature for o3-mini
     }   
 

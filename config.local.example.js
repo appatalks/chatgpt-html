@@ -9,6 +9,7 @@ window.__LOCAL_CONFIG__ = {
   GOOGLE_GL_KEY: "",
   GOOGLE_VISION_KEY: "",
   OPENAI_API_KEY: "",
+  GITHUB_PAT: "",
   DEBUG_CORS: false,
   DEBUG_PROXY_URL: "http://localhost:8787"
 };

@@ -15,6 +15,7 @@
   <script src="core/js/gpt-core.js"></script>
   <script src="core/js/gl-google.js"></script>
   <script src="core/js/lm-studio.js"></script>
+  <script src="core/js/copilot.js"></script>
   <script src="core/js/dalle3.js"></script>
   <script src="core/js/aws-sdk-2.1304.0.min.js"></script>
   <script>
@@ -87,62 +88,173 @@
       </div>
 
 
-  <!-- Settings Menu (initially hidden) -->
+  <!-- Settings Overlay -->
+  <div class="settings-overlay" id="settingsOverlay"></div>
+
+  <!-- Settings Panel (tabbed) -->
   <div class="settingsMenu" id="settingsMenu">
-    <h3>Settings</h3>
-    <label for="selEngine">Engine:</label>
-    <select id="selEngine" onchange="ChangeLang(this)">
-      <option value="standard">Standard</option>
-      <option value="neural">Neural</option>
-      <option value="generative">Generative</option>
-      <option value="bark">Bark</option>
-    </select>
-    <br/><br/>
+    <div class="settings-header">
+      <h3>Settings</h3>
+      <button class="settings-close" id="settingsClose" type="button" aria-label="Close settings">&times;</button>
+    </div>
+    <div class="settings-tabs" role="tablist">
+      <button class="settings-tab active" data-stab="general" role="tab">General</button>
+      <button class="settings-tab" data-stab="models" role="tab">Models</button>
+      <button class="settings-tab" data-stab="auth" role="tab">Auth</button>
+      <button class="settings-tab" data-stab="prompts" role="tab">Prompts</button>
+    </div>
+    <div class="settings-body">
 
-    <label for="selVoice">Voice:</label>
-    <select id="selVoice" onchange="ChangeLang(this)">
-      <option value="Salli">English</option>
-      <option value="Ruth">English(gen)</option>
-      <option value="Seoyeon">Korean</option>
-      <option value="Mia">Spanish</option>
-      <option value="Tatyana">Ukrainian</option>
-    </select>
-    <br/><br/>
+      <!-- General Tab -->
+      <div class="settings-panel active" data-stab="general">
+        <label for="selTheme">Theme:</label>
+        <select id="selTheme" onchange="applyTheme(this.value)">
+          <option value="default">Default</option>
+          <option value="lcars">LCARS</option>
+        </select>
 
-    <label for="autoSpeak">Auto Speak:</label>
-    <input type="checkbox" id="autoSpeak">
-    <br/><br/>
+        <label for="selEngine">TTS Engine:</label>
+        <select id="selEngine" onchange="ChangeLang(this)">
+          <option value="standard">Standard</option>
+          <option value="neural">Neural</option>
+          <option value="generative">Generative</option>
+          <option value="bark">Bark</option>
+        </select>
 
-    <label for="selModel">Model:</label>
-    <select id="selModel" onchange="updateButton()">
-      <option value="gpt-4o" title="gpt-4o">gpt-4o</option>
-      <option value="o1" title="o1">o1</option>
-      <option value="o1-preview" title="o1-preview">o1-preview</option>
-      <option value="o1-mini" title="o1-mini">o1-mini</option>
-  <option value="o3-mini" title="o3-mini">o3-mini</option>	    
-  <option value="gpt-5-mini" title="gpt-5-mini">gpt-5-mini</option>
-  <option value="latest" title="OpenAI latest model alias">latest</option>
-      <option value="dall-e-3" title="Image Generation">dall-e-3</option>
-      <option value="gemini" title="Google Gemini">gemini</option>
-      <option value="lm-studio" title="lm-studio">lm-studio</option>
-      <option value="gpt-4o-mini" title="gpt-4o-mini">gpt-4o-mini</option>
-    </select>
-    <br/><br/>
+        <label for="selVoice">Voice:</label>
+        <select id="selVoice" onchange="ChangeLang(this)">
+          <option value="Salli">English</option>
+          <option value="Ruth">English (gen)</option>
+          <option value="Seoyeon">Korean</option>
+          <option value="Mia">Spanish</option>
+          <option value="Tatyana">Ukrainian</option>
+        </select>
 
-    <label for="selTheme">Theme:</label>
-    <select id="selTheme" onchange="applyTheme(this.value)">
-      <option value="default" selected>Default</option>
-      <option value="lcars">LCARS</option>
-    </select>
-    <br/><br/>
+        <label for="autoSpeak">Auto Speak:</label>
+        <input type="checkbox" id="autoSpeak">
+      </div>
 
-  <label for="selPers">Select Personality:</label>
-    <select id="selPers" aria-label="Select personality" onchange="ChangeLang(this)"> 
-      <option value="You are Eva, a knowledgeable AI assistant. Your goal is to provide accurate, and helpful responses to questions, while being honest and straightforward. You have access to provide updated real-time news, information and media. " title="Eva's Default Personality.">Default</option>
-      <option value="Eva is a large language model. Browsing: enabled. Instructions: Answer factual questions concisely. You have access to updated real-time news and information. " title="Eva will answer concisely">Concise</option> 
-      <option value="You are Eva. Your function is to generate human-like text based on the inputs given, and your goal is to assist users in generating informative, helpful and engaging responses to questions and requests. Please provide a detailed response with lists, where applicable. You have access to updated real-time news, information and media. " title="Eva will give detailed responses.">Advanced</option>   
-      <option value="I want you to act as a linux terminal. I will type commands and you will reply with what the terminal should show. I want you to only reply with the terminal output inside one unique code block, and nothing else. do not write explanations. do not type commands unless I instruct you to do so. when i need to tell you something in english, i will do so by putting text inside curly brackets {like this}. my first command is pwd" title="Emulate a Linux Bash Shell">Linux Terminal</option>
-    </select>
+      <!-- Models Tab -->
+      <div class="settings-panel" data-stab="models">
+        <label for="selModel">Model:</label>
+        <select id="selModel" onchange="updateButton(); onModelSettingsChange()">
+          <optgroup label="OpenAI">
+            <option value="gpt-4o" title="gpt-4o">gpt-4o</option>
+            <option value="gpt-4o-mini" title="gpt-4o-mini">gpt-4o-mini</option>
+            <option value="o1" title="o1">o1</option>
+            <option value="o1-preview" title="o1-preview">o1-preview</option>
+            <option value="o1-mini" title="o1-mini">o1-mini</option>
+            <option value="o3-mini" title="o3-mini">o3-mini</option>
+            <option value="gpt-5-mini" title="gpt-5-mini">gpt-5-mini</option>
+            <option value="latest" title="OpenAI latest model alias">latest</option>
+          </optgroup>
+          <optgroup label="GitHub Copilot">
+            <option value="copilot-gpt-4o" title="GitHub Models GPT-4o">Copilot GPT-4o</option>
+            <option value="copilot-gpt-4o-mini" title="GitHub Models GPT-4o Mini">Copilot GPT-4o Mini</option>
+            <option value="copilot-o3-mini" title="GitHub Models o3-mini">Copilot o3-mini</option>
+          </optgroup>
+          <optgroup label="Google">
+            <option value="gemini" title="Google Gemini">Gemini 2.0 Flash</option>
+          </optgroup>
+          <optgroup label="Local">
+            <option value="lm-studio" title="lm-studio">lm-studio</option>
+          </optgroup>
+          <optgroup label="Image Generation">
+            <option value="dall-e-3" title="Image Generation">DALL-E 3</option>
+          </optgroup>
+        </select>
+
+        <div id="modelOptions" class="model-options">
+          <div id="opt-temperature" class="model-opt">
+            <label for="sldTemperature">Temperature: <span id="tempValue">0.7</span></label>
+            <input type="range" id="sldTemperature" min="0" max="2" step="0.1" value="0.7" oninput="document.getElementById('tempValue').textContent=this.value">
+          </div>
+          <div id="opt-maxTokens" class="model-opt">
+            <label for="txtMaxTokens">Max Tokens:</label>
+            <input type="number" id="txtMaxTokens" value="4096" min="1" max="128000">
+          </div>
+          <div id="opt-reasoningEffort" class="model-opt" style="display:none">
+            <label for="selReasoningEffort">Reasoning Effort:</label>
+            <select id="selReasoningEffort">
+              <option value="low">Low</option>
+              <option value="medium" selected>Medium</option>
+              <option value="high">High</option>
+            </select>
+          </div>
+        </div>
+      </div>
+
+      <!-- Auth Tab -->
+      <div class="settings-panel" data-stab="auth">
+        <p class="auth-note">Keys are stored locally in your browser. They override config.json values.</p>
+
+        <div class="auth-field">
+          <label for="authOpenAI">OpenAI API Key:</label>
+          <div class="auth-input-wrap">
+            <input type="password" id="authOpenAI" placeholder="sk-..." autocomplete="off">
+            <button type="button" class="auth-toggle" onclick="toggleAuthVis(this)" aria-label="Show/hide key">Show</button>
+          </div>
+        </div>
+
+        <div class="auth-field">
+          <label for="authGitHub">GitHub PAT (Copilot):</label>
+          <div class="auth-input-wrap">
+            <input type="password" id="authGitHub" placeholder="ghp_... or github_pat_..." autocomplete="off">
+            <button type="button" class="auth-toggle" onclick="toggleAuthVis(this)" aria-label="Show/hide key">Show</button>
+          </div>
+        </div>
+
+        <div class="auth-field">
+          <label for="authGemini">Google Gemini Key:</label>
+          <div class="auth-input-wrap">
+            <input type="password" id="authGemini" placeholder="AI..." autocomplete="off">
+            <button type="button" class="auth-toggle" onclick="toggleAuthVis(this)" aria-label="Show/hide key">Show</button>
+          </div>
+        </div>
+
+        <div class="auth-field">
+          <label for="authGoogleSearch">Google Search Key:</label>
+          <div class="auth-input-wrap">
+            <input type="password" id="authGoogleSearch" placeholder="AI..." autocomplete="off">
+            <button type="button" class="auth-toggle" onclick="toggleAuthVis(this)" aria-label="Show/hide key">Show</button>
+          </div>
+        </div>
+
+        <div class="auth-field">
+          <label for="authGoogleCX">Google Search CX ID:</label>
+          <div class="auth-input-wrap">
+            <input type="text" id="authGoogleCX" placeholder="Search Engine CX ID" autocomplete="off">
+          </div>
+        </div>
+
+        <div class="auth-field">
+          <label for="authGoogleVision">Google Vision Key:</label>
+          <div class="auth-input-wrap">
+            <input type="password" id="authGoogleVision" placeholder="AI..." autocomplete="off">
+            <button type="button" class="auth-toggle" onclick="toggleAuthVis(this)" aria-label="Show/hide key">Show</button>
+          </div>
+        </div>
+
+        <button type="button" class="auth-save" onclick="saveAuthKeys()">Save Keys</button>
+      </div>
+
+      <!-- Prompts Tab -->
+      <div class="settings-panel" data-stab="prompts">
+        <label for="selPers">Personality Preset:</label>
+        <select id="selPers" aria-label="Select personality" onchange="applyPersonalityPreset()">
+          <option value="default" title="Eva's Default Personality">Default</option>
+          <option value="concise" title="Concise responses">Concise</option>
+          <option value="advanced" title="Detailed responses">Advanced</option>
+          <option value="terminal" title="Emulate a Linux Bash Shell">Linux Terminal</option>
+          <option value="custom" title="Use your own prompt">Custom</option>
+        </select>
+
+        <label for="txtSystemPrompt">System / Developer Prompt:</label>
+        <textarea id="txtSystemPrompt" rows="8" placeholder="Enter custom system instructions..."></textarea>
+        <p class="prompt-hint">This prompt is sent as the system/developer message to the AI. Select a preset above or write your own.</p>
+      </div>
+
+    </div>
   </div>
 
     <!--  <p id="result"></p> -->

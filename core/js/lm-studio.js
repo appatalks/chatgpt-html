@@ -8,7 +8,7 @@ function lmsSend() {
     let openLLMessages = [
         {
             "role": "system",
-            "content": selPers.value + " Images can be shown with this tag: [Image of <Description>]. " + dateContents
+            "content": ((typeof getSystemPrompt === 'function') ? getSystemPrompt() : '') + " Images can be shown with this tag: [Image of <Description>]. " + dateContents
         },
         {
             "role": "assistant",
