@@ -446,10 +446,39 @@ class ACPClient:
 
 
 # ---------------------------------------------------------------------------
+# Token cache helper
+# ---------------------------------------------------------------------------
+
+def _inject_kusto_token(mcp_config):
+    """Inject cached Kusto token into MCP config if kusto-mcp-server is present."""
+    global _kusto_token_cache, _kusto_credential
+    if not mcp_config or "kusto-mcp-server" not in mcp_config:
+        return mcp_config
+
+    # Try to refresh token if we have a cached credential
+    if _kusto_credential:
+        try:
+            token = _kusto_credential.get_token("https://kusto.kusto.windows.net/.default")
+            _kusto_token_cache = token.token
+            print(f"[Bridge] Kusto token refreshed (length: {len(token.token)})")
+        except Exception as e:
+            print(f"[Bridge] Token refresh failed: {e}, using cached token")
+
+    if _kusto_token_cache:
+        if "env" not in mcp_config["kusto-mcp-server"]:
+            mcp_config["kusto-mcp-server"]["env"] = {}
+        mcp_config["kusto-mcp-server"]["env"]["KUSTO_ACCESS_TOKEN"] = _kusto_token_cache
+
+    return mcp_config
+
+
+# ---------------------------------------------------------------------------
 # HTTP Server — exposes the ACP client as an OpenAI-compatible endpoint
 # ---------------------------------------------------------------------------
 
 acp_client = None  # Global ACP client instance
+_kusto_token_cache = None  # Cached Kusto access token (survives model switches)
+_kusto_credential = None   # Cached credential object for token refresh
 
 
 class BridgeHandler(BaseHTTPRequestHandler):
@@ -546,6 +575,9 @@ class BridgeHandler(BaseHTTPRequestHandler):
 
         mcp_servers = data.get("mcp_servers", {})
 
+        # Inject cached Kusto token if kusto-mcp-server is being configured
+        mcp_servers = _inject_kusto_token(mcp_servers)
+
         # Restart ACP client with new MCP config
         old_path = acp_client.copilot_path if acp_client else "copilot"
         old_cwd = acp_client.cwd if acp_client else os.getcwd()
@@ -598,7 +630,7 @@ class BridgeHandler(BaseHTTPRequestHandler):
             # Restart ACP client with new model (preserve MCP config)
             old_cwd = acp_client.cwd
             old_path = acp_client.copilot_path
-            old_mcp = acp_client.mcp_config
+            old_mcp = _inject_kusto_token(acp_client.mcp_config)
             acp_client.stop()
             acp_client = ACPClient(copilot_path=old_path, cwd=old_cwd, model=requested_model or None, mcp_config=old_mcp)
             try:
@@ -732,6 +764,7 @@ def main():
         print("[Bridge] GitHub MCP Server enabled")
 
     if args.enable_kusto_mcp:
+        global _kusto_token_cache, _kusto_credential
         script_dir = os.path.dirname(os.path.abspath(__file__))
         kusto_mcp_path = os.path.join(script_dir, "kusto_mcp.py")
         kusto_env = {}
@@ -749,7 +782,10 @@ def main():
             )
             token = cred.get_token("https://kusto.kusto.windows.net/.default")
             kusto_env["KUSTO_ACCESS_TOKEN"] = token.token
-            print(f"[Bridge] Kusto token obtained (length: {len(token.token)})")
+            # Cache globally for model switches
+            _kusto_token_cache = token.token
+            _kusto_credential = cred
+            print(f"[Bridge] Kusto token obtained and cached (length: {len(token.token)})")
         except Exception as e:
             print(f"[Bridge] Warning: Could not pre-fetch Kusto token: {e}")
             print("[Bridge] The MCP server will try to authenticate on its own.")
