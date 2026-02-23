@@ -614,27 +614,29 @@ body.theme-lcars { background: #000 !important; color: #eef5ff; font-family: "Ba
 #lcarsSidebar { display: none; }
 body.theme-lcars {
   display: grid;
-  grid-template-columns: 200px 1fr; /* sidebar + fluid main */
-  grid-template-rows: 1fr auto;
-  gap: 0; /* no gap — sidebar connects to main via elbow */
-  align-items: start;
+  grid-template-columns: 200px 1fr;
+  grid-template-rows: 1fr; /* single row fills viewport */
+  gap: 0;
+  align-items: stretch; /* both columns stretch to same height */
   justify-content: stretch;
   height: 100vh;
-  padding: 20px 20px 20px 20px;
+  padding: 16px;
+  box-sizing: border-box;
+  overflow: hidden; /* prevent body scroll */
   background-size: cover;
 }
 body.theme-lcars #lcarsSidebar {
   display: flex;
-  position: sticky;
-  top: 20px;
-  align-self: start;
-  height: calc(96vh - 40px);
+  align-self: stretch; /* match main column height exactly */
   flex-direction: column;
   gap: 4px;
   background: transparent;
   border: none;
   border-radius: 0;
   padding: 0;
+  position: relative; /* not sticky — stretches with grid */
+  top: auto;
+  height: auto;
 }
 /* LCARS top elbow — the signature curved connector */
 body.theme-lcars #lcarsSidebar::before {
@@ -698,9 +700,11 @@ body.theme-lcars #lcarsSidebar .lcars-chip.print {
 body.theme-lcars .input-monitors-row {
   display: flex;
   align-items: stretch;
-  gap: 10px;
+  gap: 6px;
   width: 100%;
-  margin-top: 8px;
+  margin-top: 6px;
+  flex: 0 0 auto; /* don't push out of viewport */
+  max-height: 200px;
 }
 body.theme-lcars .lcars-monitors {
   background: rgba(0,0,0,0.4);
@@ -804,8 +808,8 @@ body.theme-lcars.lcars-collapsed #lcarsSidebar {
   padding: 0;
   gap: 2px;
 }
-body.theme-lcars.lcars-collapsed #lcarsSidebar::before { height: 48px; border-top-left-radius: 48px; }
-body.theme-lcars.lcars-collapsed #lcarsSidebar::after { height: 24px; border-bottom-left-radius: 24px; }
+body.theme-lcars.lcars-collapsed #lcarsSidebar::before { height: 40px; border-top-left-radius: 40px; }
+body.theme-lcars.lcars-collapsed #lcarsSidebar::after { height: 20px; border-bottom-left-radius: 20px; }
 body.theme-lcars.lcars-collapsed #lcarsSidebar .lcars-label { display: none; }
 /* Keep chips visible but compact in collapsed mode */
 body.theme-lcars.lcars-collapsed #lcarsSidebar .lcars-chip {
@@ -997,28 +1001,29 @@ body.theme-lcars #txtOutput .chat-bubble .md code { background: rgba(255,255,255
 /* LCARS-only responsive scaling and modern markdown */
 body.theme-lcars {
   min-height: 100vh;
-  height: auto;
+  max-height: 100vh;
   overflow: hidden;
   background-size: cover;
 }
 /* Place sidebar in col 1 and main content in col 2; let main fill available space */
-body.theme-lcars #lcarsSidebar { grid-column: 1; }
+body.theme-lcars #lcarsSidebar { grid-column: 1; grid-row: 1; }
 body.theme-lcars #idContainer {
   grid-column: 2;
+  grid-row: 1;
   max-width: none;
   width: 100%;
-  justify-self: stretch;
-  align-self: stretch;
-  height: calc(96vh - 40px);
+  align-self: stretch; /* fill same height as sidebar */
+  height: auto;
   margin: 0;
   border: none;
   border-radius: 0;
   display: flex;
   flex-direction: column;
-  padding: 0 16px;
+  padding: 0 12px;
   background: transparent;
+  overflow: hidden; /* prevent container overflow */
 }
-body.theme-lcars footer { grid-column: 2; }
+body.theme-lcars footer { grid-column: 2; display: none; } /* footer hidden in LCARS — controls in sidebar */
 body.theme-lcars #txtOutput {
   width: 100%;
   flex: 1 1 auto;
@@ -1034,19 +1039,19 @@ body.theme-lcars #txtOutput {
 body.theme-lcars .chat-input-container {
   width: 100%;
   margin-top: 6px;
-  align-self: flex-end;
-  flex: 0 0 auto;
+  flex: 0 0 auto; /* don't grow, don't shrink below content */
   max-width: none;
-  min-height: 180px;
-  max-height: 200px;
+  min-height: 120px; /* reduced — allows fitting on smaller screens */
+  max-height: 180px;
   align-items: stretch;
   display: grid;
-  grid-template-columns: 1fr 160px;
+  grid-template-columns: 1fr 140px;
   gap: 6px;
   border: 1px solid rgba(255,255,255,0.08);
   border-radius: 8px;
   padding: 6px;
   background: rgba(0,0,0,0.4);
+  box-sizing: border-box;
 }
 /* LCARS: controls window panel */
 body.theme-lcars .input-controls-window {
@@ -1129,7 +1134,8 @@ body.theme-lcars #textToSynth {
   display: flex;
   flex-direction: column;
   flex: 1 1 auto;
-  min-height: 0;
+  min-height: 0; /* critical: allows flex children to shrink */
+  overflow: hidden;
 }
 
 /* Phone */
