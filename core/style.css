@@ -703,7 +703,8 @@ body.theme-lcars .input-monitors-row {
   gap: 6px;
   width: 100%;
   margin-top: 6px;
-  flex: 0 0 auto; /* don't push out of viewport */
+  flex: 0 0 auto;
+  min-height: 140px; /* ensure send button is always visible */
   max-height: 200px;
 }
 body.theme-lcars .lcars-monitors {
@@ -1038,11 +1039,11 @@ body.theme-lcars #txtOutput {
 }
 body.theme-lcars .chat-input-container {
   width: 100%;
-  margin-top: 6px;
-  flex: 0 0 auto; /* don't grow, don't shrink below content */
+  margin-top: 0;
+  flex: 1 1 auto; /* fill remaining space in monitors row */
   max-width: none;
-  min-height: 120px; /* reduced — allows fitting on smaller screens */
-  max-height: 180px;
+  min-height: 0;
+  max-height: none;
   align-items: stretch;
   display: grid;
   grid-template-columns: 1fr 140px;
