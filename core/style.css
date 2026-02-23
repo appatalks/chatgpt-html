@@ -1057,57 +1057,64 @@ body.theme-lcars .chat-input-container {
 /* LCARS: controls window panel */
 body.theme-lcars .input-controls-window {
   background: transparent;
-  border: 1px solid rgba(255,255,255,0.08);
-  border-radius: 4px;
-  padding: 4px;
+  border: none;
+  border-radius: 0;
+  padding: 0;
   display: flex;
   box-sizing: border-box;
 }
 body.theme-lcars .input-controls-window .input-controls {
   border: none;
   background: transparent;
-  border-radius: 4px;
-  padding: 4px;
+  border-radius: 0;
+  padding: 0;
   width: 100%;
   box-sizing: border-box;
-  overflow: hidden;
+  overflow: visible;
 }
 /* LCARS: let input fill the container vertically */
 body.theme-lcars #txtMsg { max-height: none; height: 100%; }
 /* LCARS input controls column */
 body.theme-lcars .input-controls {
-  display: flex;
-  flex-direction: column;
+  display: grid;
+  grid-template-rows: 1fr 1fr 2fr; /* Upload | Mic | Send — proportional */
   gap: 4px;
   height: 100%;
-  padding: 2px; /* small border space around buttons */
+  padding: 0;
   box-sizing: border-box;
 }
-/* Top: two small buttons */
+/* All three buttons: uniform LCARS style */
 body.theme-lcars .input-controls .controls-top {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 6px; /* visible separation between Upload and Mic */
-  flex: 0 0 34%; /* about half the height of Send below */
-  min-height: 0;
-  align-items: stretch;
+  display: contents; /* dissolve wrapper — children go into parent grid */
 }
-body.theme-lcars .input-controls .controls-top .lcars-btn {
-  padding: 8px 6px;
-  font-size: 12px;
-  height: 100%;
-}
-/* Bottom: Send fills remaining vertical space */
 body.theme-lcars .input-controls .controls-bottom {
   display: flex;
-  flex-direction: column;
-  flex: 1 1 66%;
   min-height: 0;
 }
 body.theme-lcars .input-controls .controls-bottom #btnSend {
   flex: 1 1 auto;
-  height: 100%;
+  width: 100%;
 }
+/* Each button gets identical base styling */
+body.theme-lcars .input-controls .lcars-btn,
+body.theme-lcars .input-controls #btnSend {
+  font: 700 14px "Barlow Condensed", sans-serif;
+  letter-spacing: .1em;
+  text-transform: uppercase;
+  padding: 0;
+  margin: 0;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+}
+/* Individual button colors */
+body.theme-lcars #uploadButton { background: var(--ld-arctic-ice); color: #000; }
+body.theme-lcars #uploadButton:hover { background: var(--ld-alpha-blue); color: #fff; }
+body.theme-lcars #micButton { background: var(--ld-beta-blue); color: #000; }
+body.theme-lcars #micButton:hover { background: var(--ld-alpha-blue); color: #fff; }
+body.theme-lcars #btnSend { background: var(--ld-arctic-snow); color: #000; font-size: 18px; letter-spacing: .14em; }
+body.theme-lcars #btnSend:hover { background: var(--ld-alpha-blue); color: #fff; }
+
 body.theme-lcars .lcars-btn {
   background: var(--ld-arctic-ice);
   color: #000;
@@ -1124,11 +1131,18 @@ body.theme-lcars .lcars-btn {
   align-items: center;
   justify-content: center;
   line-height: 1.2;
-  transition: background 0.15s;
+  transition: background 0.15s, color 0.15s;
 }
 body.theme-lcars .lcars-btn:hover { background: var(--ld-alpha-blue); color: #fff; }
-/* Mic button visuals match lcars-btn and drop icon image */
-body.theme-lcars .mic-button { background-image: none; width: 100%; height: 100%; border-radius: 2px; margin-left: 0; }
+/* Mic button: reset base styles so it matches other buttons */
+body.theme-lcars .mic-button {
+  background-image: none;
+  width: 100%;
+  height: 100%;
+  border-radius: 2px;
+  margin-left: 0;
+  margin: 0;
+}
 
 /* Ensure inner wrapper lets #txtOutput grow */
 body.theme-lcars #textToSynth {
