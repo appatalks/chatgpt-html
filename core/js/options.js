@@ -680,15 +680,20 @@ function setStatus(type, text) {
   if (text) el.textContent = text;
 }
 
-// --- Lightweight token/context window monitor ---
-// Simple per-character heuristic when tokenizer not available
+// --- Monitors: Token, Network, Session ---
+
+// Better token estimation: ~3.5 chars per token for English, account for whitespace/punctuation
 function estimateTokensFromText(str) {
   if (!str) return 0;
-  // crude: ~4 chars per token
-  return Math.ceil(String(str).length / 4);
+  var s = String(str);
+  // Count words (roughly 1.3 tokens per word on average)
+  var words = s.split(/\s+/).filter(function(w) { return w.length > 0; }).length;
+  // Count special chars/punctuation as extra tokens
+  var specials = (s.match(/[^a-zA-Z0-9\s]/g) || []).length;
+  return Math.ceil(words * 1.3 + specials * 0.5);
 }
 
-// Map of model -> context window size (approx) for display
+// Map of model -> context window size
 const MODEL_CONTEXT_WINDOWS = {
   'gpt-4o': 128000,
   'gpt-4o-mini': 128000,
@@ -702,80 +707,238 @@ const MODEL_CONTEXT_WINDOWS = {
   'copilot-gpt-4o-mini': 128000,
   'copilot-o3-mini': 200000,
   'copilot-acp': 128000,
-  'gemini': 128000,
+  'gemini': 1000000,
   'lm-studio': 32768,
   'dall-e-3': 0
 };
+
+// Network monitoring state
+var _netStats = { requests: 0, errors: 0, lastLatency: 0, lastStatus: '', lastProvider: '' };
+
+// Intercept fetch/XHR to track network stats
+(function() {
+  var origFetch = window.fetch;
+  window.fetch = function() {
+    var url = arguments[0];
+    var isAPI = typeof url === 'string' && (
+      url.includes('api.openai.com') ||
+      url.includes('models.inference.ai.azure.com') ||
+      url.includes('generativelanguage.googleapis.com') ||
+      url.includes('localhost:1234') ||
+      url.includes('localhost:8888') ||
+      url.includes(':8888/')
+    );
+    if (!isAPI) return origFetch.apply(this, arguments);
+
+    _netStats.requests++;
+    var start = performance.now();
+    _netStats.lastProvider = _detectProvider(url);
+
+    return origFetch.apply(this, arguments).then(function(resp) {
+      _netStats.lastLatency = Math.round(performance.now() - start);
+      _netStats.lastStatus = resp.status + ' ' + (resp.ok ? 'OK' : resp.statusText);
+      if (!resp.ok) _netStats.errors++;
+      updateNetMonitor();
+      return resp;
+    }).catch(function(err) {
+      _netStats.lastLatency = Math.round(performance.now() - start);
+      _netStats.lastStatus = 'Error';
+      _netStats.errors++;
+      updateNetMonitor();
+      throw err;
+    });
+  };
+})();
+
+function _detectProvider(url) {
+  if (url.includes('openai.com')) return 'OpenAI';
+  if (url.includes('models.inference.ai.azure.com')) return 'GitHub Models';
+  if (url.includes('generativelanguage.googleapis.com')) return 'Gemini';
+  if (url.includes('localhost:1234')) return 'lm-studio';
+  if (url.includes(':8888')) return 'ACP Bridge';
+  return 'Unknown';
+}
 
 function getSelectedModel() {
   const sel = document.getElementById('selModel');
   return sel ? sel.value : '';
 }
 
-function computeMessagesTokens() {
-  try {
-    const raw = localStorage.getItem('messages');
-    if (!raw) return 0;
-    const msgs = JSON.parse(raw);
-    let acc = 0;
-    msgs.forEach(m => {
-      if (!m) return;
-      if (typeof m.content === 'string') {
-        acc += estimateTokensFromText(m.content);
-      } else if (Array.isArray(m.content)) {
-        m.content.forEach(part => {
-          if (part.type === 'text' && part.text) acc += estimateTokensFromText(part.text);
-          // ignore images for now
-        });
+// Count all conversation messages across all providers
+function _countAllMessages() {
+  var count = 0;
+  ['messages', 'copilotMessages', 'copilotACPMessages', 'geminiMessages', 'openLLMessages'].forEach(function(key) {
+    try {
+      var raw = localStorage.getItem(key);
+      if (raw) {
+        var msgs = JSON.parse(raw);
+        count += msgs.length;
       }
-    });
-    return acc;
-  } catch(e) { return 0; }
+    } catch(e) {}
+  });
+  return count;
+}
+
+// Compute tokens from all active message stores
+function computeMessagesTokens() {
+  var model = getSelectedModel();
+  var keys = ['messages']; // default OpenAI
+  if (model === 'copilot-acp') keys = ['copilotACPMessages'];
+  else if (model.indexOf('copilot-') === 0) keys = ['copilotMessages'];
+  else if (model === 'gemini') keys = ['geminiMessages'];
+  else if (model === 'lm-studio') keys = ['openLLMessages'];
+
+  var acc = 0;
+  keys.forEach(function(key) {
+    try {
+      var raw = localStorage.getItem(key);
+      if (!raw) return;
+      var msgs = JSON.parse(raw);
+      msgs.forEach(function(m) {
+        if (!m) return;
+        if (typeof m.content === 'string') {
+          acc += estimateTokensFromText(m.content);
+        } else if (Array.isArray(m.content)) {
+          m.content.forEach(function(part) {
+            if (part.type === 'text' && part.text) acc += estimateTokensFromText(part.text);
+            if (part.text) acc += estimateTokensFromText(part.text);
+          });
+        }
+        // Gemini format (parts array)
+        if (Array.isArray(m.parts)) {
+          m.parts.forEach(function(part) {
+            if (part.text) acc += estimateTokensFromText(part.text);
+          });
+        }
+      });
+    } catch(e) {}
+  });
+  return acc;
 }
 
 function computeLastResponseTokens() {
   try {
-    const txtOut = document.getElementById('txtOutput');
+    var txtOut = document.getElementById('txtOutput');
     if (!txtOut) return 0;
-    // grab last Eva bubble text, fall back to all innerText
-    const evaSpans = txtOut.querySelectorAll('.eva');
-    let last = '';
-    if (evaSpans && evaSpans.length) {
-      last = evaSpans[evaSpans.length - 1].parentElement ? evaSpans[evaSpans.length - 1].parentElement.textContent : evaSpans[evaSpans.length - 1].textContent;
-    } else {
-      last = txtOut.textContent || '';
+    var bubbles = txtOut.querySelectorAll('.eva-bubble .md, .eva-bubble');
+    if (bubbles && bubbles.length) {
+      return estimateTokensFromText(bubbles[bubbles.length - 1].textContent || '');
     }
-    return estimateTokensFromText(last);
+    return 0;
   } catch(e) { return 0; }
 }
 
 function updateTokenMonitor() {
-  const model = getSelectedModel();
-  const windowSize = MODEL_CONTEXT_WINDOWS[model] || 128000;
-  const msgTokens = computeMessagesTokens();
-  const respTokens = computeLastResponseTokens();
-  const used = msgTokens + respTokens;
-  const pct = windowSize > 0 ? Math.min(100, Math.round((used / windowSize) * 100)) : 0;
+  var model = getSelectedModel();
+  var windowSize = MODEL_CONTEXT_WINDOWS[model] || 128000;
+  var msgTokens = computeMessagesTokens();
+  var respTokens = computeLastResponseTokens();
+  var used = msgTokens + respTokens;
+  var pct = windowSize > 0 ? Math.min(100, Math.round((used / windowSize) * 100)) : 0;
 
-  const bar = document.getElementById('ctxFillBar');
-  const text = document.getElementById('ctxFillText');
-  const winText = document.getElementById('modelWindowText');
-  const msgText = document.getElementById('messagesTokensText');
-  const respText = document.getElementById('lastResponseTokensText');
-  if (bar) bar.style.width = pct + '%';
-  if (text) text.textContent = pct + '% (' + used + ' / ' + windowSize + ')';
-  if (winText) winText.textContent = windowSize ? (windowSize.toLocaleString() + ' tokens') : '—';
-  if (msgText) msgText.textContent = msgTokens.toLocaleString();
-  if (respText) respText.textContent = respTokens.toLocaleString();
+  var bar = document.getElementById('ctxFillBar');
+  var text = document.getElementById('ctxFillText');
+  var winText = document.getElementById('modelWindowText');
+  var msgText = document.getElementById('messagesTokensText');
+  var respText = document.getElementById('lastResponseTokensText');
+
+  if (bar) {
+    bar.style.width = pct + '%';
+    // Color the bar based on fill level
+    if (pct > 80) bar.style.background = 'linear-gradient(90deg, #ff6b6b, #ee5a24)';
+    else if (pct > 50) bar.style.background = 'linear-gradient(90deg, #feca57, #ff9f43)';
+    else bar.style.background = '';
+  }
+  if (text) text.textContent = pct + '% \u2014 ~' + used.toLocaleString() + ' / ' + windowSize.toLocaleString();
+
+  // Show model name + window
+  var modelName = model || 'none';
+  var sel = document.getElementById('selModel');
+  if (sel && sel.selectedOptions && sel.selectedOptions[0]) {
+    modelName = sel.selectedOptions[0].text;
+  }
+  if (winText) winText.textContent = modelName + ' (' + (windowSize > 0 ? (windowSize / 1000) + 'k' : 'N/A') + ')';
+  if (msgText) msgText.textContent = '~' + msgTokens.toLocaleString() + ' tokens';
+  if (respText) respText.textContent = '~' + respTokens.toLocaleString() + ' tokens';
 }
 
-// Periodic update
-setInterval(updateTokenMonitor, 1500);
-// Also update on model change
+function updateNetMonitor() {
+  var latEl = document.getElementById('netLatencyText');
+  var statEl = document.getElementById('netStatusText');
+  var reqEl = document.getElementById('netRequestCountText');
+  var errEl = document.getElementById('netErrorCountText');
+
+  if (latEl) {
+    var lat = _netStats.lastLatency;
+    latEl.textContent = lat > 0 ? (lat < 1000 ? lat + 'ms' : (lat / 1000).toFixed(1) + 's') + ' \u2014 ' + _netStats.lastProvider : '\u2014';
+  }
+  if (statEl) statEl.textContent = _netStats.lastStatus || '\u2014';
+  if (reqEl) reqEl.textContent = _netStats.requests.toString();
+  if (errEl) {
+    errEl.textContent = _netStats.errors.toString();
+    errEl.style.color = _netStats.errors > 0 ? '#ff6b6b' : '';
+  }
+}
+
+function updateSessionMonitor() {
+  var model = getSelectedModel();
+  var provEl = document.getElementById('sessProviderText');
+  var msgEl = document.getElementById('sessMsgCountText');
+  var acpEl = document.getElementById('sessACPText');
+  var mcpEl = document.getElementById('sessMCPText');
+
+  // Provider
+  if (provEl) {
+    if (model.indexOf('copilot-') === 0) provEl.textContent = model === 'copilot-acp' ? 'Copilot ACP' : 'GitHub Models';
+    else if (model === 'gemini') provEl.textContent = 'Google Gemini';
+    else if (model === 'lm-studio') provEl.textContent = 'lm-studio (local)';
+    else if (model === 'dall-e-3') provEl.textContent = 'DALL-E 3';
+    else provEl.textContent = 'OpenAI';
+  }
+
+  // Message count
+  if (msgEl) msgEl.textContent = _countAllMessages().toString();
+
+  // ACP Bridge status
+  if (acpEl) {
+    if (model === 'copilot-acp') {
+      // Async check
+      (function() {
+        var url = (typeof getACPBridgeUrl === 'function') ? getACPBridgeUrl() : 'http://localhost:8888';
+        fetch(url.replace(/\/+$/, '') + '/health', { signal: AbortSignal.timeout(2000) })
+          .then(function(r) { return r.json(); })
+          .then(function(d) {
+            acpEl.textContent = d.status === 'ok' ? '\u2705 Connected' : '\u274C Down';
+          })
+          .catch(function() { acpEl.textContent = '\u274C Offline'; });
+      })();
+    } else {
+      acpEl.textContent = 'N/A';
+    }
+  }
+
+  // MCP tools
+  if (mcpEl) {
+    try {
+      var cfg = JSON.parse(localStorage.getItem('mcp_config') || '{}');
+      var active = Object.keys(cfg);
+      mcpEl.textContent = active.length > 0 ? active.map(function(n) { return n.replace(/-mcp-server$/, ''); }).join(', ') : 'None';
+    } catch(e) { mcpEl.textContent = 'None'; }
+  }
+}
+
+// Periodic updates
+setInterval(updateTokenMonitor, 2000);
+setInterval(updateSessionMonitor, 5000);
 document.addEventListener('DOMContentLoaded', function(){
-  const sel = document.getElementById('selModel');
-  if (sel) sel.addEventListener('change', updateTokenMonitor);
+  var sel = document.getElementById('selModel');
+  if (sel) sel.addEventListener('change', function() {
+    updateTokenMonitor();
+    updateSessionMonitor();
+    updateNetMonitor();
+  });
   updateTokenMonitor();
+  updateSessionMonitor();
 });
 
 // Languages

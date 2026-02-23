@@ -355,8 +355,8 @@
     <div id="lcarsMonitorTabs" role="tablist" aria-label="LCARS monitors tabs">
       <button class="monitor-tab active" data-tab="tokens" role="tab" aria-selected="true" title="Token usage">Tkns</button>
       <button class="monitor-tab" data-tab="net" role="tab" aria-selected="false" title="Network">Net</button>
+      <button class="monitor-tab" data-tab="session" role="tab" aria-selected="false" title="Session">Sess</button>
       <button class="monitor-tab" data-tab="sys" role="tab" aria-selected="false" title="System">Sys</button>
-      <button class="monitor-tab" data-tab="misc" role="tab" aria-selected="false" title="Misc">Misc</button>
     </div>
     <div id="lcarsMonitorPanels">
       <div class="monitor-panel active" data-tab="tokens" role="tabpanel">
@@ -364,28 +364,60 @@
           <div class="monitor-card">
             <div class="monitor-title">Context fill</div>
             <div class="progress"><div class="bar" id="ctxFillBar" style="width:0%"></div></div>
-            <div class="monitor-value" id="ctxFillText">0% (0 / 0)</div>
+            <div class="monitor-value" id="ctxFillText">0%</div>
           </div>
           <div class="monitor-card">
-            <div class="monitor-title">Model window</div>
+            <div class="monitor-title">Model / Window</div>
             <div class="monitor-value" id="modelWindowText">—</div>
           </div>
           <div class="monitor-card">
-            <div class="monitor-title">Messages tokens</div>
-            <div class="monitor-value" id="messagesTokensText">0</div>
+            <div class="monitor-title">Conversation</div>
+            <div class="monitor-value" id="messagesTokensText">0 tokens</div>
           </div>
           <div class="monitor-card">
             <div class="monitor-title">Last response</div>
-            <div class="monitor-value" id="lastResponseTokensText">0</div>
+            <div class="monitor-value" id="lastResponseTokensText">0 tokens</div>
           </div>
         </div>
       </div>
       <div class="monitor-panel" data-tab="net" role="tabpanel" aria-hidden="true">
         <div class="monitor-grid">
-          <div class="monitor-card"><div class="monitor-title">Slot 1</div><div class="monitor-value">—</div></div>
-          <div class="monitor-card"><div class="monitor-title">Slot 2</div><div class="monitor-value">—</div></div>
-          <div class="monitor-card"><div class="monitor-title">Slot 3</div><div class="monitor-value">—</div></div>
-          <div class="monitor-card"><div class="monitor-title">Slot 4</div><div class="monitor-value">—</div></div>
+          <div class="monitor-card">
+            <div class="monitor-title">Last request</div>
+            <div class="monitor-value" id="netLatencyText">—</div>
+          </div>
+          <div class="monitor-card">
+            <div class="monitor-title">Status</div>
+            <div class="monitor-value" id="netStatusText">—</div>
+          </div>
+          <div class="monitor-card">
+            <div class="monitor-title">Requests</div>
+            <div class="monitor-value" id="netRequestCountText">0</div>
+          </div>
+          <div class="monitor-card">
+            <div class="monitor-title">Errors</div>
+            <div class="monitor-value" id="netErrorCountText">0</div>
+          </div>
+        </div>
+      </div>
+      <div class="monitor-panel" data-tab="session" role="tabpanel" aria-hidden="true">
+        <div class="monitor-grid">
+          <div class="monitor-card">
+            <div class="monitor-title">Provider</div>
+            <div class="monitor-value" id="sessProviderText">—</div>
+          </div>
+          <div class="monitor-card">
+            <div class="monitor-title">Messages</div>
+            <div class="monitor-value" id="sessMsgCountText">0</div>
+          </div>
+          <div class="monitor-card">
+            <div class="monitor-title">ACP Bridge</div>
+            <div class="monitor-value" id="sessACPText">—</div>
+          </div>
+          <div class="monitor-card">
+            <div class="monitor-title">MCP Tools</div>
+            <div class="monitor-value" id="sessMCPText">—</div>
+          </div>
         </div>
       </div>
       <div class="monitor-panel" data-tab="sys" role="tabpanel" aria-hidden="true">
@@ -393,14 +425,6 @@
           <div class="monitor-card monitor-terminal">
             <div id="idText" class="status-info">Config not loaded. Use config.local.js or run a local server.</div>
           </div>
-        </div>
-      </div>
-      <div class="monitor-panel" data-tab="misc" role="tabpanel" aria-hidden="true">
-        <div class="monitor-grid">
-          <div class="monitor-card"><div class="monitor-title">Slot 1</div><div class="monitor-value">—</div></div>
-          <div class="monitor-card"><div class="monitor-title">Slot 2</div><div class="monitor-value">—</div></div>
-          <div class="monitor-card"><div class="monitor-title">Slot 3</div><div class="monitor-value">—</div></div>
-          <div class="monitor-card"><div class="monitor-title">Slot 4</div><div class="monitor-value">—</div></div>
         </div>
       </div>
     </div>
