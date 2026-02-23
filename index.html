@@ -102,6 +102,7 @@
       <button class="settings-tab" data-stab="models" role="tab">Models</button>
       <button class="settings-tab" data-stab="auth" role="tab">Auth</button>
       <button class="settings-tab" data-stab="prompts" role="tab">Prompts</button>
+      <button class="settings-tab" data-stab="mcp" role="tab">MCP</button>
     </div>
     <div class="settings-body">
 
@@ -292,6 +293,34 @@
         <label for="txtSystemPrompt">System / Developer Prompt:</label>
         <textarea id="txtSystemPrompt" rows="8" placeholder="Enter custom system instructions..."></textarea>
         <p class="prompt-hint">This prompt is sent as the system/developer message to the AI. Select a preset above or write your own.</p>
+      </div>
+
+      <!-- MCP Tab -->
+      <div class="settings-panel" data-stab="mcp">
+        <p class="auth-note">MCP (Model Context Protocol) servers extend the AI with tools for Azure, GitHub, and more. Requires the ACP bridge (<code>acp_bridge.py</code>).</p>
+
+        <div class="mcp-preset">
+          <label>
+            <input type="checkbox" id="mcpAzure"> <strong>Azure MCP Server</strong>
+          </label>
+          <p class="prompt-hint">Kusto/ADX queries, Storage, Key Vault, Monitor, Compute, 42+ Azure services.<br>
+            Auth: <code>az login --use-device-code</code> (run on the bridge host).<br>
+            Requires: <code>npx</code> (Node.js) on the bridge host.</p>
+        </div>
+
+        <div class="mcp-preset">
+          <label>
+            <input type="checkbox" id="mcpGitHub"> <strong>GitHub MCP Server</strong>
+          </label>
+          <p class="prompt-hint">Repos, issues, PRs, Actions, code search, Dependabot, and more.<br>
+            Auth: Uses your GitHub PAT from the Auth tab.<br>
+            Requires: <code>docker</code> on the bridge host.</p>
+        </div>
+
+        <div id="mcpStatus" class="mcp-status"></div>
+
+        <button type="button" class="auth-save" onclick="applyMCPConfig()">Apply MCP Config</button>
+        <button type="button" class="auth-toggle" onclick="refreshMCPStatus()" style="margin-top:8px;width:100%;text-align:center">Refresh Status</button>
       </div>
 
     </div>

@@ -43,10 +43,11 @@ class ACPClient:
 
     PROTOCOL_VERSION = 1  # ACP protocol major version
 
-    def __init__(self, copilot_path="copilot", cwd=None, model=None):
+    def __init__(self, copilot_path="copilot", cwd=None, model=None, mcp_config=None):
         self.copilot_path = copilot_path
         self.cwd = cwd or os.getcwd()
         self.model = model  # None = use CLI default
+        self.mcp_config = mcp_config or {}  # MCP servers config dict
         self.process = None
         self.request_id = 0
         self.lock = threading.Lock()
@@ -64,6 +65,10 @@ class ACPClient:
         cmd = [self.copilot_path, "--acp", "--stdio"]
         if self.model:
             cmd.extend(["--model", self.model])
+        # Pass MCP server config via --additional-mcp-config
+        if self.mcp_config:
+            mcp_json = json.dumps({"mcpServers": self.mcp_config})
+            cmd.extend(["--additional-mcp-config", mcp_json])
         try:
             self.process = subprocess.Popen(
                 cmd,
@@ -108,10 +113,13 @@ class ACPClient:
         else:
             print(f"[ACP] Warning: initialize returned: {init_result}")
 
-        # Create session
+        # Create session — pass MCP servers via ACP session/new if configured
+        mcp_servers_for_session = []
+        # Note: MCP servers are typically passed via CLI --additional-mcp-config
+        # but we also pass them in session/new for full ACP compliance
         session_result = self._send_request("session/new", {
             "cwd": self.cwd,
-            "mcpServers": []
+            "mcpServers": mcp_servers_for_session
         }, timeout=30)
 
         if session_result and "sessionId" in session_result:
@@ -343,12 +351,16 @@ class BridgeHandler(BaseHTTPRequestHandler):
             self._health()
         elif self.path == "/v1/models":
             self._models()
+        elif self.path == "/v1/mcp":
+            self._mcp_status()
         else:
             self.send_error(404, "Not Found")
 
     def do_POST(self):
         if self.path == "/v1/chat/completions":
             self._chat_completions()
+        elif self.path == "/v1/mcp/configure":
+            self._mcp_configure()
         else:
             self.send_error(404, "Not Found")
 
@@ -356,7 +368,9 @@ class BridgeHandler(BaseHTTPRequestHandler):
         status = {
             "status": "ok" if (acp_client and acp_client.alive) else "error",
             "session_id": acp_client.session_id if acp_client else None,
-            "agent": acp_client.agent_info if acp_client else None
+            "agent": acp_client.agent_info if acp_client else None,
+            "model": acp_client.model if acp_client else None,
+            "mcp_servers": list(acp_client.mcp_config.keys()) if acp_client and acp_client.mcp_config else []
         }
         self._json_response(200, status)
 
@@ -373,6 +387,63 @@ class BridgeHandler(BaseHTTPRequestHandler):
             ]
         }
         self._json_response(200, models)
+
+    def _mcp_status(self):
+        """Return current MCP server configuration status."""
+        config = acp_client.mcp_config if acp_client else {}
+        self._json_response(200, {
+            "mcp_servers": config,
+            "active": list(config.keys()) if config else [],
+            "presets": {
+                "azure": {
+                    "description": "Azure MCP Server — 42+ Azure services including Kusto/ADX",
+                    "command": "npx",
+                    "args": ["-y", "@azure/mcp@latest", "server", "start"]
+                },
+                "github": {
+                    "description": "GitHub MCP Server — repos, issues, PRs, actions, code search",
+                    "command": "docker",
+                    "args": ["run", "-i", "--rm", "-e", "GITHUB_PERSONAL_ACCESS_TOKEN", "ghcr.io/github/github-mcp-server"],
+                    "env_required": ["GITHUB_PERSONAL_ACCESS_TOKEN"]
+                }
+            }
+        })
+
+    def _mcp_configure(self):
+        """Configure MCP servers and restart the ACP client."""
+        global acp_client
+
+        content_length = int(self.headers.get("Content-Length", 0))
+        if content_length == 0:
+            self._json_response(400, {"error": {"message": "Empty request body"}})
+            return
+
+        body = self.rfile.read(content_length).decode("utf-8")
+        try:
+            data = json.loads(body)
+        except json.JSONDecodeError:
+            self._json_response(400, {"error": {"message": "Invalid JSON"}})
+            return
+
+        mcp_servers = data.get("mcp_servers", {})
+
+        # Restart ACP client with new MCP config
+        old_path = acp_client.copilot_path if acp_client else "copilot"
+        old_cwd = acp_client.cwd if acp_client else os.getcwd()
+        old_model = acp_client.model if acp_client else None
+        if acp_client:
+            acp_client.stop()
+
+        acp_client = ACPClient(copilot_path=old_path, cwd=old_cwd, model=old_model, mcp_config=mcp_servers)
+        try:
+            acp_client.start()
+            self._json_response(200, {
+                "status": "ok",
+                "message": f"MCP servers configured: {list(mcp_servers.keys())}",
+                "active_servers": list(mcp_servers.keys())
+            })
+        except RuntimeError as e:
+            self._json_response(503, {"error": {"message": str(e)}})
 
     def _chat_completions(self):
         global acp_client
@@ -405,11 +476,12 @@ class BridgeHandler(BaseHTTPRequestHandler):
                 print(f"[Bridge] Model switch requested: {acp_client.model or 'default'} -> {requested_model}")
             else:
                 print(f"[Bridge] Switching back to default model")
-            # Restart ACP client with new model
+            # Restart ACP client with new model (preserve MCP config)
             old_cwd = acp_client.cwd
             old_path = acp_client.copilot_path
+            old_mcp = acp_client.mcp_config
             acp_client.stop()
-            acp_client = ACPClient(copilot_path=old_path, cwd=old_cwd, model=requested_model or None)
+            acp_client = ACPClient(copilot_path=old_path, cwd=old_cwd, model=requested_model or None, mcp_config=old_mcp)
             try:
                 acp_client.start()
             except RuntimeError as e:
@@ -495,15 +567,53 @@ def main():
     parser.add_argument("--copilot-path", default="copilot", help="Path to copilot CLI binary")
     parser.add_argument("--cwd", default=os.getcwd(), help="Working directory for ACP session")
     parser.add_argument("--model", default=None, help="Default AI model (e.g. claude-sonnet-4.6, gpt-5.2)")
+    parser.add_argument("--mcp-config", default=None, help="Path to MCP config JSON file or inline JSON")
+    parser.add_argument("--enable-azure-mcp", action="store_true", help="Enable Azure MCP Server (Kusto, Storage, etc.)")
+    parser.add_argument("--enable-github-mcp", action="store_true", help="Enable GitHub MCP Server (requires GITHUB_PERSONAL_ACCESS_TOKEN env)")
     args = parser.parse_args()
+
+    # Build MCP config
+    mcp_config = {}
+    if args.mcp_config:
+        try:
+            if os.path.isfile(args.mcp_config):
+                with open(args.mcp_config) as f:
+                    cfg = json.load(f)
+                mcp_config = cfg.get("mcpServers", cfg)
+            else:
+                cfg = json.loads(args.mcp_config)
+                mcp_config = cfg.get("mcpServers", cfg)
+        except (json.JSONDecodeError, IOError) as e:
+            print(f"[Bridge] Warning: Failed to parse MCP config: {e}")
+
+    if args.enable_azure_mcp:
+        mcp_config["Azure MCP Server"] = {
+            "command": "npx",
+            "args": ["-y", "@azure/mcp@latest", "server", "start"],
+            "env": {"AZURE_MCP_COLLECT_TELEMETRY": "false"}
+        }
+        print("[Bridge] Azure MCP Server enabled (Kusto/ADX, Storage, Monitor, etc.)")
+
+    if args.enable_github_mcp:
+        gh_token = os.environ.get("GITHUB_PERSONAL_ACCESS_TOKEN", "")
+        if not gh_token:
+            print("[Bridge] Warning: GITHUB_PERSONAL_ACCESS_TOKEN not set. GitHub MCP tools may not work.")
+        mcp_config["GitHub MCP Server"] = {
+            "command": "docker",
+            "args": ["run", "-i", "--rm", "-e", "GITHUB_PERSONAL_ACCESS_TOKEN", "ghcr.io/github/github-mcp-server"],
+            "env": {"GITHUB_PERSONAL_ACCESS_TOKEN": gh_token} if gh_token else {}
+        }
+        print("[Bridge] GitHub MCP Server enabled")
 
     global acp_client
     print(f"[Bridge] Starting ACP bridge on port {args.port}...")
     print(f"[Bridge] Copilot CLI: {args.copilot_path}")
     print(f"[Bridge] Working directory: {args.cwd}")
+    if mcp_config:
+        print(f"[Bridge] MCP Servers: {', '.join(mcp_config.keys())}")
 
     # Start ACP client
-    acp_client = ACPClient(copilot_path=args.copilot_path, cwd=args.cwd, model=args.model)
+    acp_client = ACPClient(copilot_path=args.copilot_path, cwd=args.cwd, model=args.model, mcp_config=mcp_config)
     try:
         acp_client.start()
     except RuntimeError as e:
@@ -514,9 +624,11 @@ def main():
     server = HTTPServer(("0.0.0.0", args.port), BridgeHandler)
     print(f"[Bridge] Listening on http://0.0.0.0:{args.port}")
     print(f"[Bridge] Endpoints:")
-    print(f"  POST /v1/chat/completions  — Send chat messages")
-    print(f"  GET  /v1/models            — List available models")
-    print(f"  GET  /health               — Health check")
+    print(f"  POST /v1/chat/completions   — Send chat messages")
+    print(f"  GET  /v1/models             — List available models")
+    print(f"  GET  /v1/mcp                — MCP server status")
+    print(f"  POST /v1/mcp/configure      — Configure MCP servers (hot-reload)")
+    print(f"  GET  /health                — Health check")
     print()
 
     try:

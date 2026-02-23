@@ -175,6 +175,34 @@ body {
       color: #333;
     }
     .auth-toggle:hover { background: #e8e8e8; }
+
+    /* MCP tab */
+    .mcp-preset {
+      margin-bottom: 16px;
+      padding: 12px;
+      border: 1px solid #ddd;
+      border-radius: 8px;
+      background: #f9f9f9;
+    }
+    .mcp-preset label { display: flex; align-items: center; gap: 8px; margin: 0; cursor: pointer; }
+    .mcp-preset strong { font-size: 14px; }
+    .mcp-preset .prompt-hint { margin: 6px 0 0 26px; }
+    .mcp-status { margin: 12px 0; padding: 10px; border-radius: 6px; background: #f0f4ff; font-size: 13px; min-height: 24px; }
+    .mcp-badge {
+      display: inline-block;
+      padding: 2px 8px;
+      margin: 2px;
+      border-radius: 999px;
+      background: #007bff;
+      color: #fff;
+      font-size: 12px;
+      font-weight: 600;
+    }
+    /* LCARS MCP overrides */
+    body.theme-lcars .mcp-preset { background: rgba(255,255,255,0.05); border-color: rgba(255,255,255,0.15); }
+    body.theme-lcars .mcp-status { background: rgba(0,0,0,0.3); color: #d0defa; }
+    body.theme-lcars .mcp-badge { background: var(--ld-alpha-blue); }
+
     .auth-save {
       margin-top: 16px;
       padding: 10px 20px;

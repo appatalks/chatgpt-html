@@ -356,3 +356,98 @@ function _copilotHandleFetchError(err, txtOutput) {
   txtOutput.scrollTop = txtOutput.scrollHeight;
   setStatus('error', errorMessage);
 }
+
+// --- MCP Configuration ---
+
+async function applyMCPConfig() {
+  var bridgeUrl = await detectACPBridge();
+  var mcpServers = {};
+
+  // Azure MCP
+  var azureCheck = document.getElementById('mcpAzure');
+  if (azureCheck && azureCheck.checked) {
+    mcpServers['Azure MCP Server'] = {
+      command: 'npx',
+      args: ['-y', '@azure/mcp@latest', 'server', 'start'],
+      env: { AZURE_MCP_COLLECT_TELEMETRY: 'false' }
+    };
+  }
+
+  // GitHub MCP
+  var githubCheck = document.getElementById('mcpGitHub');
+  if (githubCheck && githubCheck.checked) {
+    var ghPat = getAuthKey('GITHUB_PAT');
+    mcpServers['GitHub MCP Server'] = {
+      command: 'docker',
+      args: ['run', '-i', '--rm', '-e', 'GITHUB_PERSONAL_ACCESS_TOKEN', 'ghcr.io/github/github-mcp-server'],
+      env: ghPat ? { GITHUB_PERSONAL_ACCESS_TOKEN: ghPat } : {}
+    };
+  }
+
+  // Save to localStorage
+  localStorage.setItem('mcp_config', JSON.stringify(mcpServers));
+
+  // Send to bridge
+  setStatus('info', 'Configuring MCP servers...');
+  try {
+    var url = bridgeUrl.replace(/\/+$/, '') + '/v1/mcp/configure';
+    var resp = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ mcp_servers: mcpServers })
+    });
+    var data = await resp.json();
+    if (resp.ok) {
+      setStatus('info', 'MCP configured: ' + (data.active_servers || []).join(', '));
+      refreshMCPStatus();
+    } else {
+      setStatus('error', 'MCP config error: ' + (data.error ? data.error.message : 'Unknown'));
+    }
+  } catch (e) {
+    setStatus('error', 'MCP config failed: ' + e.message + ' — Is the ACP bridge running?');
+  }
+}
+
+async function refreshMCPStatus() {
+  var statusEl = document.getElementById('mcpStatus');
+  if (!statusEl) return;
+
+  var bridgeUrl = getACPBridgeUrl();
+  try {
+    var resp = await fetch(bridgeUrl.replace(/\/+$/, '') + '/v1/mcp', {
+      signal: AbortSignal.timeout(3000)
+    });
+    if (resp.ok) {
+      var data = await resp.json();
+      var active = data.active || [];
+      if (active.length > 0) {
+        statusEl.innerHTML = '<strong>Active MCP Servers:</strong> ' + active.map(function(s) { return '<span class="mcp-badge">' + escapeHtml(s) + '</span>'; }).join(' ');
+        // Sync checkboxes
+        var azureCheck = document.getElementById('mcpAzure');
+        var githubCheck = document.getElementById('mcpGitHub');
+        if (azureCheck) azureCheck.checked = active.indexOf('Azure MCP Server') >= 0;
+        if (githubCheck) githubCheck.checked = active.indexOf('GitHub MCP Server') >= 0;
+      } else {
+        statusEl.innerHTML = '<em>No MCP servers active</em>';
+      }
+    } else {
+      statusEl.innerHTML = '<em>Bridge unreachable</em>';
+    }
+  } catch (e) {
+    statusEl.innerHTML = '<em>Bridge not reachable — start <code>acp_bridge.py</code></em>';
+  }
+}
+
+// Load saved MCP checkbox state
+document.addEventListener('DOMContentLoaded', function() {
+  try {
+    var saved = localStorage.getItem('mcp_config');
+    if (saved) {
+      var cfg = JSON.parse(saved);
+      var azureCheck = document.getElementById('mcpAzure');
+      var githubCheck = document.getElementById('mcpGitHub');
+      if (azureCheck) azureCheck.checked = !!cfg['Azure MCP Server'];
+      if (githubCheck) githubCheck.checked = !!cfg['GitHub MCP Server'];
+    }
+  } catch (e) {}
+});
