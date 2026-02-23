@@ -153,6 +153,9 @@
             <option value="copilot-gpt-4o-mini" title="GitHub Models GPT-4o Mini">Copilot GPT-4o Mini</option>
             <option value="copilot-o3-mini" title="GitHub Models o3-mini">Copilot o3-mini</option>
           </optgroup>
+          <optgroup label="Copilot ACP">
+            <option value="copilot-acp" title="Copilot via ACP Bridge — uses your Copilot license model">Copilot (ACP)</option>
+          </optgroup>
           <optgroup label="Google">
             <option value="gemini" title="Google Gemini">Gemini 2.0 Flash</option>
           </optgroup>
@@ -197,11 +200,19 @@
         </div>
 
         <div class="auth-field">
-          <label for="authGitHub">GitHub PAT (Copilot):</label>
+          <label for="authGitHub">GitHub PAT (Copilot Models API):</label>
           <div class="auth-input-wrap">
             <input type="password" id="authGitHub" placeholder="ghp_... or github_pat_..." autocomplete="off">
             <button type="button" class="auth-toggle" onclick="toggleAuthVis(this)" aria-label="Show/hide key">Show</button>
           </div>
+        </div>
+
+        <div class="auth-field">
+          <label for="txtACPBridgeUrl">ACP Bridge URL (Copilot CLI):</label>
+          <div class="auth-input-wrap">
+            <input type="text" id="txtACPBridgeUrl" placeholder="http://localhost:8888" autocomplete="off">
+          </div>
+          <p class="auth-note">For Copilot (ACP) model. Run <code>python3 acp_bridge.py</code> locally.</p>
         </div>
 
         <div class="auth-field">

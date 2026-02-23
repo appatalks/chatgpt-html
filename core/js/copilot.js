@@ -1,7 +1,29 @@
 // copilot.js
-// GitHub Copilot / GitHub Models API integration
-// Uses GitHub Personal Access Token (PAT) for authentication
-// Endpoint: https://models.inference.ai.azure.com/chat/completions
+// GitHub Copilot integration — two modes:
+//   1. GitHub Models API (direct REST, requires PAT)
+//   2. ACP Bridge (local server bridging Copilot CLI's Agent Client Protocol)
+//
+// Mode is determined by the selected model:
+//   copilot-*     → GitHub Models API
+//   copilot-acp   → ACP Bridge (uses copilot CLI via acp_bridge.py)
+
+// --- Helpers ---
+
+function getCopilotMode(modelValue) {
+  if (modelValue === 'copilot-acp') return 'acp';
+  if (modelValue.indexOf('copilot-') === 0) return 'models-api';
+  return 'models-api';
+}
+
+function getACPBridgeUrl() {
+  var el = document.getElementById('txtACPBridgeUrl');
+  if (el && el.value.trim()) return el.value.trim();
+  var stored = localStorage.getItem('acp_bridge_url');
+  if (stored) return stored;
+  return 'http://localhost:8888';
+}
+
+// --- Main send function ---
 
 async function copilotSend() {
   var txtMsg = document.getElementById('txtMsg');
@@ -18,13 +40,18 @@ async function copilotSend() {
     return;
   }
 
-  // Get GitHub PAT
-  var githubToken = getAuthKey('GITHUB_PAT');
-  if (!githubToken) {
-    txtOutput.innerHTML += '<div class="chat-bubble eva-bubble"><span class="error">Error:</span> GitHub PAT not configured. Go to Settings \u2192 Auth and add your GitHub Personal Access Token.</div>';
-    txtOutput.scrollTop = txtOutput.scrollHeight;
-    setStatus('error', 'GitHub PAT not configured');
-    return;
+  var selModel = document.getElementById('selModel');
+  var mode = getCopilotMode(selModel.value);
+
+  // Auth check — GitHub Models API requires PAT; ACP bridge does not (copilot CLI handles auth)
+  if (mode === 'models-api') {
+    var githubToken = getAuthKey('GITHUB_PAT');
+    if (!githubToken) {
+      txtOutput.innerHTML += '<div class="chat-bubble eva-bubble"><span class="error">Error:</span> GitHub PAT not configured. Go to Settings \u2192 Auth and add your GitHub Personal Access Token.</div>';
+      txtOutput.scrollTop = txtOutput.scrollHeight;
+      setStatus('error', 'GitHub PAT not configured');
+      return;
+    }
   }
 
   // Display user message
@@ -34,12 +61,13 @@ async function copilotSend() {
   txtOutput.scrollTop = txtOutput.scrollHeight;
 
   // Build messages payload
-  if (!localStorage.getItem('copilotMessages')) {
+  var storageKey = (mode === 'acp') ? 'copilotACPMessages' : 'copilotMessages';
+  if (!localStorage.getItem(storageKey)) {
     var sysPrompt = (typeof getSystemPrompt === 'function') ? getSystemPrompt() : '';
     var initMessages = [
       { role: 'system', content: sysPrompt + ' When you are asked to show an image, instead describe the image with [Image of <Description>]. ' + (typeof dateContents !== 'undefined' ? dateContents : '') }
     ];
-    localStorage.setItem('copilotMessages', JSON.stringify(initMessages));
+    localStorage.setItem(storageKey, JSON.stringify(initMessages));
   }
 
   var newMessages = [];
@@ -79,25 +107,33 @@ async function copilotSend() {
     }
   }
 
-  var existingMessages = JSON.parse(localStorage.getItem('copilotMessages')) || [];
+  var existingMessages = JSON.parse(localStorage.getItem(storageKey)) || [];
   existingMessages = existingMessages.concat(newMessages);
-  localStorage.setItem('copilotMessages', JSON.stringify(existingMessages));
+  localStorage.setItem(storageKey, JSON.stringify(existingMessages));
 
-  // Get model (strip copilot- prefix)
-  var selModel = document.getElementById('selModel');
-  var model = selModel.value.replace(/^copilot-/, '');
+  // Route to the appropriate backend
+  if (mode === 'acp') {
+    await _copilotSendACP(existingMessages, sQuestion, txtOutput, storageKey);
+  } else {
+    await _copilotSendModelsAPI(existingMessages, selModel.value, txtOutput, storageKey);
+  }
+}
 
-  // Build payload
+// --- GitHub Models API mode ---
+
+async function _copilotSendModelsAPI(messages, modelValue, txtOutput, storageKey) {
+  var githubToken = getAuthKey('GITHUB_PAT');
+  var model = modelValue.replace(/^copilot-/, '');
+
   var temp = (typeof getModelTemperature === 'function') ? getModelTemperature() : 0.7;
   var maxTok = (typeof getModelMaxTokens === 'function') ? getModelMaxTokens() : 4096;
   var payload = {
     model: model,
-    messages: existingMessages,
+    messages: messages,
     temperature: temp,
     max_tokens: maxTok
   };
 
-  // Model-specific adjustments
   if (model === 'o3-mini') {
     var re = (typeof getReasoningEffort === 'function') ? getReasoningEffort() : 'medium';
     payload.reasoning_effort = re;
@@ -108,8 +144,6 @@ async function copilotSend() {
 
   try {
     var url = 'https://models.inference.ai.azure.com/chat/completions';
-
-    // Use proxy if configured for CORS
     if (typeof DEBUG_CORS !== 'undefined' && DEBUG_CORS && typeof DEBUG_PROXY_URL !== 'undefined' && DEBUG_PROXY_URL) {
       url = DEBUG_PROXY_URL + '/?target=' + encodeURIComponent(url);
     }
@@ -124,91 +158,141 @@ async function copilotSend() {
     });
 
     if (!resp.ok) {
-      var errText = await resp.text();
-      var errMsg = 'Error ' + resp.status;
-      try {
-        var errJson = JSON.parse(errText);
-        errMsg += ': ' + (errJson.error ? (errJson.error.message || errJson.error) : (errJson.message || errText));
-      } catch (e) {
-        errMsg += ': ' + errText;
-      }
-      txtOutput.innerHTML += '<div class="chat-bubble eva-bubble"><span class="error">' + escapeHtml(errMsg) + '</span></div>';
-      txtOutput.scrollTop = txtOutput.scrollHeight;
-      setStatus('error', errMsg);
+      _copilotHandleHTTPError(resp, txtOutput);
       return;
     }
 
     var data = await resp.json();
-    var content = (data.choices && data.choices[0] && data.choices[0].message && data.choices[0].message.content) || '';
-
-    if (!content) {
-      txtOutput.innerHTML += '<div class="chat-bubble eva-bubble"><span class="eva">Eva:</span> Sorry, can you please ask me in another way?</div>';
-    } else {
-      // Handle image placeholders
-      if (content.includes('Image of') && typeof fetchGoogleImages === 'function') {
-        var formattedResult = content.replace(/\n\n/g, '\n').trim();
-        var imgRx = /\[(Image of (.*?))\]/g;
-        var imgMatches = formattedResult.match(imgRx);
-        if (imgMatches) {
-          imgMatches = imgMatches.slice(0, 3);
-          for (var i = 0; i < imgMatches.length; i++) {
-            var placeholder = imgMatches[i];
-            var searchQuery = placeholder.substring(10, placeholder.length - 1).trim();
-            try {
-              var searchResult = await fetchGoogleImages(searchQuery);
-              if (searchResult && searchResult.items && searchResult.items.length > 0) {
-                formattedResult = formattedResult.replace(placeholder, '<img src="' + searchResult.items[0].link + '" title="' + searchQuery + '" alt="' + searchQuery + '">');
-              }
-            } catch (e) { console.error('Image fetch error:', e); }
-          }
-          // Tokenize images, render MD, restore
-          var imgFragments = [];
-          var tokenized = formattedResult.replace(/<img[^>]*>/g, function(m) {
-            imgFragments.push(m);
-            return '\u0000IMG' + (imgFragments.length - 1) + '\u0000';
-          });
-          var mdSafe = (typeof renderMarkdown === 'function') ? renderMarkdown(tokenized) : tokenized;
-          var restored = mdSafe.replace(/\u0000IMG(\d+)\u0000/g, function(m, idx) { return imgFragments[Number(idx)] || m; });
-          txtOutput.innerHTML += '<div class="chat-bubble eva-bubble"><span class="eva">Eva:</span> <div class="md">' + restored + '</div></div>';
-        } else {
-          var mdHtml = (typeof renderMarkdown === 'function') ? renderMarkdown(content.trim()) : content;
-          txtOutput.innerHTML += '<div class="chat-bubble eva-bubble"><span class="eva">Eva:</span> <div class="md">' + mdHtml + '</div></div>';
-        }
-      } else {
-        var mdHtml2 = (typeof renderMarkdown === 'function') ? renderMarkdown(content.trim()) : content;
-        txtOutput.innerHTML += '<div class="chat-bubble eva-bubble"><span class="eva">Eva:</span> <div class="md">' + mdHtml2 + '</div></div>';
-      }
-
-      lastResponse = content;
-
-      // Store for masterOutput
-      var outputWithoutTags = txtOutput.innerText + '\n';
-      masterOutput += outputWithoutTags;
-      localStorage.setItem('masterOutput', masterOutput);
-    }
-
-    txtOutput.scrollTop = txtOutput.scrollHeight;
-    setStatus('info', 'Response received from GitHub Models (' + model + ')');
-
-    // Auto-speak
-    var checkbox = document.getElementById('autoSpeak');
-    if (checkbox && checkbox.checked) {
-      speakText();
-      var audio = document.getElementById('audioPlayback');
-      if (audio) audio.setAttribute('autoplay', true);
-    }
+    _copilotRenderResponse(data, txtOutput, model);
 
   } catch (err) {
-    console.error('Copilot error:', err);
-    var errorMessage = err.message || String(err);
+    _copilotHandleFetchError(err, txtOutput);
+  }
+}
 
-    // Detect CORS issues
-    if (errorMessage.includes('Failed to fetch') || errorMessage.includes('NetworkError') || errorMessage.includes('CORS')) {
-      errorMessage += ' \u2014 This may be a CORS issue. Configure DEBUG_CORS and DEBUG_PROXY_URL in config.json, or use a CORS proxy.';
+// --- ACP Bridge mode ---
+
+async function _copilotSendACP(messages, question, txtOutput, storageKey) {
+  var bridgeUrl = getACPBridgeUrl();
+
+  setStatus('info', 'Sending to Copilot via ACP Bridge...');
+
+  try {
+    var url = bridgeUrl.replace(/\/+$/, '') + '/v1/chat/completions';
+
+    var resp = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ messages: messages, model: 'copilot-acp' })
+    });
+
+    if (!resp.ok) {
+      _copilotHandleHTTPError(resp, txtOutput);
+      return;
     }
 
-    txtOutput.innerHTML += '<div class="chat-bubble eva-bubble"><span class="error">Error:</span> ' + escapeHtml(errorMessage) + '</div>';
-    txtOutput.scrollTop = txtOutput.scrollHeight;
-    setStatus('error', errorMessage);
+    var data = await resp.json();
+    _copilotRenderResponse(data, txtOutput, 'Copilot ACP');
+
+  } catch (err) {
+    var errorMessage = err.message || String(err);
+    if (errorMessage.includes('Failed to fetch') || errorMessage.includes('NetworkError')) {
+      errorMessage += ' \u2014 Is the ACP bridge server running? Start it with: python3 acp_bridge.py';
+    }
+    _copilotHandleFetchError({ message: errorMessage }, txtOutput);
   }
+}
+
+// --- Shared response rendering ---
+
+function _copilotRenderResponse(data, txtOutput, modelLabel) {
+  var content = (data.choices && data.choices[0] && data.choices[0].message && data.choices[0].message.content) || '';
+
+  if (!content) {
+    txtOutput.innerHTML += '<div class="chat-bubble eva-bubble"><span class="eva">Eva:</span> Sorry, can you please ask me in another way?</div>';
+  } else {
+    // Handle image placeholders
+    if (content.includes('Image of') && typeof fetchGoogleImages === 'function') {
+      _copilotRenderWithImages(content, txtOutput);
+    } else {
+      var mdHtml = (typeof renderMarkdown === 'function') ? renderMarkdown(content.trim()) : content;
+      txtOutput.innerHTML += '<div class="chat-bubble eva-bubble"><span class="eva">Eva:</span> <div class="md">' + mdHtml + '</div></div>';
+    }
+
+    lastResponse = content;
+
+    var outputWithoutTags = txtOutput.innerText + '\n';
+    masterOutput += outputWithoutTags;
+    localStorage.setItem('masterOutput', masterOutput);
+  }
+
+  txtOutput.scrollTop = txtOutput.scrollHeight;
+  setStatus('info', 'Response received from ' + modelLabel);
+
+  // Auto-speak
+  var checkbox = document.getElementById('autoSpeak');
+  if (checkbox && checkbox.checked) {
+    speakText();
+    var audio = document.getElementById('audioPlayback');
+    if (audio) audio.setAttribute('autoplay', true);
+  }
+}
+
+async function _copilotRenderWithImages(content, txtOutput) {
+  var formattedResult = content.replace(/\n\n/g, '\n').trim();
+  var imgRx = /\[(Image of (.*?))\]/g;
+  var imgMatches = formattedResult.match(imgRx);
+  if (imgMatches) {
+    imgMatches = imgMatches.slice(0, 3);
+    for (var i = 0; i < imgMatches.length; i++) {
+      var placeholder = imgMatches[i];
+      var searchQuery = placeholder.substring(10, placeholder.length - 1).trim();
+      try {
+        var searchResult = await fetchGoogleImages(searchQuery);
+        if (searchResult && searchResult.items && searchResult.items.length > 0) {
+          formattedResult = formattedResult.replace(placeholder, '<img src="' + searchResult.items[0].link + '" title="' + searchQuery + '" alt="' + searchQuery + '">');
+        }
+      } catch (e) { console.error('Image fetch error:', e); }
+    }
+    var imgFragments = [];
+    var tokenized = formattedResult.replace(/<img[^>]*>/g, function(m) {
+      imgFragments.push(m);
+      return '\u0000IMG' + (imgFragments.length - 1) + '\u0000';
+    });
+    var mdSafe = (typeof renderMarkdown === 'function') ? renderMarkdown(tokenized) : tokenized;
+    var restored = mdSafe.replace(/\u0000IMG(\d+)\u0000/g, function(m, idx) { return imgFragments[Number(idx)] || m; });
+    txtOutput.innerHTML += '<div class="chat-bubble eva-bubble"><span class="eva">Eva:</span> <div class="md">' + restored + '</div></div>';
+  } else {
+    var mdHtml = (typeof renderMarkdown === 'function') ? renderMarkdown(content.trim()) : content;
+    txtOutput.innerHTML += '<div class="chat-bubble eva-bubble"><span class="eva">Eva:</span> <div class="md">' + mdHtml + '</div></div>';
+  }
+}
+
+// --- Error handling ---
+
+async function _copilotHandleHTTPError(resp, txtOutput) {
+  var errText = await resp.text();
+  var errMsg = 'Error ' + resp.status;
+  try {
+    var errJson = JSON.parse(errText);
+    errMsg += ': ' + (errJson.error ? (errJson.error.message || errJson.error) : (errJson.message || errText));
+  } catch (e) {
+    errMsg += ': ' + errText;
+  }
+  txtOutput.innerHTML += '<div class="chat-bubble eva-bubble"><span class="error">' + escapeHtml(errMsg) + '</span></div>';
+  txtOutput.scrollTop = txtOutput.scrollHeight;
+  setStatus('error', errMsg);
+}
+
+function _copilotHandleFetchError(err, txtOutput) {
+  console.error('Copilot error:', err);
+  var errorMessage = err.message || String(err);
+  if (errorMessage.includes('Failed to fetch') || errorMessage.includes('NetworkError') || errorMessage.includes('CORS')) {
+    if (!errorMessage.includes('ACP bridge')) {
+      errorMessage += ' \u2014 This may be a CORS issue. Configure DEBUG_CORS and DEBUG_PROXY_URL in config.json, or use a CORS proxy.';
+    }
+  }
+  txtOutput.innerHTML += '<div class="chat-bubble eva-bubble"><span class="error">Error:</span> ' + escapeHtml(errorMessage) + '</div>';
+  txtOutput.scrollTop = txtOutput.scrollHeight;
+  setStatus('error', errorMessage);
 }

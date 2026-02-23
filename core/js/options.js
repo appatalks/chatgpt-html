@@ -93,6 +93,13 @@ function saveAuthKeys() {
       localStorage.removeItem('auth_' + key);
     }
   });
+  // Save ACP Bridge URL separately
+  var acpEl = document.getElementById('txtACPBridgeUrl');
+  if (acpEl && acpEl.value.trim()) {
+    localStorage.setItem('acp_bridge_url', acpEl.value.trim());
+  } else if (acpEl) {
+    localStorage.removeItem('acp_bridge_url');
+  }
   setStatus('info', 'API keys saved to browser storage.');
 }
 
@@ -113,6 +120,11 @@ function populateAuthFields() {
       el.value = val || '';
     }
   });
+  // Populate ACP Bridge URL
+  var acpEl = document.getElementById('txtACPBridgeUrl');
+  if (acpEl) {
+    acpEl.value = localStorage.getItem('acp_bridge_url') || 'http://localhost:8888';
+  }
 }
 
 function toggleAuthVis(btn) {
@@ -211,10 +223,10 @@ function onModelSettingsChange() {
   if (reOpt) {
     reOpt.style.display = (model === 'o3-mini' || model === 'copilot-o3-mini') ? 'block' : 'none';
   }
-  // Show/hide temperature (hidden for o3-mini, gpt-5-mini, latest)
+  // Show/hide temperature (hidden for o3-mini, gpt-5-mini, latest, copilot-acp)
   var tempOpt = document.getElementById('opt-temperature');
   if (tempOpt) {
-    var hideTemp = ['o3-mini', 'copilot-o3-mini', 'gpt-5-mini', 'latest'].indexOf(model) >= 0;
+    var hideTemp = ['o3-mini', 'copilot-o3-mini', 'gpt-5-mini', 'latest', 'copilot-acp'].indexOf(model) >= 0;
     tempOpt.style.display = hideTemp ? 'none' : 'block';
   }
 }
@@ -283,7 +295,7 @@ function updateModelOptionsForTheme(theme) {
   if (theme === 'lcars') {
     // Remember current model to restore when leaving LCARS
     __modelBeforeLCARS = sel.value;
-    var allowed = new Set(['gpt-5-mini', 'o3-mini', 'dall-e-3', 'gemini', 'lm-studio', 'copilot-gpt-4o', 'copilot-gpt-4o-mini', 'copilot-o3-mini']);
+    var allowed = new Set(['gpt-5-mini', 'o3-mini', 'dall-e-3', 'gemini', 'lm-studio', 'copilot-gpt-4o', 'copilot-gpt-4o-mini', 'copilot-o3-mini', 'copilot-acp']);
     var filtered = [];
     (__originalModelOptions || []).forEach(function(item) {
       if (item.type === 'optgroup') {
@@ -679,6 +691,7 @@ const MODEL_CONTEXT_WINDOWS = {
   'copilot-gpt-4o': 128000,
   'copilot-gpt-4o-mini': 128000,
   'copilot-o3-mini': 200000,
+  'copilot-acp': 128000,
   'gemini': 128000,
   'lm-studio': 32768,
   'dall-e-3': 0
@@ -1297,7 +1310,7 @@ function clearMessages() {
     var keysToKeep = [];
     for (var i = 0; i < localStorage.length; i++) {
       var key = localStorage.key(i);
-      if (key && (key.indexOf('auth_') === 0 || key === 'theme' || key === 'systemPrompt' || key === 'lcars_collapsed')) {
+      if (key && (key.indexOf('auth_') === 0 || key === 'theme' || key === 'systemPrompt' || key === 'lcars_collapsed' || key === 'acp_bridge_url')) {
         keysToKeep.push({ k: key, v: localStorage.getItem(key) });
       }
     }

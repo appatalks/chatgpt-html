@@ -24,6 +24,8 @@ This allows you to easily interact with OpenAI and Google Generative APIs.
 - OpenAI ```o3-mini``` model added (great for code - tier 4+ API)
 - OpenAI ```gpt-4o``` models
 - OpenAI `gpt-5-mini` (experimental) and `latest` alias (per OpenAI latest-model guidance)
+- GitHub Copilot Models API (GPT-4o, o3-mini via GitHub PAT)
+- GitHub Copilot ACP Bridge (uses your Copilot license — access to GPT-4o, Claude, Gemini, and more via `acp_bridge.py`)
 - Latest Google Gemini 2.0 ```Thinking``` model
 - [lmstudio API](https://lmstudio.ai/docs/api/openai-api) local models 
 - Dall-E Image Generation
