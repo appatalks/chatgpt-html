@@ -228,15 +228,22 @@ async function _copilotSendACP(messages, question, txtOutput, storageKey) {
   // Auto-detect bridge URL (tries configured, same-host, localhost)
   var bridgeUrl = await detectACPBridge();
 
-  setStatus('info', 'Sending to Copilot via ACP Bridge (' + bridgeUrl + ')...');
+  // Get selected ACP model (empty string = use CLI default)
+  var acpModel = (typeof getACPModel === 'function') ? getACPModel() : '';
+  var modelLabel = acpModel ? 'Copilot ACP (' + acpModel + ')' : 'Copilot ACP (default)';
+
+  setStatus('info', 'Sending to ' + modelLabel + ' via ' + bridgeUrl + '...');
 
   try {
     var url = bridgeUrl.replace(/\/+$/, '') + '/v1/chat/completions';
 
+    var payload = { messages: messages, model: 'copilot-acp' };
+    if (acpModel) payload.acp_model = acpModel;
+
     var resp = await fetch(url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ messages: messages, model: 'copilot-acp' })
+      body: JSON.stringify(payload)
     });
 
     if (!resp.ok) {
@@ -245,7 +252,7 @@ async function _copilotSendACP(messages, question, txtOutput, storageKey) {
     }
 
     var data = await resp.json();
-    _copilotRenderResponse(data, txtOutput, 'Copilot ACP');
+    _copilotRenderResponse(data, txtOutput, modelLabel);
 
   } catch (err) {
     var errorMessage = err.message || String(err);

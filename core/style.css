@@ -81,26 +81,28 @@ body {
 
     .settings-tabs {
       display: flex;
-      border-bottom: 2px solid #e0e0e0;
+      border-bottom: 2px solid #ccc;
       padding: 0 20px;
-      gap: 0;
+      gap: 2px;
+      background: #f0f0f0;
     }
     .settings-tab {
       padding: 10px 16px;
       border: none;
-      background: none;
+      background: #e0e0e0;
       cursor: pointer;
       font-size: 14px;
       font-weight: 600;
-      color: #666;
-      border-bottom: 2px solid transparent;
+      color: #555;
+      border-bottom: 3px solid transparent;
       margin-bottom: -2px;
-      transition: color 0.2s, border-color 0.2s;
-      border-radius: 0;
+      transition: color 0.2s, border-color 0.2s, background 0.2s;
+      border-radius: 6px 6px 0 0;
     }
-    .settings-tab:hover { color: #333; }
+    .settings-tab:hover { color: #111; background: #d0d0d0; }
     .settings-tab.active {
       color: #007bff;
+      background: #fff;
       border-bottom-color: #007bff;
     }
 
@@ -776,10 +778,10 @@ body.theme-lcars .settings-header { border-color: var(--ld-arctic-snow); }
 body.theme-lcars .settings-header h3 { color: #eef5ff; }
 body.theme-lcars .settings-close { color: #eef5ff; }
 body.theme-lcars .settings-close:hover { background: rgba(255,255,255,0.1); color: #fff; }
-body.theme-lcars .settings-tabs { border-color: var(--ld-arctic-snow); }
-body.theme-lcars .settings-tab { color: #8899bb; }
-body.theme-lcars .settings-tab:hover { color: #d0defa; }
-body.theme-lcars .settings-tab.active { color: var(--ld-arctic-ice); border-bottom-color: var(--ld-arctic-ice); }
+body.theme-lcars .settings-tabs { border-color: var(--ld-arctic-snow); background: rgba(0,0,0,0.3); }
+body.theme-lcars .settings-tab { color: #8899bb; background: rgba(255,255,255,0.06); border-radius: 6px 6px 0 0; }
+body.theme-lcars .settings-tab:hover { color: #fff; background: rgba(255,255,255,0.12); }
+body.theme-lcars .settings-tab.active { color: #fff; background: var(--ld-alpha-blue); border-bottom-color: var(--ld-arctic-ice); }
 body.theme-lcars .settings-panel label { color: #d0defa; }
 body.theme-lcars .settings-panel select,
 body.theme-lcars .settings-panel input[type="number"],

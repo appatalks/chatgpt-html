@@ -43,9 +43,10 @@ class ACPClient:
 
     PROTOCOL_VERSION = 1  # ACP protocol major version
 
-    def __init__(self, copilot_path="copilot", cwd=None):
+    def __init__(self, copilot_path="copilot", cwd=None, model=None):
         self.copilot_path = copilot_path
         self.cwd = cwd or os.getcwd()
+        self.model = model  # None = use CLI default
         self.process = None
         self.request_id = 0
         self.lock = threading.Lock()
@@ -60,9 +61,12 @@ class ACPClient:
 
     def start(self):
         """Spawn copilot subprocess, initialize ACP, create session."""
+        cmd = [self.copilot_path, "--acp", "--stdio"]
+        if self.model:
+            cmd.extend(["--model", self.model])
         try:
             self.process = subprocess.Popen(
-                [self.copilot_path, "--acp", "--stdio"],
+                cmd,
                 stdin=subprocess.PIPE,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
@@ -394,6 +398,24 @@ class BridgeHandler(BaseHTTPRequestHandler):
             self._json_response(400, {"error": {"message": "No messages provided"}})
             return
 
+        # Check if a specific ACP model was requested
+        requested_model = data.get("acp_model", "") or ""
+        if requested_model != (acp_client.model or ""):
+            if requested_model:
+                print(f"[Bridge] Model switch requested: {acp_client.model or 'default'} -> {requested_model}")
+            else:
+                print(f"[Bridge] Switching back to default model")
+            # Restart ACP client with new model
+            old_cwd = acp_client.cwd
+            old_path = acp_client.copilot_path
+            acp_client.stop()
+            acp_client = ACPClient(copilot_path=old_path, cwd=old_cwd, model=requested_model or None)
+            try:
+                acp_client.start()
+            except RuntimeError as e:
+                self._json_response(503, {"error": {"message": str(e)}})
+                return
+
         # Build prompt text from messages (combine for context)
         # ACP doesn't have native message roles, so we format them
         prompt_parts = []
@@ -432,7 +454,7 @@ class BridgeHandler(BaseHTTPRequestHandler):
             "id": f"acp-{int(time.time())}",
             "object": "chat.completion",
             "created": int(time.time()),
-            "model": "copilot-acp",
+            "model": f"copilot-acp:{requested_model}" if requested_model else "copilot-acp",
             "choices": [{
                 "index": 0,
                 "message": {
@@ -472,6 +494,7 @@ def main():
     parser.add_argument("--port", type=int, default=8888, help="HTTP server port (default: 8888)")
     parser.add_argument("--copilot-path", default="copilot", help="Path to copilot CLI binary")
     parser.add_argument("--cwd", default=os.getcwd(), help="Working directory for ACP session")
+    parser.add_argument("--model", default=None, help="Default AI model (e.g. claude-sonnet-4.6, gpt-5.2)")
     args = parser.parse_args()
 
     global acp_client
@@ -480,7 +503,7 @@ def main():
     print(f"[Bridge] Working directory: {args.cwd}")
 
     # Start ACP client
-    acp_client = ACPClient(copilot_path=args.copilot_path, cwd=args.cwd)
+    acp_client = ACPClient(copilot_path=args.copilot_path, cwd=args.cwd, model=args.model)
     try:
         acp_client.start()
     except RuntimeError as e:

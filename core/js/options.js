@@ -229,6 +229,16 @@ function onModelSettingsChange() {
     var hideTemp = ['o3-mini', 'copilot-o3-mini', 'gpt-5-mini', 'latest', 'copilot-acp'].indexOf(model) >= 0;
     tempOpt.style.display = hideTemp ? 'none' : 'block';
   }
+  // Show/hide ACP model selector (only for copilot-acp)
+  var acpOpt = document.getElementById('opt-acpModel');
+  if (acpOpt) {
+    acpOpt.style.display = (model === 'copilot-acp') ? 'block' : 'none';
+  }
+}
+
+function getACPModel() {
+  var el = document.getElementById('selACPModel');
+  return (el && el.value) ? el.value : '';
 }
 
 // --- Model option filtering per theme (LCARS-restricted) ---
