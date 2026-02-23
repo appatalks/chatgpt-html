@@ -1472,15 +1472,20 @@ async function renderEvaResponse(content, txtOutput) {
   // Detect image placeholders — multiple patterns models use
   var imagePatterns = [
     /\[Image of ([^\]]+)\]/gi,           // [Image of description]
-    /\[image:\s*([^\]]+)\]/gi,           // [image: description]  
+    /\[image:\s*([^\]]+)\]/gi,           // [image: description]
+    /\[🖼️?\s*([^\]]+)\]/gi,             // [🖼️ description] or [🖼 description]
     /!\[([^\]]*)\]\(\s*\)/g              // ![alt]() — empty URL markdown images
   ];
 
   var imagePlaceholders = [];
+  var seen = {};
   imagePatterns.forEach(function(rx) {
     var match;
     while ((match = rx.exec(text)) !== null) {
-      imagePlaceholders.push({ full: match[0], query: match[1].trim() });
+      if (!seen[match[0]]) {
+        seen[match[0]] = true;
+        imagePlaceholders.push({ full: match[0], query: _extractImageSubject(match[1].trim()) });
+      }
     }
   });
 
@@ -1536,6 +1541,41 @@ async function renderEvaResponse(content, txtOutput) {
 }
 
 /**
+ * Extract the key subject from a verbose image description.
+ * "GitHub's Octocat mascot - a friendly cartoon cat..." → "GitHub Octocat mascot"
+ */
+function _extractImageSubject(rawDesc) {
+  if (!rawDesc) return '';
+  var desc = rawDesc;
+
+  // Cut at first " - " or " — " (models often add long descriptions after)
+  var dashIdx = desc.search(/\s[-–—]\s/);
+  if (dashIdx > 5) desc = desc.substring(0, dashIdx);
+
+  // Cut at first period or comma if the remaining is still long
+  if (desc.length > 60) {
+    var cutIdx = desc.search(/[.,;:]/);
+    if (cutIdx > 5) desc = desc.substring(0, cutIdx);
+  }
+
+  // Remove filler/adjective words for a cleaner search query
+  desc = desc
+    .replace(/^(an?|the|image of|picture of|photo of|showing|depicting|illustration of)\s+/gi, '')
+    .replace(/(friendly|cartoon|cute|classic|iconic|simple|round|large|small|playful|beloved)\s+/gi, '')
+    .replace(/['']s\b/g, '')  // possessives
+    .replace(/\s+/g, ' ')
+    .trim();
+
+  // If still too long, take just the first ~6 meaningful words
+  var words = desc.split(/\s+/);
+  if (words.length > 6) {
+    desc = words.slice(0, 6).join(' ');
+  }
+
+  return desc || rawDesc.substring(0, 40);
+}
+
+/**
  * Search for an image using Google Custom Search API.
  * Uses multiple search strategies for better relevance.
  */
@@ -1544,13 +1584,9 @@ async function _searchImage(query) {
     return null;
   }
 
-  // Clean up the query — remove filler words for better search results
-  var cleanQuery = query
-    .replace(/^(an?|the|image of|picture of|photo of|showing|depicting)\s+/gi, '')
-    .replace(/\s+(character|mascot|logo|icon|symbol)\s*$/gi, ' $1') // keep these
-    .trim();
-
-  if (!cleanQuery) cleanQuery = query;
+  // The query is already cleaned by _extractImageSubject
+  var cleanQuery = query.trim();
+  if (!cleanQuery) return null;
 
   try {
     var url = 'https://www.googleapis.com/customsearch/v1?' +
