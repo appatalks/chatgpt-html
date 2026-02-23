@@ -17,10 +17,62 @@ function getCopilotMode(modelValue) {
 
 function getACPBridgeUrl() {
   var el = document.getElementById('txtACPBridgeUrl');
-  if (el && el.value.trim()) return el.value.trim();
+  if (el && el.value.trim() && el.value.trim() !== 'http://localhost:8888') return el.value.trim();
   var stored = localStorage.getItem('acp_bridge_url');
-  if (stored) return stored;
+  if (stored && stored !== 'http://localhost:8888') return stored;
   return 'http://localhost:8888';
+}
+
+// Auto-detect a reachable ACP bridge and cache the result
+var _acpBridgeCache = null;
+async function detectACPBridge() {
+  if (_acpBridgeCache) return _acpBridgeCache;
+
+  // Priority list: user-configured, same-origin server, localhost
+  var candidates = [];
+  var configured = getACPBridgeUrl();
+  candidates.push(configured);
+
+  // Try same host as the page (for when bridge runs on the web server)
+  if (location.hostname && location.hostname !== 'localhost' && location.hostname !== '127.0.0.1') {
+    candidates.push(location.protocol + '//' + location.hostname + ':8888');
+    candidates.push('http://' + location.hostname + ':8888');
+  }
+
+  // Localhost fallback
+  if (candidates.indexOf('http://localhost:8888') < 0) {
+    candidates.push('http://localhost:8888');
+  }
+
+  // Deduplicate
+  var seen = {};
+  candidates = candidates.filter(function(u) {
+    if (seen[u]) return false;
+    seen[u] = true;
+    return true;
+  });
+
+  for (var i = 0; i < candidates.length; i++) {
+    try {
+      var resp = await fetch(candidates[i].replace(/\/+$/, '') + '/health', {
+        method: 'GET',
+        signal: AbortSignal.timeout(3000)
+      });
+      if (resp.ok) {
+        var data = await resp.json();
+        if (data.status === 'ok') {
+          _acpBridgeCache = candidates[i];
+          console.log('[Copilot] ACP bridge found at: ' + candidates[i]);
+          return candidates[i];
+        }
+      }
+    } catch (e) {
+      // Try next
+    }
+  }
+
+  // Nothing found, return configured value anyway
+  return configured;
 }
 
 // --- Main send function ---
@@ -173,9 +225,10 @@ async function _copilotSendModelsAPI(messages, modelValue, txtOutput, storageKey
 // --- ACP Bridge mode ---
 
 async function _copilotSendACP(messages, question, txtOutput, storageKey) {
-  var bridgeUrl = getACPBridgeUrl();
+  // Auto-detect bridge URL (tries configured, same-host, localhost)
+  var bridgeUrl = await detectACPBridge();
 
-  setStatus('info', 'Sending to Copilot via ACP Bridge...');
+  setStatus('info', 'Sending to Copilot via ACP Bridge (' + bridgeUrl + ')...');
 
   try {
     var url = bridgeUrl.replace(/\/+$/, '') + '/v1/chat/completions';

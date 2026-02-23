@@ -26,6 +26,9 @@ This allows you to easily interact with OpenAI and Google Generative APIs.
 - OpenAI `gpt-5-mini` (experimental) and `latest` alias (per OpenAI latest-model guidance)
 - GitHub Copilot Models API (GPT-4o, o3-mini via GitHub PAT)
 - GitHub Copilot ACP Bridge (uses your Copilot license — access to GPT-4o, Claude, Gemini, and more via `acp_bridge.py`)
+  - Auto-detects bridge on same server, localhost, or custom URL
+  - Systemd service: `sudo ./acp_setup.sh` (requires 64-bit server)
+  - Local mode: `python3 acp_bridge.py` on any 64-bit machine
 - Latest Google Gemini 2.0 ```Thinking``` model
 - [lmstudio API](https://lmstudio.ai/docs/api/openai-api) local models 
 - Dall-E Image Generation
