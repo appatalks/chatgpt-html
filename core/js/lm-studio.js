@@ -73,57 +73,9 @@ function lmsSend() {
                 .then(async (result) => {
                         const candidate = (result && result.choices && result.choices[0] && result.choices[0].message && result.choices[0].message.content) || '';
 
-                        // Render Markdown like OpenAI path; inline image placeholders if present
+                        // Render via unified renderer
                         const out = document.getElementById("txtOutput");
-                        let content = String(candidate || '').trim();
-
-                        try {
-                            if (content.includes("Image of")) {
-                                let formattedResult = content.replace(/\n\n/g, "\n").trim();
-                                const imagePlaceholderRegex = /\[(Image of (.*?))\]/g;
-                                const imagePlaceholders = formattedResult.match(imagePlaceholderRegex)?.slice(0, 3);
-
-                                if (imagePlaceholders && imagePlaceholders.length) {
-                                    for (let i = 0; i < Math.min(imagePlaceholders.length, 3); i++) {
-                                        const placeholder = imagePlaceholders[i];
-                                        const searchQuery = placeholder.substring(10, placeholder.length - 1).trim();
-                                        try {
-                                            const searchResult = await fetchGoogleImages(searchQuery);
-                                            if (searchResult && searchResult.items && searchResult.items.length > 0) {
-                                                const topImage = searchResult.items[0];
-                                                const imageLink = topImage.link;
-                                                formattedResult = formattedResult.replace(placeholder, `<img src="${imageLink}" title="${searchQuery}" alt="${searchQuery}">`);
-                                            }
-                                        } catch (err) {
-                                            console.error("Error fetching image:", err);
-                                        }
-                                    }
-                                    // Tokenize inserted <img> tags, run markdown safely, then restore <img>
-                                    const imgFragments = [];
-                                    const tokenized = formattedResult.replace(/<img[^>]*>/g, (m) => {
-                                        imgFragments.push(m);
-                                        return `\u0000IMG${imgFragments.length - 1}\u0000`;
-                                    });
-                                    const mdSafe = (typeof renderMarkdown === 'function') ? renderMarkdown(tokenized) : tokenized;
-                                    const restored = mdSafe.replace(/\u0000IMG(\d+)\u0000/g, (m, idx) => imgFragments[Number(idx)] || m);
-                                    out.innerHTML += '<div class="chat-bubble eva-bubble">' + '<span class="eva">Eva:</span> ' + '<div class="md">' + restored + '</div>' + '</div>';
-                                    out.scrollTop = out.scrollHeight;
-                                } else {
-                                    const mdHtml = (typeof renderMarkdown === 'function') ? renderMarkdown(content) : content;
-                                    out.innerHTML += '<div class="chat-bubble eva-bubble">' + '<span class="eva">Eva:</span> ' + '<div class="md">' + mdHtml + '</div>' + '</div>';
-                                    out.scrollTop = out.scrollHeight;
-                                }
-                            } else {
-                                const mdHtml = (typeof renderMarkdown === 'function') ? renderMarkdown(content) : content;
-                                out.innerHTML += '<div class="chat-bubble eva-bubble">' + '<span class="eva">Eva:</span> ' + '<div class="md">' + mdHtml + '</div>' + '</div>';
-                                out.scrollTop = out.scrollHeight;
-                            }
-                        } catch (e) {
-                            console.error('LM Studio render error:', e);
-                            // Fallback to plain text
-                            out.innerHTML += '<div class="chat-bubble eva-bubble">' + '<span class="eva">Eva:</span> ' + content + '</div>';
-                            out.scrollTop = out.scrollHeight;
-                        }
+                        await renderEvaResponse(candidate, out);
 
                         // Update conversation history
                         openLLMessages.push({ role: "user", content: sQuestion });

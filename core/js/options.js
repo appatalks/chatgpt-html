@@ -1448,6 +1448,146 @@ function escapeHtml(str) {
     .replace(/'/g, '&#39;');
 }
 
+// --- Unified Response Renderer ---
+// Single function all models call to render Eva's response with images
+
+/**
+ * Render an Eva response with markdown and inline images.
+ * Detects [Image of ...] placeholders AND markdown image syntax ![alt](url),
+ * fetches images from Google Image Search, and falls back gracefully.
+ *
+ * @param {string} content   - Raw response text from the AI
+ * @param {HTMLElement} txtOutput - The output container element
+ * @returns {Promise<void>}
+ */
+async function renderEvaResponse(content, txtOutput) {
+  if (!content || !content.trim()) {
+    txtOutput.innerHTML += '<div class="chat-bubble eva-bubble"><span class="eva">Eva:</span> Sorry, can you please ask me in another way?</div>';
+    txtOutput.scrollTop = txtOutput.scrollHeight;
+    return;
+  }
+
+  var text = content.trim();
+
+  // Detect image placeholders — multiple patterns models use
+  var imagePatterns = [
+    /\[Image of ([^\]]+)\]/gi,           // [Image of description]
+    /\[image:\s*([^\]]+)\]/gi,           // [image: description]  
+    /!\[([^\]]*)\]\(\s*\)/g              // ![alt]() — empty URL markdown images
+  ];
+
+  var imagePlaceholders = [];
+  imagePatterns.forEach(function(rx) {
+    var match;
+    while ((match = rx.exec(text)) !== null) {
+      imagePlaceholders.push({ full: match[0], query: match[1].trim() });
+    }
+  });
+
+  // Limit to 3 images per response
+  imagePlaceholders = imagePlaceholders.slice(0, 3);
+
+  // Fetch images in parallel if we have search keys
+  if (imagePlaceholders.length > 0 && typeof GOOGLE_SEARCH_KEY !== 'undefined' && GOOGLE_SEARCH_KEY) {
+    var fetchPromises = imagePlaceholders.map(function(ph) {
+      return _searchImage(ph.query).then(function(url) {
+        return { placeholder: ph, url: url };
+      }).catch(function() {
+        return { placeholder: ph, url: null };
+      });
+    });
+
+    var results = await Promise.all(fetchPromises);
+
+    results.forEach(function(r) {
+      if (r.url) {
+        // Replace placeholder with image tag
+        var imgTag = '<img src="' + escapeHtml(r.url) + '" title="' + escapeHtml(r.placeholder.query) + '" alt="' + escapeHtml(r.placeholder.query) + '" class="eva-inline-img">';
+        text = text.replace(r.placeholder.full, imgTag);
+      } else {
+        // Replace with a styled placeholder showing what was requested
+        text = text.replace(r.placeholder.full, '[🖼️ ' + r.placeholder.query + ']');
+      }
+    });
+
+    // Tokenize <img> tags before markdown to protect them
+    var imgFragments = [];
+    text = text.replace(/<img[^>]*>/g, function(m) {
+      imgFragments.push(m);
+      return '\u0000IMG' + (imgFragments.length - 1) + '\u0000';
+    });
+
+    // Render markdown
+    var html = (typeof renderMarkdown === 'function') ? renderMarkdown(text) : text;
+
+    // Restore <img> tags
+    html = html.replace(/\u0000IMG(\d+)\u0000/g, function(m, idx) {
+      return imgFragments[Number(idx)] || m;
+    });
+
+    txtOutput.innerHTML += '<div class="chat-bubble eva-bubble"><span class="eva">Eva:</span> <div class="md">' + html + '</div></div>';
+  } else {
+    // No images or no search keys — just render markdown
+    var html2 = (typeof renderMarkdown === 'function') ? renderMarkdown(text) : text;
+    txtOutput.innerHTML += '<div class="chat-bubble eva-bubble"><span class="eva">Eva:</span> <div class="md">' + html2 + '</div></div>';
+  }
+
+  txtOutput.scrollTop = txtOutput.scrollHeight;
+}
+
+/**
+ * Search for an image using Google Custom Search API.
+ * Uses multiple search strategies for better relevance.
+ */
+async function _searchImage(query) {
+  if (!query || typeof GOOGLE_SEARCH_KEY === 'undefined' || !GOOGLE_SEARCH_KEY) {
+    return null;
+  }
+
+  // Clean up the query — remove filler words for better search results
+  var cleanQuery = query
+    .replace(/^(an?|the|image of|picture of|photo of|showing|depicting)\s+/gi, '')
+    .replace(/\s+(character|mascot|logo|icon|symbol)\s*$/gi, ' $1') // keep these
+    .trim();
+
+  if (!cleanQuery) cleanQuery = query;
+
+  try {
+    var url = 'https://www.googleapis.com/customsearch/v1?' +
+      'key=' + GOOGLE_SEARCH_KEY +
+      '&cx=' + GOOGLE_SEARCH_ID +
+      '&searchType=image' +
+      '&num=3' +  // fetch 3, pick best
+      '&imgSize=medium' +
+      '&safe=active' +
+      '&q=' + encodeURIComponent(cleanQuery);
+
+    var resp = await fetch(url);
+    var data = await resp.json();
+
+    if (data.items && data.items.length > 0) {
+      // Prefer results from well-known domains
+      var preferred = data.items.find(function(item) {
+        var link = (item.link || '').toLowerCase();
+        return link.includes('github') || link.includes('wikipedia') ||
+               link.includes('wikimedia') || link.includes('cdn');
+      });
+      return (preferred || data.items[0]).link;
+    }
+    return null;
+  } catch (e) {
+    console.error('Image search error:', e);
+    return null;
+  }
+}
+
+// Keep backward compatibility — old code may call fetchGoogleImages
+async function fetchGoogleImages(query) {
+  var url = await _searchImage(query);
+  if (url) return { items: [{ link: url }] };
+  return { items: [] };
+}
+
 // Capture Shift + Enter Keys for new line
 function shiftBreak() {
 document.querySelector("#txtMsg").addEventListener("keydown", function(event) {

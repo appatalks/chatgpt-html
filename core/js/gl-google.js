@@ -94,51 +94,12 @@ function geminiSend() {
                         document.getElementById("txtOutput").innerHTML += '<span class="eva-thoughts">Eva\'s Thoughts:</span><br>' + thoughts + "<br><br>\n";
                     }
 
-                                        // Display main response as Markdown with optional inline images
-                                        (async () => {
-                                            let mainResponse = nonThoughts.map(part => part.text).join("\n").trim();
-                                            const out = document.getElementById("txtOutput");
-                                            try {
-                                                if (mainResponse.includes("Image of")) {
-                                                    let formatted = mainResponse.replace(/\n\n/g, "\n");
-                                                    const rx = /\[(Image of (.*?))\]/g;
-                                                    const matches = formatted.match(rx)?.slice(0, 3);
-                                                    if (matches && matches.length) {
-                                                        for (let i = 0; i < matches.length; i++) {
-                                                            const placeholder = matches[i];
-                                                            const q = placeholder.substring(10, placeholder.length - 1).trim();
-                                                            try {
-                                                                const res = await fetchGoogleImages(q);
-                                                                const link = res && res.items && res.items[0] && res.items[0].link;
-                                                                if (link) {
-                                                                    formatted = formatted.replace(placeholder, `<img src="${link}" title="${q}" alt="${q}">`);
-                                                                }
-                                                            } catch (e) {
-                                                                console.error('Error fetching image:', e);
-                                                            }
-                                                        }
-                                                    }
-                                                    // Tokenize <img>, render MD, restore
-                                                    const imgs = [];
-                                                    const tokenized = formatted.replace(/<img[^>]*>/g, m => {
-                                                        imgs.push(m);
-                                                        return `\u0000IMG${imgs.length - 1}\u0000`;
-                                                    });
-                                                    const mdSafe = (typeof renderMarkdown === 'function') ? renderMarkdown(tokenized) : tokenized;
-                                                    const restored = mdSafe.replace(/\u0000IMG(\d+)\u0000/g, (m, i) => imgs[Number(i)] || m);
-                                                    out.innerHTML += '<div class="chat-bubble eva-bubble">' + '<span class="eva">Eva:</span> ' + '<div class="md">' + restored + '</div>' + '</div>';
-                                                    out.scrollTop = out.scrollHeight;
-                                                } else {
-                                                    const mdHtml = (typeof renderMarkdown === 'function') ? renderMarkdown(mainResponse) : mainResponse;
-                                                    out.innerHTML += '<div class="chat-bubble eva-bubble">' + '<span class="eva">Eva:</span> ' + '<div class="md">' + mdHtml + '</div>' + '</div>';
-                                                    out.scrollTop = out.scrollHeight;
-                                                }
-                                            } catch (e) {
-                                                console.error('Gemini render error:', e);
-                                                out.innerHTML += '<div class="chat-bubble eva-bubble">' + '<span class="eva">Eva:</span> ' + mainResponse + '</div>';
-                                                out.scrollTop = out.scrollHeight;
-                                            }
-                                        })();
+                    // Display main response via unified renderer
+                    (async () => {
+                        let mainResponse = nonThoughts.map(part => part.text).join("\n").trim();
+                        const out = document.getElementById("txtOutput");
+                        await renderEvaResponse(mainResponse, out);
+                    })();
 
                     // Update conversation history: log both thoughts and non-thoughts
                     geminiMessages.push({ role: "user", parts: [{ text: sQuestion }] });
@@ -153,14 +114,4 @@ function geminiSend() {
     });
 }
 
-function fetchGoogleImages(query) {
-    const maxResults = 1;
-
-    return fetch(`https://www.googleapis.com/customsearch/v1?key=${GOOGLE_SEARCH_KEY}&cx=${GOOGLE_SEARCH_ID}&searchType=image&num=${maxResults}&q=${encodeURIComponent(query)}`)
-        .then(response => response.json())
-        .then(result => result)
-        .catch(error => {
-            console.error("Error fetching Google Images:", error);
-            throw error;
-        });
-}
+// fetchGoogleImages is now in options.js (unified image handling)

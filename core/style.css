@@ -959,6 +959,27 @@ body.theme-lcars #lcarsChipPrint #printButton::before {
   background-image: url('img/icon-print.svg');
 }
 
+/* Inline images in Eva responses */
+.eva-inline-img {
+  display: block;
+  max-width: 360px;
+  max-height: 300px;
+  width: auto;
+  height: auto;
+  border-radius: 8px;
+  margin: 8px 0;
+  border: 1px solid rgba(255,255,255,0.1);
+  cursor: pointer;
+  transition: transform 0.2s;
+}
+.eva-inline-img:hover { transform: scale(1.02); }
+/* Click to open full size */
+.eva-inline-img { cursor: zoom-in; }
+body.theme-lcars .eva-inline-img {
+  border-color: rgba(255,255,255,0.15);
+  border-radius: 4px;
+}
+
 /* Markdown inside #txtOutput */
 #txtOutput .md h1,
 #txtOutput .md h2,

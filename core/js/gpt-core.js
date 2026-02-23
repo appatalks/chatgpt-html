@@ -95,60 +95,8 @@ function trboSend() {
 	    // console.log("gpt-core.js Line 96" + oJson.choices + "" + oJson.choices[0].message);
 	    // Always Run Response 
             var s = oJson.choices[0].message;
-	    // Empty Response Handling	     
-	    if (s.content == "") {
-        	txtOutput.innerHTML += '<span class="eva">Eva: Im sorry can you please ask me in another way? </span>';
-                var element = document.getElementById("txtOutput");
-                element.scrollTop = element.scrollHeight;
-
-	    }  
-		
-	      // Google Image Search 
-	      if (s.content.includes("Image of")) {
-		let formattedResult = s.content.replace(/\n\n/g, "\n").trim();
-		const imagePlaceholderRegex = /\[(Image of (.*?))\]/g;
-		const imagePlaceholders = formattedResult.match(imagePlaceholderRegex)?.slice(0, 3);
-
-        if (imagePlaceholders) {
-          for (let i = 0; i < Math.min(imagePlaceholders.length, 3); i++) {
-            const placeholder = imagePlaceholders[i];
-            const searchQuery = placeholder.substring(10, placeholder.length - 1).trim();
-            try {
-              const searchResult = await fetchGoogleImages(searchQuery);
-              if (searchResult && searchResult.items && searchResult.items.length > 0) {
-                const topImage = searchResult.items[0];
-                const imageLink = topImage.link;
-                formattedResult = formattedResult.replace(placeholder, `<img src="${imageLink}" title="${searchQuery}" alt="${searchQuery}">`);
-              }
-            } catch (error) {
-              console.error("Error fetching image:", error);
-            }
-          }
-          // Tokenize inserted <img> tags, run markdown safely, then restore <img>
-          const imgFragments = [];
-          const tokenized = formattedResult.replace(/<img[^>]*>/g, (m) => {
-            imgFragments.push(m);
-            return `\u0000IMG${imgFragments.length - 1}\u0000`;
-          });
-          const mdSafe = renderMarkdown(tokenized);
-          const restored = mdSafe.replace(/\u0000IMG(\d+)\u0000/g, (m, idx) => imgFragments[Number(idx)] || m);
-          txtOutput.innerHTML += '<div class="chat-bubble eva-bubble">' + '<span class="eva">Eva:</span> ' + '<div class="md">' + restored + '</div>' + '</div>';
-		   var element = document.getElementById("txtOutput");
-    		   element.scrollTop = element.scrollHeight;
-          	}
-		else {
-  const mdHtml = renderMarkdown(s.content.trim());
-        txtOutput.innerHTML += '<div class="chat-bubble eva-bubble">' + '<span class="eva">Eva:</span> ' + '<div class="md">' + mdHtml + '</div>' + '</div>';
-                    var element = document.getElementById("txtOutput");
-                    element.scrollTop = element.scrollHeight;
-		  }
-	      } // close s.content.includes 
-	      else {
-      const mdHtml = renderMarkdown(s.content.trim());
-      txtOutput.innerHTML += '<div class="chat-bubble eva-bubble">' + '<span class="eva">Eva:</span> ' + '<div class="md">' + mdHtml + '</div>' + '</div>';
-                   var element = document.getElementById("txtOutput");
-                   element.scrollTop = element.scrollHeight;
- 	      }	
+	    // Empty Response Handling / Render via unified renderer
+	    await renderEvaResponse(s.content, txtOutput);
        	
             // Send to Local Storage - possibly way to intigrate into memory
 	    let outputWithoutTags = txtOutput.innerText + "\n";

@@ -265,28 +265,19 @@ async function _copilotSendACP(messages, question, txtOutput, storageKey) {
 
 // --- Shared response rendering ---
 
-function _copilotRenderResponse(data, txtOutput, modelLabel) {
+async function _copilotRenderResponse(data, txtOutput, modelLabel) {
   var content = (data.choices && data.choices[0] && data.choices[0].message && data.choices[0].message.content) || '';
 
-  if (!content) {
-    txtOutput.innerHTML += '<div class="chat-bubble eva-bubble"><span class="eva">Eva:</span> Sorry, can you please ask me in another way?</div>';
-  } else {
-    // Handle image placeholders
-    if (content.includes('Image of') && typeof fetchGoogleImages === 'function') {
-      _copilotRenderWithImages(content, txtOutput);
-    } else {
-      var mdHtml = (typeof renderMarkdown === 'function') ? renderMarkdown(content.trim()) : content;
-      txtOutput.innerHTML += '<div class="chat-bubble eva-bubble"><span class="eva">Eva:</span> <div class="md">' + mdHtml + '</div></div>';
-    }
+  // Use unified renderer
+  await renderEvaResponse(content, txtOutput);
 
+  if (content) {
     lastResponse = content;
-
     var outputWithoutTags = txtOutput.innerText + '\n';
     masterOutput += outputWithoutTags;
     localStorage.setItem('masterOutput', masterOutput);
   }
 
-  txtOutput.scrollTop = txtOutput.scrollHeight;
   setStatus('info', 'Response received from ' + modelLabel);
 
   // Auto-speak
@@ -295,36 +286,6 @@ function _copilotRenderResponse(data, txtOutput, modelLabel) {
     speakText();
     var audio = document.getElementById('audioPlayback');
     if (audio) audio.setAttribute('autoplay', true);
-  }
-}
-
-async function _copilotRenderWithImages(content, txtOutput) {
-  var formattedResult = content.replace(/\n\n/g, '\n').trim();
-  var imgRx = /\[(Image of (.*?))\]/g;
-  var imgMatches = formattedResult.match(imgRx);
-  if (imgMatches) {
-    imgMatches = imgMatches.slice(0, 3);
-    for (var i = 0; i < imgMatches.length; i++) {
-      var placeholder = imgMatches[i];
-      var searchQuery = placeholder.substring(10, placeholder.length - 1).trim();
-      try {
-        var searchResult = await fetchGoogleImages(searchQuery);
-        if (searchResult && searchResult.items && searchResult.items.length > 0) {
-          formattedResult = formattedResult.replace(placeholder, '<img src="' + searchResult.items[0].link + '" title="' + searchQuery + '" alt="' + searchQuery + '">');
-        }
-      } catch (e) { console.error('Image fetch error:', e); }
-    }
-    var imgFragments = [];
-    var tokenized = formattedResult.replace(/<img[^>]*>/g, function(m) {
-      imgFragments.push(m);
-      return '\u0000IMG' + (imgFragments.length - 1) + '\u0000';
-    });
-    var mdSafe = (typeof renderMarkdown === 'function') ? renderMarkdown(tokenized) : tokenized;
-    var restored = mdSafe.replace(/\u0000IMG(\d+)\u0000/g, function(m, idx) { return imgFragments[Number(idx)] || m; });
-    txtOutput.innerHTML += '<div class="chat-bubble eva-bubble"><span class="eva">Eva:</span> <div class="md">' + restored + '</div></div>';
-  } else {
-    var mdHtml = (typeof renderMarkdown === 'function') ? renderMarkdown(content.trim()) : content;
-    txtOutput.innerHTML += '<div class="chat-bubble eva-bubble"><span class="eva">Eva:</span> <div class="md">' + mdHtml + '</div></div>';
   }
 }
 
