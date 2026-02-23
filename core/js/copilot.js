@@ -366,7 +366,7 @@ async function applyMCPConfig() {
   // Azure MCP
   var azureCheck = document.getElementById('mcpAzure');
   if (azureCheck && azureCheck.checked) {
-    mcpServers['Azure MCP Server'] = {
+    mcpServers['azure-mcp-server'] = {
       command: 'npx',
       args: ['-y', '@azure/mcp@latest', 'server', 'start'],
       env: { AZURE_MCP_COLLECT_TELEMETRY: 'false' }
@@ -377,7 +377,7 @@ async function applyMCPConfig() {
   var githubCheck = document.getElementById('mcpGitHub');
   if (githubCheck && githubCheck.checked) {
     var ghPat = getAuthKey('GITHUB_PAT');
-    mcpServers['GitHub MCP Server'] = {
+    mcpServers['github-mcp-server'] = {
       command: 'docker',
       args: ['run', '-i', '--rm', '-e', 'GITHUB_PERSONAL_ACCESS_TOKEN', 'ghcr.io/github/github-mcp-server'],
       env: ghPat ? { GITHUB_PERSONAL_ACCESS_TOKEN: ghPat } : {}
@@ -425,8 +425,8 @@ async function refreshMCPStatus() {
         // Sync checkboxes
         var azureCheck = document.getElementById('mcpAzure');
         var githubCheck = document.getElementById('mcpGitHub');
-        if (azureCheck) azureCheck.checked = active.indexOf('Azure MCP Server') >= 0;
-        if (githubCheck) githubCheck.checked = active.indexOf('GitHub MCP Server') >= 0;
+      if (azureCheck) azureCheck.checked = active.indexOf('azure-mcp-server') >= 0;
+      if (githubCheck) githubCheck.checked = active.indexOf('github-mcp-server') >= 0;
       } else {
         statusEl.innerHTML = '<em>No MCP servers active</em>';
       }
@@ -446,8 +446,8 @@ document.addEventListener('DOMContentLoaded', function() {
       var cfg = JSON.parse(saved);
       var azureCheck = document.getElementById('mcpAzure');
       var githubCheck = document.getElementById('mcpGitHub');
-      if (azureCheck) azureCheck.checked = !!cfg['Azure MCP Server'];
-      if (githubCheck) githubCheck.checked = !!cfg['GitHub MCP Server'];
+      if (azureCheck) azureCheck.checked = !!cfg['azure-mcp-server'];
+      if (githubCheck) githubCheck.checked = !!cfg['github-mcp-server'];
     }
   } catch (e) {}
 });

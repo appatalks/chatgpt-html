@@ -57,6 +57,7 @@ class ACPClient:
         self.reader_thread = None
         self.agent_info = {}
         self.alive = False
+        self.terminals = {}  # terminal_id -> {"process": Popen, "output": str}
 
     # --- Lifecycle ---
 
@@ -95,7 +96,9 @@ class ACPClient:
         # Initialize connection
         init_result = self._send_request("initialize", {
             "protocolVersion": self.PROTOCOL_VERSION,
-            "clientCapabilities": {},
+            "clientCapabilities": {
+                "terminal": True
+            },
             "clientInfo": {
                 "name": "eva-acp-bridge",
                 "title": "Eva ACP Bridge",
@@ -254,8 +257,21 @@ class ACPClient:
             self._send_response(msg["id"], {"outcome": {"outcome": "granted"}})
             return
 
-        # Server-initiated requests for fs/terminal (decline since we're a chat bridge)
-        if "id" in msg and msg.get("method", "").startswith(("fs/", "terminal/")):
+        # Server-initiated requests for terminal
+        if "id" in msg and msg.get("method") == "terminal/create":
+            self._handle_terminal_create(msg["id"], msg.get("params", {}))
+            return
+
+        if "id" in msg and msg.get("method") == "terminal/output":
+            self._handle_terminal_output(msg["id"], msg.get("params", {}))
+            return
+
+        if "id" in msg and msg.get("method") == "terminal/release":
+            self._handle_terminal_release(msg["id"], msg.get("params", {}))
+            return
+
+        # Server-initiated requests for fs (decline)
+        if "id" in msg and msg.get("method", "").startswith("fs/"):
             print(f"[ACP] Declining capability request: {msg.get('method')}")
             self._send_response(msg["id"], {
                 "error": {"code": -32601, "message": "Method not supported by bridge"}
@@ -297,6 +313,101 @@ class ACPClient:
             title = update.get("title", "")
             if title or status:
                 print(f"[ACP] Tool: {title} [{status}]")
+
+    # --- Terminal handlers (for ACP tool execution) ---
+
+    def _handle_terminal_create(self, rid, params):
+        """Execute a shell command requested by the agent."""
+        command = params.get("command", "")
+        args = params.get("args", [])
+        cwd = params.get("cwd") or self.cwd
+        env_vars = params.get("env", [])
+
+        # Build the full command
+        full_cmd = command
+        if args:
+            full_cmd = command + " " + " ".join(args)
+
+        print(f"[ACP Terminal] Creating terminal: {full_cmd[:100]}")
+
+        # Build environment
+        env = os.environ.copy()
+        for ev in env_vars:
+            if isinstance(ev, dict) and "name" in ev and "value" in ev:
+                env[ev["name"]] = ev["value"]
+
+        import uuid
+        terminal_id = str(uuid.uuid4())
+
+        try:
+            proc = subprocess.Popen(
+                full_cmd,
+                shell=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                cwd=cwd,
+                env=env
+            )
+            self.terminals[terminal_id] = {"process": proc, "output": ""}
+
+            # Read output in background
+            def read_output():
+                try:
+                    out, _ = proc.communicate(timeout=60)
+                    self.terminals[terminal_id]["output"] = out.decode("utf-8", errors="replace")
+                    self.terminals[terminal_id]["exit_code"] = proc.returncode
+                except subprocess.TimeoutExpired:
+                    proc.kill()
+                    out, _ = proc.communicate()
+                    self.terminals[terminal_id]["output"] = out.decode("utf-8", errors="replace") + "\n[TIMEOUT]"
+                    self.terminals[terminal_id]["exit_code"] = -1
+
+            t = threading.Thread(target=read_output, daemon=True)
+            t.start()
+
+            self._send_response(rid, {"terminalId": terminal_id})
+            print(f"[ACP Terminal] Started: {terminal_id}")
+
+        except Exception as e:
+            print(f"[ACP Terminal] Error: {e}")
+            self._send_response(rid, {"error": {"code": -32000, "message": str(e)}})
+
+    def _handle_terminal_output(self, rid, params):
+        """Return terminal output and exit status."""
+        terminal_id = params.get("terminalId", "")
+        term = self.terminals.get(terminal_id)
+
+        if not term:
+            self._send_response(rid, {"error": {"code": -32000, "message": "Unknown terminal"}})
+            return
+
+        proc = term["process"]
+        # Wait a bit if still running
+        if proc.poll() is None:
+            try:
+                proc.wait(timeout=30)
+            except subprocess.TimeoutExpired:
+                pass
+
+        output = term.get("output", "")
+        exit_code = term.get("exit_code", proc.returncode)
+
+        print(f"[ACP Terminal] Output ({terminal_id[:8]}): exit={exit_code}, len={len(output)}")
+
+        self._send_response(rid, {
+            "output": output,
+            "exitCode": exit_code if exit_code is not None else -1,
+            "isRunning": proc.poll() is None
+        })
+
+    def _handle_terminal_release(self, rid, params):
+        """Release a terminal."""
+        terminal_id = params.get("terminalId", "")
+        term = self.terminals.pop(terminal_id, None)
+        if term and term["process"].poll() is None:
+            term["process"].kill()
+        print(f"[ACP Terminal] Released: {terminal_id[:8] if terminal_id else '?'}")
+        self._send_response(rid, {})
 
     # --- Public API ---
 
@@ -591,7 +702,7 @@ def main():
             print(f"[Bridge] Warning: Failed to parse MCP config: {e}")
 
     if args.enable_azure_mcp:
-        mcp_config["Azure MCP Server"] = {
+        mcp_config["azure-mcp-server"] = {
             "command": "npx",
             "args": ["-y", "@azure/mcp@latest", "server", "start"],
             "env": {"AZURE_MCP_COLLECT_TELEMETRY": "false"}
@@ -602,7 +713,7 @@ def main():
         gh_token = os.environ.get("GITHUB_PERSONAL_ACCESS_TOKEN", "")
         if not gh_token:
             print("[Bridge] Warning: GITHUB_PERSONAL_ACCESS_TOKEN not set. GitHub MCP tools may not work.")
-        mcp_config["GitHub MCP Server"] = {
+        mcp_config["github-mcp-server"] = {
             "command": "docker",
             "args": ["run", "-i", "--rm", "-e", "GITHUB_PERSONAL_ACCESS_TOKEN", "ghcr.io/github/github-mcp-server"],
             "env": {"GITHUB_PERSONAL_ACCESS_TOKEN": gh_token} if gh_token else {}
