@@ -5,7 +5,7 @@
 //
 // Mode is determined by the selected model:
 //   copilot-*     → GitHub Models API
-//   copilot-acp   → ACP Bridge (uses copilot CLI via acp_bridge.py)
+//   copilot-acp   → ACP Bridge (uses copilot CLI via tools/acp_bridge.py)
 
 // --- Helpers ---
 
@@ -257,7 +257,7 @@ async function _copilotSendACP(messages, question, txtOutput, storageKey) {
   } catch (err) {
     var errorMessage = err.message || String(err);
     if (errorMessage.includes('Failed to fetch') || errorMessage.includes('NetworkError')) {
-      errorMessage += ' \u2014 Is the ACP bridge server running? Start it with: python3 acp_bridge.py';
+      errorMessage += ' \u2014 Is the ACP bridge server running? Start it with: python3 tools/acp_bridge.py';
     }
     _copilotHandleFetchError({ message: errorMessage }, txtOutput);
   }
@@ -434,7 +434,7 @@ async function refreshMCPStatus() {
       statusEl.innerHTML = '<em>Bridge unreachable</em>';
     }
   } catch (e) {
-    statusEl.innerHTML = '<em>Bridge not reachable — start <code>acp_bridge.py</code></em>';
+    statusEl.innerHTML = '<em>Bridge not reachable — start <code>tools/acp_bridge.py</code></em>';
   }
 }
 

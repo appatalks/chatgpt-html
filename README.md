@@ -11,7 +11,7 @@ This allows you to easily interact with OpenAI and Google Generative APIs.
 2. Open ```index.html``` and have fun!
 	- If opening via file://, copy `config.local.example.js` to `config.local.js` and set your keys there (no fetch needed).
 	- Or, serve over http(s) and keep using `config.json`.
-3. Optional: - Suno-Ai's Bark TTS Engine. Run ```server.py``` (GPU Enabled)
+3. Optional: - Suno-Ai's Bark TTS Engine. Run ```tools/barkTTS_server.py``` (GPU Enabled)
 4. **Note: You may have to review/adjust the code for your specific env. ie ```CIDR ranges```, ```NGINX/webserver``` configuration,```scripting``` piece etc.**
 5. Local usage without a server:
 	- Copy `config.local.example.js` to `config.local.js` and fill your keys.
@@ -25,10 +25,10 @@ This allows you to easily interact with OpenAI and Google Generative APIs.
 - OpenAI ```gpt-4o``` models
 - OpenAI `gpt-5-mini` (experimental) and `latest` alias (per OpenAI latest-model guidance)
 - GitHub Copilot Models API (GPT-4o, o3-mini via GitHub PAT)
-- GitHub Copilot ACP Bridge (uses your Copilot license — access to GPT-4o, Claude, Gemini, and more via `acp_bridge.py`)
+- GitHub Copilot ACP Bridge (uses your Copilot license — access to GPT-4o, Claude, Gemini, and more via `tools/acp_bridge.py`)
   - Auto-detects bridge on same server, localhost, or custom URL
-  - Systemd service: `sudo ./acp_setup.sh` (requires 64-bit server)
-  - Local mode: `python3 acp_bridge.py` on any 64-bit machine
+  - Systemd service: `sudo ./tools/acp_setup.sh` (requires 64-bit server)
+  - Local mode: `python3 tools/acp_bridge.py` on any 64-bit machine
 - Latest Google Gemini 2.0 ```Thinking``` model
 - [lmstudio API](https://lmstudio.ai/docs/api/openai-api) local models 
 - Dall-E Image Generation

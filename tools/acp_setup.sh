@@ -5,10 +5,10 @@
 # ============================================================
 #
 #  Usage:
-#    sudo ./acp_setup.sh              # Full install + service
-#    sudo ./acp_setup.sh --local      # Local-only (no systemd)
-#    sudo ./acp_setup.sh --status     # Check service status
-#    sudo ./acp_setup.sh --uninstall  # Remove service
+#    sudo ./tools/acp_setup.sh              # Full install + service
+#    sudo ./tools/acp_setup.sh --local      # Local-only (no systemd)
+#    sudo ./tools/acp_setup.sh --status     # Check service status
+#    sudo ./tools/acp_setup.sh --uninstall  # Remove service
 #
 # ============================================================
 

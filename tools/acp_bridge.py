@@ -9,9 +9,9 @@ Requirements:
   - Python 3.7+
 
 Usage:
-  python3 acp_bridge.py                    # default port 8888
-  python3 acp_bridge.py --port 9999        # custom port
-  python3 acp_bridge.py --copilot-path /usr/local/bin/copilot
+  python3 tools/acp_bridge.py                    # default port 8888
+  python3 tools/acp_bridge.py --port 9999        # custom port
+  python3 tools/acp_bridge.py --copilot-path /usr/local/bin/copilot
 
 The server exposes a single endpoint:
   POST /v1/chat/completions
