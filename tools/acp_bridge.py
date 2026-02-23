@@ -63,7 +63,7 @@ class ACPClient:
 
     def start(self):
         """Spawn copilot subprocess, initialize ACP, create session."""
-        cmd = [self.copilot_path, "--acp", "--stdio"]
+        cmd = [self.copilot_path, "--acp", "--stdio", "--allow-all-tools"]
         if self.model:
             cmd.extend(["--model", self.model])
         # Pass MCP server config via --additional-mcp-config
@@ -71,12 +71,20 @@ class ACPClient:
             mcp_json = json.dumps({"mcpServers": self.mcp_config})
             cmd.extend(["--additional-mcp-config", mcp_json])
         try:
+            # Pass env vars from MCP config to the copilot process itself
+            # (copilot spawns MCP servers as children, inheriting the env)
+            process_env = os.environ.copy()
+            for srv_name, srv_cfg in self.mcp_config.items():
+                for k, v in srv_cfg.get('env', {}).items():
+                    process_env[k] = v
+
             self.process = subprocess.Popen(
                 cmd,
                 stdin=subprocess.PIPE,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
-                bufsize=0
+                bufsize=0,
+                env=process_env
             )
         except FileNotFoundError:
             raise RuntimeError(
@@ -683,8 +691,11 @@ def main():
     parser.add_argument("--cwd", default=os.getcwd(), help="Working directory for ACP session")
     parser.add_argument("--model", default=None, help="Default AI model (e.g. claude-sonnet-4.6, gpt-5.2)")
     parser.add_argument("--mcp-config", default=None, help="Path to MCP config JSON file or inline JSON")
-    parser.add_argument("--enable-azure-mcp", action="store_true", help="Enable Azure MCP Server (Kusto, Storage, etc.)")
+    parser.add_argument("--enable-azure-mcp", action="store_true", help="Enable Azure MCP Server (requires az login)")
     parser.add_argument("--enable-github-mcp", action="store_true", help="Enable GitHub MCP Server (requires GITHUB_PERSONAL_ACCESS_TOKEN env)")
+    parser.add_argument("--enable-kusto-mcp", action="store_true", help="Enable Kusto MCP Server (DeviceCodeCredential, no subscription needed)")
+    parser.add_argument("--kusto-cluster", default="", help="Kusto cluster URL")
+    parser.add_argument("--kusto-database", default="", help="Default Kusto database name")
     args = parser.parse_args()
 
     # Build MCP config
@@ -719,6 +730,36 @@ def main():
             "env": {"GITHUB_PERSONAL_ACCESS_TOKEN": gh_token} if gh_token else {}
         }
         print("[Bridge] GitHub MCP Server enabled")
+
+    if args.enable_kusto_mcp:
+        script_dir = os.path.dirname(os.path.abspath(__file__))
+        kusto_mcp_path = os.path.join(script_dir, "kusto_mcp.py")
+        kusto_env = {}
+        if args.kusto_cluster:
+            kusto_env["KUSTO_CLUSTER_URL"] = args.kusto_cluster
+        if args.kusto_database:
+            kusto_env["KUSTO_DATABASE"] = args.kusto_database
+
+        # Pre-fetch Kusto token so the MCP subprocess doesn't need interactive auth
+        try:
+            from azure.identity import DeviceCodeCredential, TokenCachePersistenceOptions
+            print("[Bridge] Authenticating for Kusto (may prompt for device code)...")
+            cred = DeviceCodeCredential(
+                cache_persistence_options=TokenCachePersistenceOptions(allow_unencrypted_storage=True)
+            )
+            token = cred.get_token("https://kusto.kusto.windows.net/.default")
+            kusto_env["KUSTO_ACCESS_TOKEN"] = token.token
+            print(f"[Bridge] Kusto token obtained (length: {len(token.token)})")
+        except Exception as e:
+            print(f"[Bridge] Warning: Could not pre-fetch Kusto token: {e}")
+            print("[Bridge] The MCP server will try to authenticate on its own.")
+
+        mcp_config["kusto-mcp-server"] = {
+            "command": sys.executable,
+            "args": [kusto_mcp_path],
+            "env": kusto_env
+        }
+        print(f"[Bridge] Kusto MCP Server enabled (cluster: {args.kusto_cluster or 'from tool params'})")
 
     global acp_client
     print(f"[Bridge] Starting ACP bridge on port {args.port}...")

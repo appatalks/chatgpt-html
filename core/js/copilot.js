@@ -384,6 +384,21 @@ async function applyMCPConfig() {
     };
   }
 
+  // Kusto MCP
+  var kustoCheck = document.getElementById('mcpKusto');
+  if (kustoCheck && kustoCheck.checked) {
+    var kustoEnv = {};
+    var clusterEl = document.getElementById('mcpKustoCluster');
+    var dbEl = document.getElementById('mcpKustoDatabase');
+    if (clusterEl && clusterEl.value.trim()) kustoEnv.KUSTO_CLUSTER_URL = clusterEl.value.trim();
+    if (dbEl && dbEl.value.trim()) kustoEnv.KUSTO_DATABASE = dbEl.value.trim();
+    mcpServers['kusto-mcp-server'] = {
+      command: 'python3',
+      args: ['tools/kusto_mcp.py'],
+      env: kustoEnv
+    };
+  }
+
   // Save to localStorage
   localStorage.setItem('mcp_config', JSON.stringify(mcpServers));
 
@@ -427,6 +442,9 @@ async function refreshMCPStatus() {
         var githubCheck = document.getElementById('mcpGitHub');
       if (azureCheck) azureCheck.checked = active.indexOf('azure-mcp-server') >= 0;
       if (githubCheck) githubCheck.checked = active.indexOf('github-mcp-server') >= 0;
+        // Kusto
+        var kustoCheckS = document.getElementById('mcpKusto');
+        if (kustoCheckS) kustoCheckS.checked = active.indexOf('kusto-mcp-server') >= 0;
       } else {
         statusEl.innerHTML = '<em>No MCP servers active</em>';
       }
@@ -448,6 +466,25 @@ document.addEventListener('DOMContentLoaded', function() {
       var githubCheck = document.getElementById('mcpGitHub');
       if (azureCheck) azureCheck.checked = !!cfg['azure-mcp-server'];
       if (githubCheck) githubCheck.checked = !!cfg['github-mcp-server'];
+      // Kusto
+      var kustoCheckL = document.getElementById('mcpKusto');
+      if (kustoCheckL) kustoCheckL.checked = !!cfg['kusto-mcp-server'];
+      if (cfg['kusto-mcp-server'] && cfg['kusto-mcp-server'].env) {
+        var kc = document.getElementById('mcpKustoCluster');
+        var kd = document.getElementById('mcpKustoDatabase');
+        if (kc && cfg['kusto-mcp-server'].env.KUSTO_CLUSTER_URL) kc.value = cfg['kusto-mcp-server'].env.KUSTO_CLUSTER_URL;
+        if (kd && cfg['kusto-mcp-server'].env.KUSTO_DATABASE) kd.value = cfg['kusto-mcp-server'].env.KUSTO_DATABASE;
+      }
     }
   } catch (e) {}
+
+  // Kusto checkbox toggle: show/hide config fields
+  var kustoToggle = document.getElementById('mcpKusto');
+  var kustoConfig = document.getElementById('mcpKustoConfig');
+  if (kustoToggle && kustoConfig) {
+    kustoConfig.style.display = kustoToggle.checked ? 'block' : 'none';
+    kustoToggle.addEventListener('change', function() {
+      kustoConfig.style.display = kustoToggle.checked ? 'block' : 'none';
+    });
+  }
 });

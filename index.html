@@ -317,6 +317,21 @@
             Requires: <code>docker</code> on the bridge host.</p>
         </div>
 
+        <div class="mcp-preset">
+          <label>
+            <input type="checkbox" id="mcpKusto"> <strong>Kusto MCP Server (ADX)</strong>
+          </label>
+          <p class="prompt-hint">Query Azure Data Explorer with KQL. List databases, tables, schemas, sample data.<br>
+            Auth: Device code flow (works with personal Microsoft accounts, no Azure subscription needed).<br>
+            Requires: <code>azure-identity</code> Python package on the bridge host.</p>
+          <div id="mcpKustoConfig" style="margin-top:8px;margin-left:26px;display:none">
+            <label for="mcpKustoCluster" style="font-size:12px">Cluster URL:</label>
+            <input type="text" id="mcpKustoCluster" placeholder="https://kvc-xxx.region.kusto.windows.net" style="font-size:12px">
+            <label for="mcpKustoDatabase" style="font-size:12px;margin-top:4px">Default Database:</label>
+            <input type="text" id="mcpKustoDatabase" placeholder="(optional)" style="font-size:12px">
+          </div>
+        </div>
+
         <div id="mcpStatus" class="mcp-status"></div>
 
         <button type="button" class="auth-save" onclick="applyMCPConfig()">Apply MCP Config</button>
