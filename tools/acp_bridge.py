@@ -554,7 +554,11 @@ class BridgeHandler(BaseHTTPRequestHandler):
 
     def log_message(self, format, *args):
         # Quieter logging
-        sys.stderr.write(f"[Bridge] {args[0]} {args[1]} {args[2]}\n")
+        try:
+            msg = format % args if args else format
+        except (TypeError, IndexError):
+            msg = f"{format} {args}"
+        sys.stderr.write(f"[Bridge] {msg}\n")
 
 
 # ---------------------------------------------------------------------------
