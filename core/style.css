@@ -973,8 +973,43 @@ body.theme-lcars #lcarsChipPrint #printButton::before {
   transition: transform 0.2s;
 }
 .eva-inline-img:hover { transform: scale(1.02); }
-/* Click to open full size */
 .eva-inline-img { cursor: zoom-in; }
+
+/* Lightbox overlay for expanded images */
+.eva-lightbox {
+  display: none;
+  position: fixed;
+  inset: 0;
+  z-index: 99999;
+  background: rgba(0,0,0,0.85);
+  backdrop-filter: blur(4px);
+  cursor: zoom-out;
+  align-items: center;
+  justify-content: center;
+}
+.eva-lightbox.open { display: flex; }
+.eva-lightbox img {
+  max-width: 90vw;
+  max-height: 90vh;
+  border-radius: 8px;
+  box-shadow: 0 8px 40px rgba(0,0,0,0.5);
+  object-fit: contain;
+}
+.eva-lightbox-close {
+  position: absolute;
+  top: 16px;
+  right: 20px;
+  background: none;
+  border: none;
+  color: #fff;
+  font-size: 32px;
+  cursor: pointer;
+  opacity: 0.7;
+  transition: opacity 0.2s;
+  z-index: 100000;
+}
+.eva-lightbox-close:hover { opacity: 1; }
+
 /* AI Generated badge */
 .eva-generated-wrap { display: inline-block; position: relative; }
 .eva-generated-badge {

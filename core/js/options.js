@@ -1755,6 +1755,40 @@ async function _searchImage(query) {
   return null;
 }
 
+// --- Image Lightbox ---
+document.addEventListener('DOMContentLoaded', function() {
+  var lightbox = document.getElementById('evaLightbox');
+  var lightboxImg = document.getElementById('evaLightboxImg');
+  var lightboxClose = lightbox ? lightbox.querySelector('.eva-lightbox-close') : null;
+
+  // Click on any inline image to expand
+  document.addEventListener('click', function(e) {
+    var img = e.target.closest('.eva-inline-img');
+    if (img && lightbox && lightboxImg) {
+      lightboxImg.src = img.src;
+      lightboxImg.alt = img.alt || 'Expanded image';
+      lightbox.classList.add('open');
+      e.preventDefault();
+    }
+  });
+
+  // Close lightbox
+  if (lightbox) {
+    lightbox.addEventListener('click', function(e) {
+      if (e.target === lightbox || e.target === lightboxClose) {
+        lightbox.classList.remove('open');
+      }
+    });
+  }
+
+  // Escape key closes lightbox
+  document.addEventListener('keydown', function(e) {
+    if (e.key === 'Escape' && lightbox && lightbox.classList.contains('open')) {
+      lightbox.classList.remove('open');
+    }
+  });
+});
+
 // Capture Shift + Enter Keys for new line
 function shiftBreak() {
 document.querySelector("#txtMsg").addEventListener("keydown", function(event) {
