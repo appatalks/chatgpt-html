@@ -813,8 +813,8 @@ def main():
         sys.exit(1)
 
     # Start HTTP server
-    server = HTTPServer(("0.0.0.0", args.port), BridgeHandler)
-    print(f"[Bridge] Listening on http://0.0.0.0:{args.port}")
+    server = HTTPServer(("127.0.0.1", args.port), BridgeHandler)
+    print(f"[Bridge] Listening on http://127.0.0.1:{args.port}")
     print(f"[Bridge] Endpoints:")
     print(f"  POST /v1/chat/completions   — Send chat messages")
     print(f"  GET  /v1/models             — List available models")

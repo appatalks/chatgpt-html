@@ -27,32 +27,31 @@ function trboSend() {
     	  // Check for errors
     	  if (oHttp.status === 500) {
       	    txtOutput.innerHTML += "<br> Error 500: Internal Server Error" + "<br>" + oHttp.responseText;
-      	    console.log("Error 500: Internal Server Error chatgpt-turbo.js Line 30");
+      	    console.log("Error 500: Internal Server Error gpt-core.js");
       	    return;
     	  }
     	  if (oHttp.status === 429) {
       	    txtOutput.innerHTML += "<br> Error 429: Too Many Requests" + "<br>" + oHttp.responseText;
-            console.log("Error 429: Too Many Requests chatgpt-turbo.js Line 31");
+            console.log("Error 429: Too Many Requests gpt-core.js");
       	    return;
     	  }
           if (oHttp.status === 404) {
             txtOutput.innerHTML += "<br> Error 404: Not Found" + "<br>" + oHttp.responseText;
-            console.log("Error 404: Not Found chatgpt-turbo.js Line 36");
+            console.log("Error 404: Not Found gpt-core.js");
             return;
           }
           if (oHttp.status === 400) {
             txtOutput.innerHTML += "<br> Error 400: Invalid Request" + "<br>" + oHttp.responseText;
-            console.log("Error 400: Invalid Request  chatgpt-turbo.js Line 41");
+            console.log("Error 400: Invalid Request gpt-core.js");
             return;
           }
             //console.log(oHttp.status);
             var oJson = {}
             try {
                 oJson = JSON.parse(oHttp.responseText);  // API Response Data
-		console.log("oJson", oJson);
             } catch (ex) {
                 txtOutput.innerHTML += "Error: " + ex.message;
-		console.log("Error: gpt-core.js Line 56");
+		console.log("Error: gpt-core.js JSON parse");
 		return;
               }
 	
@@ -191,7 +190,7 @@ function trboSend() {
 
     // Retrieve messages from local storage
     var cStoredMessages = localStorage.getItem("messages");
-    kMessages = cStoredMessages ? JSON.parse(cStoredMessages) : [];
+    var kMessages = cStoredMessages ? JSON.parse(cStoredMessages) : [];
 
         // Exclude messages with the "developer" role see 
         // https://github.com/appatalks/chatgpt-html/issues/63#issuecomment-2492821202 

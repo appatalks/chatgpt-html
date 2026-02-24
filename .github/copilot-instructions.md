@@ -46,7 +46,7 @@ This project is a simple web UI for interacting with OpenAI, Google Generative m
 ## Edge Cases
 - Image input: `options.js` pushes a text+image structured message for vision-capable models.
 - Auto-speak checkbox triggers Polly TTS after responses.
-- Google search augmentation triggers an async fetch that appends messages and resends the payload.
+- Image placeholders `[Image of ...]` are detected by `renderEvaResponse()` and resolved via Wikimedia Commons search or DALL-E 3 generation.
 
 ## Testing Checklist
 - Verify send flow with and without images.

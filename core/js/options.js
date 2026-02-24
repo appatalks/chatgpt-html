@@ -606,7 +606,6 @@ function _detectGenerationIntent() {
   var txtMsg = document.getElementById('txtMsg');
   if (txtMsg) {
     _lastUserAskedGenerate = _isGenerationRequest(txtMsg.innerText || txtMsg.textContent || '');
-    if (_lastUserAskedGenerate) console.log('[Eva Images] Generation request detected');
   }
 }
 
@@ -627,6 +626,11 @@ function updateButton() {
             trboSend();
         };
     } else if (selModel.value == "gemini") {
+        btnSend.onclick = function() {
+            _detectGenerationIntent();
+            clearText();
+            geminiSend();
+        };
    } else if (selModel.value == "lm-studio") {
         btnSend.onclick = function() {
             _detectGenerationIntent();
@@ -1486,11 +1490,8 @@ function _isGenerationRequest(text) {
 async function _generateImage(prompt) {
   var apiKey = (typeof getAuthKey === 'function') ? getAuthKey('OPENAI_API_KEY') : (typeof OPENAI_API_KEY !== 'undefined' ? OPENAI_API_KEY : '');
   if (!apiKey) {
-    console.warn('[Eva Images] No OpenAI API key for DALL-E generation');
     return null;
   }
-
-  console.log('[Eva Images] Generating image via DALL-E 3:', prompt.substring(0, 60));
 
   try {
     var resp = await fetch('https://api.openai.com/v1/images/generations', {
@@ -1508,19 +1509,15 @@ async function _generateImage(prompt) {
     });
 
     if (!resp.ok) {
-      var errData = await resp.json().catch(function() { return {}; });
-      console.warn('[Eva Images] DALL-E error:', resp.status, errData.error ? errData.error.message : '');
       return null;
     }
 
     var data = await resp.json();
     if (data.data && data.data[0] && data.data[0].url) {
-      console.log('[Eva Images] DALL-E generated:', data.data[0].url.substring(0, 80));
       return data.data[0].url;
     }
     return null;
   } catch (e) {
-    console.warn('[Eva Images] DALL-E error:', e.message);
     return null;
   }
 }
@@ -1555,8 +1552,6 @@ async function renderEvaResponse(content, txtOutput) {
     while ((match = rx.exec(text)) !== null) {
       if (!seen[match[0]]) {
         seen[match[0]] = true;
-        var extracted = _extractImageSubject(match[1].trim());
-        console.log('[Eva Images] Found placeholder:', match[0].substring(0, 60), '→ query:', extracted);
         imagePlaceholders.push({ full: match[0], query: extracted });
       }
     }
@@ -1565,14 +1560,8 @@ async function renderEvaResponse(content, txtOutput) {
   // Limit to 3 images per response
   imagePlaceholders = imagePlaceholders.slice(0, 3);
 
-  if (imagePlaceholders.length === 0) {
-    console.log('[Eva Images] No image placeholders found in response');
-  }
-
-  // Fetch images: DALL-E for generation requests, Wikimedia for search
   if (imagePlaceholders.length > 0) {
     var useGeneration = _lastUserAskedGenerate;
-    console.log('[Eva Images] Mode:', useGeneration ? 'DALL-E generation' : 'Wikimedia search');
 
     var fetchPromises = imagePlaceholders.map(function(ph) {
       if (useGeneration) {
@@ -1667,9 +1656,7 @@ function _extractImageSubject(rawDesc) {
   properNouns = properNouns.filter(function(w) { return !ignoreCapitalized.has(w); });
 
   if (properNouns.length > 0) {
-    // Use proper nouns as the search query (e.g. "GitHub Octocat")
     var result = properNouns.slice(0, 4).join(' ');
-    console.log('[Eva Images] Extracted proper nouns:', result);
     return result;
   }
 
@@ -1699,8 +1686,6 @@ async function _searchImage(query) {
 
   var cleanQuery = query.trim();
   if (!cleanQuery) return null;
-
-  console.log('[Eva Images] Searching Wikimedia for:', cleanQuery);
 
   // Try progressively simpler queries
   var queries = [cleanQuery];
@@ -1735,13 +1720,12 @@ async function _searchImage(query) {
               var pageId = Object.keys(pages)[0];
               var info = pages[pageId].imageinfo;
               if (info && info[0]) {
-                console.log('[Eva Images] Found:', info[0].thumburl || info[0].url);
                 return info[0].thumburl || info[0].url;
               }
             }
           }
-        } else {
-          console.log('[Eva Images] No results for "' + q + '"' + (qi < queries.length - 1 ? ', trying simpler query...' : ''));
+        } else if (qi < queries.length - 1) {
+          // Try simpler query
         }
       }
     } catch (e) {

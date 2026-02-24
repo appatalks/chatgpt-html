@@ -52,14 +52,10 @@ function lmsSend() {
     const requestOptions = {
         method: "POST",
         headers: { 
-            "Content-Type": "application/json",
-            "Access-Control-Allow-Origin": "*",
-            // "Authorization": "Bearer " + OPENAI_API_KEY
+            "Content-Type": "application/json"
         },
         body: JSON.stringify({
-            model: "granite-3.1-8b-instruct", // Replace with your actual local model identifier
-            // model: "gpt-4o-mini", // Proxy directly to OpenAI
-            // model: "tiger-gemma-9b-v3", // Good uncensored model
+            model: "granite-3.1-8b-instruct",
 
             messages: openLLMessages.concat([
                 { role: "user", content: sQuestion }
@@ -95,9 +91,3 @@ function lmsSend() {
             document.getElementById("txtOutput").innerHTML += '<span class="error">Error: </span>' + error.message + "<br>\n";
         });
 }
-
-// Redundant ?
-// Function to handle sending data based on the selected model
-// function sendData() {
-//         lmsSend(); // Use OpenAI-like local endpoint
-// }

@@ -62,7 +62,6 @@ async function detectACPBridge() {
         var data = await resp.json();
         if (data.status === 'ok') {
           _acpBridgeCache = candidates[i];
-          console.log('[Copilot] ACP bridge found at: ' + candidates[i]);
           return candidates[i];
         }
       }
