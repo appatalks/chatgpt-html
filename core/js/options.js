@@ -1562,7 +1562,7 @@ function _extractImageSubject(rawDesc) {
   // Remove filler/adjective words for a cleaner search query
   desc = desc
     .replace(/^(an?|the|image of|picture of|photo of|showing|depicting|illustration of)\s+/gi, '')
-    .replace(/(friendly|cartoon|cute|classic|iconic|simple|round|large|small|playful|beloved)\s+/gi, '')
+    .replace(/(friendly|cartoon|cartoonish|cute|classic|iconic|simple|round|large|small|playful|beloved|stylized|detailed|colorful|whimsical|famous|popular|well-known|traditional|modern|typical|standard|featuring|with)\s+/gi, '')
     .replace(/['']s\b/g, '')  // possessives
     .replace(/\s+/g, ' ')
     .trim();
@@ -1587,41 +1587,51 @@ async function _searchImage(query) {
 
   console.log('[Eva Images] Searching Wikimedia for:', cleanQuery);
 
-  // Wikimedia Commons search
-  try {
-    var wUrl = 'https://commons.wikimedia.org/w/api.php?' +
-      'action=query&list=search&srnamespace=6' +
-      '&srsearch=' + encodeURIComponent(cleanQuery) +
-      '&srlimit=5&format=json&origin=*';
+  // Try progressively simpler queries
+  var queries = [cleanQuery];
+  var words = cleanQuery.split(/\s+/);
+  if (words.length > 2) queries.push(words.slice(0, 2).join(' '));
+  if (words.length > 1) queries.push(words[words.length - 1]); // try just the last word (often the noun)
 
-    var wResp = await fetch(wUrl);
-    if (wResp.ok) {
-      var wData = await wResp.json();
-      var results = (wData.query && wData.query.search) || [];
-      if (results.length > 0) {
-        // Get the actual image URL from the file title
-        var fileTitle = results[0].title;
-        var imgUrl = 'https://commons.wikimedia.org/w/api.php?' +
-          'action=query&titles=' + encodeURIComponent(fileTitle) +
-          '&prop=imageinfo&iiprop=url&iiurlwidth=400&format=json&origin=*';
+  for (var qi = 0; qi < queries.length; qi++) {
+    var q = queries[qi];
+    try {
+      var wUrl = 'https://commons.wikimedia.org/w/api.php?' +
+        'action=query&list=search&srnamespace=6' +
+        '&srsearch=' + encodeURIComponent(q) +
+        '&srlimit=5&format=json&origin=*';
 
-        var imgResp = await fetch(imgUrl);
-        if (imgResp.ok) {
-          var imgData = await imgResp.json();
-          var pages = imgData.query && imgData.query.pages;
-          if (pages) {
-            var pageId = Object.keys(pages)[0];
-            var info = pages[pageId].imageinfo;
-            if (info && info[0]) {
-              console.log('[Eva Images] Found:', info[0].thumburl || info[0].url);
-              return info[0].thumburl || info[0].url;
+      var wResp = await fetch(wUrl);
+      if (wResp.ok) {
+        var wData = await wResp.json();
+        var results = (wData.query && wData.query.search) || [];
+        if (results.length > 0) {
+          // Get the actual image URL from the file title
+          var fileTitle = results[0].title;
+          var imgUrl = 'https://commons.wikimedia.org/w/api.php?' +
+            'action=query&titles=' + encodeURIComponent(fileTitle) +
+            '&prop=imageinfo&iiprop=url&iiurlwidth=400&format=json&origin=*';
+
+          var imgResp = await fetch(imgUrl);
+          if (imgResp.ok) {
+            var imgData = await imgResp.json();
+            var pages = imgData.query && imgData.query.pages;
+            if (pages) {
+              var pageId = Object.keys(pages)[0];
+              var info = pages[pageId].imageinfo;
+              if (info && info[0]) {
+                console.log('[Eva Images] Found:', info[0].thumburl || info[0].url);
+                return info[0].thumburl || info[0].url;
+              }
             }
           }
+        } else {
+          console.log('[Eva Images] No results for "' + q + '"' + (qi < queries.length - 1 ? ', trying simpler query...' : ''));
         }
       }
+    } catch (e) {
+      console.warn('Wikimedia search error:', e.message);
     }
-  } catch (e) {
-    console.warn('Wikimedia search error:', e.message);
   }
 
   return null;
