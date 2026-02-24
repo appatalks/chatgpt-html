@@ -27,32 +27,31 @@ function trboSend() {
     	  // Check for errors
     	  if (oHttp.status === 500) {
       	    txtOutput.innerHTML += "<br> Error 500: Internal Server Error" + "<br>" + oHttp.responseText;
-      	    console.log("Error 500: Internal Server Error chatgpt-turbo.js Line 30");
+      	    console.log("Error 500: Internal Server Error gpt-core.js");
       	    return;
     	  }
     	  if (oHttp.status === 429) {
       	    txtOutput.innerHTML += "<br> Error 429: Too Many Requests" + "<br>" + oHttp.responseText;
-            console.log("Error 429: Too Many Requests chatgpt-turbo.js Line 31");
+            console.log("Error 429: Too Many Requests gpt-core.js");
       	    return;
     	  }
           if (oHttp.status === 404) {
             txtOutput.innerHTML += "<br> Error 404: Not Found" + "<br>" + oHttp.responseText;
-            console.log("Error 404: Not Found chatgpt-turbo.js Line 36");
+            console.log("Error 404: Not Found gpt-core.js");
             return;
           }
           if (oHttp.status === 400) {
             txtOutput.innerHTML += "<br> Error 400: Invalid Request" + "<br>" + oHttp.responseText;
-            console.log("Error 400: Invalid Request  chatgpt-turbo.js Line 41");
+            console.log("Error 400: Invalid Request gpt-core.js");
             return;
           }
             //console.log(oHttp.status);
             var oJson = {}
             try {
                 oJson = JSON.parse(oHttp.responseText);  // API Response Data
-		console.log("oJson", oJson);
             } catch (ex) {
                 txtOutput.innerHTML += "Error: " + ex.message;
-		console.log("Error: gpt-core.js Line 56");
+		console.log("Error: gpt-core.js JSON parse");
 		return;
               }
 	
@@ -95,60 +94,8 @@ function trboSend() {
 	    // console.log("gpt-core.js Line 96" + oJson.choices + "" + oJson.choices[0].message);
 	    // Always Run Response 
             var s = oJson.choices[0].message;
-	    // Empty Response Handling	     
-	    if (s.content == "") {
-        	txtOutput.innerHTML += '<span class="eva">Eva: Im sorry can you please ask me in another way? </span>';
-                var element = document.getElementById("txtOutput");
-                element.scrollTop = element.scrollHeight;
-
-	    }  
-		
-	      // Google Image Search 
-	      if (s.content.includes("Image of")) {
-		let formattedResult = s.content.replace(/\n\n/g, "\n").trim();
-		const imagePlaceholderRegex = /\[(Image of (.*?))\]/g;
-		const imagePlaceholders = formattedResult.match(imagePlaceholderRegex)?.slice(0, 3);
-
-        if (imagePlaceholders) {
-          for (let i = 0; i < Math.min(imagePlaceholders.length, 3); i++) {
-            const placeholder = imagePlaceholders[i];
-            const searchQuery = placeholder.substring(10, placeholder.length - 1).trim();
-            try {
-              const searchResult = await fetchGoogleImages(searchQuery);
-              if (searchResult && searchResult.items && searchResult.items.length > 0) {
-                const topImage = searchResult.items[0];
-                const imageLink = topImage.link;
-                formattedResult = formattedResult.replace(placeholder, `<img src="${imageLink}" title="${searchQuery}" alt="${searchQuery}">`);
-              }
-            } catch (error) {
-              console.error("Error fetching image:", error);
-            }
-          }
-          // Tokenize inserted <img> tags, run markdown safely, then restore <img>
-          const imgFragments = [];
-          const tokenized = formattedResult.replace(/<img[^>]*>/g, (m) => {
-            imgFragments.push(m);
-            return `\u0000IMG${imgFragments.length - 1}\u0000`;
-          });
-          const mdSafe = renderMarkdown(tokenized);
-          const restored = mdSafe.replace(/\u0000IMG(\d+)\u0000/g, (m, idx) => imgFragments[Number(idx)] || m);
-          txtOutput.innerHTML += '<div class="chat-bubble eva-bubble">' + '<span class="eva">Eva:</span> ' + '<div class="md">' + restored + '</div>' + '</div>';
-		   var element = document.getElementById("txtOutput");
-    		   element.scrollTop = element.scrollHeight;
-          	}
-		else {
-  const mdHtml = renderMarkdown(s.content.trim());
-        txtOutput.innerHTML += '<div class="chat-bubble eva-bubble">' + '<span class="eva">Eva:</span> ' + '<div class="md">' + mdHtml + '</div>' + '</div>';
-                    var element = document.getElementById("txtOutput");
-                    element.scrollTop = element.scrollHeight;
-		  }
-	      } // close s.content.includes 
-	      else {
-      const mdHtml = renderMarkdown(s.content.trim());
-      txtOutput.innerHTML += '<div class="chat-bubble eva-bubble">' + '<span class="eva">Eva:</span> ' + '<div class="md">' + mdHtml + '</div>' + '</div>';
-                   var element = document.getElementById("txtOutput");
-                   element.scrollTop = element.scrollHeight;
- 	      }	
+	    // Empty Response Handling / Render via unified renderer
+	    await renderEvaResponse(s.content, txtOutput);
        	
             // Send to Local Storage - possibly way to intigrate into memory
 	    let outputWithoutTags = txtOutput.innerText + "\n";
@@ -172,13 +119,8 @@ function trboSend() {
 
     // payload parameters
     var sModel = selModel.value; 
-    var iMaxTokens = 4096; // Try to set the max_completion_tokens value as close to your expected response size as possible. 
-	// if (sModel === "gpt-4o") {
-    	//    iMaxTokens = 4096;
-	// } else if (sModel === "gpt-3.5-turbo-16k") {
-    	//     iMaxTokens = 12420;
-	// }
-  var dTemperature = 0.7; 
+    var iMaxTokens = (typeof getModelMaxTokens === 'function') ? getModelMaxTokens() : 4096;
+  var dTemperature = (typeof getModelTemperature === 'function') ? getModelTemperature() : 0.7; 
     var eFrequency_penalty = 0.0; 
     var cPresence_penalty = 0.0; 
     var hStop = "&*&"; 
@@ -194,7 +136,7 @@ function trboSend() {
       // If it does not exist, create an array with the initial messages
       const iMessages = [
         { role: 'developer', content: 'You are Eva. You have access to previous chats and responses. You have access to real-time news, information and media. You will keep conversation to a minimum and answer to the best of your abilities. When you are asked to show an image, instead describe the image with [Image of <Description>].' },
-        { role: 'user', content: selPers.value + " " + dateContents },
+        { role: 'user', content: ((typeof getSystemPrompt === 'function') ? getSystemPrompt() : '') + " " + dateContents },
       ];
 
       // Store the initial messages in localStorage
@@ -241,78 +183,6 @@ function trboSend() {
           newMessages.push({ role: 'user', content: "Today's " + solarContents + " " + sQuestion.replace(/\n/g, '') });
         }
 
-	// Google That
-        // Do I still need this with Gemini and gpt-4o? Need to investigate further. 
-	const keyword_google = 'google';
-	const keyword_Google = 'Google';
-	const query = sQuestion.replace(/<[^>]*>/g, '').replace(/google|Google/g, '').trim();
-
-	let googleContents; 
-	if (sQuestion.includes(keyword_google) || sQuestion.includes(keyword_Google)) {
-  const apiUrl = `https://www.googleapis.com/customsearch/v1?key=${GOOGLE_SEARCH_KEY}&cx=${GOOGLE_SEARCH_ID}&q=${encodeURIComponent(query)}&fields=kind,items(title,snippet,link)&num=5`;
- 	    fetch(apiUrl)
-    	      .then(response => response.json())
-    	      .then(data => {
-		 googleContents = data.items.map(item => {
-  		   return {
-    		     title: item.title,
-		     snippet: item.snippet,
-		     // displayLink: item.displayLink
-    		     link: item.link
-  		   };
-		 });
-		newMessages.push({ role: 'assistant', content: "Google search results for " + query + "in JSON Format: " + JSON.stringify(googleContents) });
-                newMessages.push({ role: 'user', content: "What are the search results for: " + sQuestion.replace(/\n/g, '') + " Please summarize results and provide associated links." });
-	      	let existingMessages = JSON.parse(localStorage.getItem("messages")) || [];
-      		existingMessages = existingMessages.concat(newMessages);
-	      	localStorage.setItem("messages", JSON.stringify(existingMessages));
-		    var cStoredMessages = localStorage.getItem("messages");
-            kMessages = cStoredMessages ? JSON.parse(cStoredMessages) : [];
-            var data = {
-                model: sModel,
-                messages: kMessages,
-                max_completion_tokens: iMaxTokens,
-                temperature:  dTemperature,
-                frequency_penalty: eFrequency_penalty,
-                presence_penalty: cPresence_penalty,
-                stop: hStop
-            }
-            // Additional parameters for GPT-5 family and 'latest' alias
-            if (isGpt5 || isLatest) {
-              data.top_p = topP;
-              // Do not send max_tokens for gpt-5; use max_completion_tokens only
-            }
-		    // If using the o3-mini model, add the reasoning_effort parameter (low, medium, high)
-		    if (sModel === "o3-mini") {
-  		      data.reasoning_effort = "high";
-		      delete data.temperature; // Exclude temperature for o3-mini	    
-		    }   
-		    // Send Payload		      
-		    oHttp.send(JSON.stringify(data));
-
-		// Check if imgSrcGlobal is not empty or undefined
-		if (imgSrcGlobal) {
-		    var responseImage = document.createElement("img");
-		    responseImage.src = imgSrcGlobal;
-		    // Ensure there's a way to handle the case where the image cannot be loaded
-		    responseImage.onerror = function() {
-		        console.error("Error loading image at " + imgSrcGlobal);
-		        responseImage.remove(); // Optionally remove the img element if it fails to load
-		    };
-		    // Only append the image if imgSrcGlobal is valid
-		    if (txtOutput.innerHTML != "") txtOutput.innerHTML += "\n";
-		    txtOutput.innerHTML += '<span class="user">You: </span>' + sQuestion;
-		    txtOutput.appendChild(responseImage);
-		} else {
-		    // Handle the case where imgSrcGlobal is not provided
-		    if (txtOutput.innerHTML != "") txtOutput.innerHTML += "\n";
-		    txtOutput.innerHTML += '<span class="user">You: </span>' + sQuestion;
-		}
-		txtMsg.innerHTML = "";
-	      });
-	      return;
-	}
-
     // Append the new messages to the existing messages in localStorage
     let existingMessages = JSON.parse(localStorage.getItem("messages")) || [];
     existingMessages = existingMessages.concat(newMessages);
@@ -320,7 +190,7 @@ function trboSend() {
 
     // Retrieve messages from local storage
     var cStoredMessages = localStorage.getItem("messages");
-    kMessages = cStoredMessages ? JSON.parse(cStoredMessages) : [];
+    var kMessages = cStoredMessages ? JSON.parse(cStoredMessages) : [];
 
         // Exclude messages with the "developer" role see 
         // https://github.com/appatalks/chatgpt-html/issues/63#issuecomment-2492821202 
@@ -348,9 +218,8 @@ function trboSend() {
               delete data.temperature; // Exclude temperature for gpt-5/latest
               delete data.stop; // Exclude stop for gpt-5/latest
             }
-    // If using the o3-mini model, add the reasoning_effort parameter (low, medium, high)
     if (sModel === "o3-mini") {
-      data.reasoning_effort = "medium";
+      data.reasoning_effort = (typeof getReasoningEffort === 'function') ? getReasoningEffort() : "medium";
       delete data.temperature; // Exclude temperature for o3-mini
     }   
 
@@ -395,17 +264,4 @@ function trboSend() {
     element.scrollTop = element.scrollHeight;
   }
   imgSrcGlobal = '';
-}
-
-// Google Image Seach
-async function fetchGoogleImages(query) {
-  const maxResults = 1;
-
-  return fetch(`https://www.googleapis.com/customsearch/v1?key=${GOOGLE_SEARCH_KEY}&cx=${GOOGLE_SEARCH_ID}&searchType=image&num=${maxResults}&sort_by=""&q=${encodeURIComponent(query)}`)
-    .then((response) => response.json())
-    .then((result) => result)     
-    .catch((error) => {
-      console.error("Error fetching Google Images:", error);
-      throw error;
-    });
 }

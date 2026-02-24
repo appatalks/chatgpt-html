@@ -42,16 +42,197 @@ function auth() {
 
 function applyConfig(config) {
   OPENAI_API_KEY = config.OPENAI_API_KEY;
-  GOOGLE_SEARCH_KEY = config.GOOGLE_SEARCH_KEY;
-  GOOGLE_SEARCH_ID = config.GOOGLE_SEARCH_ID;
   // Google Gemini key if provided
   GOOGLE_GL_KEY = config.GOOGLE_GL_KEY;
   GOOGLE_VISION_KEY = config.GOOGLE_VISION_KEY;
+  // GitHub Copilot PAT
+  if (config.GITHUB_PAT) GITHUB_PAT = config.GITHUB_PAT;
   // CORS debug
   DEBUG_CORS = !!config.DEBUG_CORS;
   DEBUG_PROXY_URL = config.DEBUG_PROXY_URL || "";
   AWS.config.region = config.AWS_REGION;
   AWS.config.credentials = new AWS.Credentials(config.AWS_ACCESS_KEY_ID, config.AWS_SECRET_ACCESS_KEY);
+  // Apply any localStorage auth overrides
+  loadAuthOverrides();
+}
+
+// --- Auth Key Management ---
+function getAuthKey(key) {
+  var stored = localStorage.getItem('auth_' + key);
+  if (stored) return stored;
+  if (typeof window[key] !== 'undefined') return window[key];
+  return '';
+}
+
+function loadAuthOverrides() {
+  var keys = ['OPENAI_API_KEY', 'GOOGLE_GL_KEY', 'GOOGLE_VISION_KEY', 'GITHUB_PAT'];
+  keys.forEach(function(key) {
+    var val = localStorage.getItem('auth_' + key);
+    if (val) window[key] = val;
+  });
+}
+
+function saveAuthKeys() {
+  var map = {
+    'authOpenAI': 'OPENAI_API_KEY',
+    'authGitHub': 'GITHUB_PAT',
+    'authGemini': 'GOOGLE_GL_KEY',
+    'authGoogleVision': 'GOOGLE_VISION_KEY'
+  };
+  Object.keys(map).forEach(function(fieldId) {
+    var el = document.getElementById(fieldId);
+    var key = map[fieldId];
+    if (el && el.value.trim()) {
+      localStorage.setItem('auth_' + key, el.value.trim());
+      window[key] = el.value.trim();
+    } else if (el) {
+      localStorage.removeItem('auth_' + key);
+    }
+  });
+  // Save ACP Bridge URL separately
+  var acpEl = document.getElementById('txtACPBridgeUrl');
+  if (acpEl && acpEl.value.trim()) {
+    localStorage.setItem('acp_bridge_url', acpEl.value.trim());
+  } else if (acpEl) {
+    localStorage.removeItem('acp_bridge_url');
+  }
+  setStatus('info', 'API keys saved to browser storage.');
+}
+
+function populateAuthFields() {
+  var map = {
+    'authOpenAI': 'OPENAI_API_KEY',
+    'authGitHub': 'GITHUB_PAT',
+    'authGemini': 'GOOGLE_GL_KEY',
+    'authGoogleVision': 'GOOGLE_VISION_KEY'
+  };
+  Object.keys(map).forEach(function(fieldId) {
+    var el = document.getElementById(fieldId);
+    var key = map[fieldId];
+    if (el) {
+      var val = localStorage.getItem('auth_' + key) || (typeof window[key] !== 'undefined' ? window[key] : '');
+      el.value = val || '';
+    }
+  });
+  // Populate ACP Bridge URL
+  var acpEl = document.getElementById('txtACPBridgeUrl');
+  if (acpEl) {
+    acpEl.value = localStorage.getItem('acp_bridge_url') || 'http://localhost:8888';
+  }
+}
+
+function toggleAuthVis(btn) {
+  var input = btn.parentElement.querySelector('input');
+  if (input.type === 'password') {
+    input.type = 'text';
+    btn.textContent = 'Hide';
+  } else {
+    input.type = 'password';
+    btn.textContent = 'Show';
+  }
+}
+
+// --- System Prompt Management ---
+var PERSONALITY_PRESETS = {
+  'default': "You are Eva, a knowledgeable AI assistant. Your goal is to provide accurate, and helpful responses to questions, while being honest and straightforward. You have access to provide updated real-time news, information and media.",
+  'concise': "Eva is a large language model. Browsing: enabled. Instructions: Answer factual questions concisely. You have access to updated real-time news and information.",
+  'advanced': "You are Eva. Your function is to generate human-like text based on the inputs given, and your goal is to assist users in generating informative, helpful and engaging responses to questions and requests. Please provide a detailed response with lists, where applicable. You have access to updated real-time news, information and media.",
+  'terminal': "I want you to act as a linux terminal. I will type commands and you will reply with what the terminal should show. I want you to only reply with the terminal output inside one unique code block, and nothing else. do not write explanations. do not type commands unless I instruct you to do so. when i need to tell you something in english, i will do so by putting text inside curly brackets {like this}. my first command is pwd"
+};
+
+function getSystemPrompt() {
+  var txt = document.getElementById('txtSystemPrompt');
+  if (txt && txt.value.trim()) return txt.value.trim();
+  // Fallback to personality preset
+  return PERSONALITY_PRESETS['default'];
+}
+
+function applyPersonalityPreset() {
+  var sel = document.getElementById('selPers');
+  var txt = document.getElementById('txtSystemPrompt');
+  if (!sel || !txt) return;
+  var preset = PERSONALITY_PRESETS[sel.value];
+  if (preset) {
+    txt.value = preset;
+    localStorage.setItem('systemPrompt', preset);
+  }
+  // 'custom' leaves textarea as-is for user editing
+}
+
+function initSystemPrompt() {
+  var txt = document.getElementById('txtSystemPrompt');
+  if (!txt) return;
+  // Load from localStorage or use default preset
+  var saved = localStorage.getItem('systemPrompt');
+  if (saved) {
+    txt.value = saved;
+    // Sync preset selector
+    var sel = document.getElementById('selPers');
+    if (sel) {
+      var matched = false;
+      Object.keys(PERSONALITY_PRESETS).forEach(function(k) {
+        if (PERSONALITY_PRESETS[k] === saved.trim()) { sel.value = k; matched = true; }
+      });
+      if (!matched) sel.value = 'custom';
+    }
+  } else {
+    txt.value = PERSONALITY_PRESETS['default'];
+  }
+  // Save on change
+  txt.addEventListener('input', function() {
+    localStorage.setItem('systemPrompt', txt.value);
+    var sel = document.getElementById('selPers');
+    if (sel) {
+      var matched = false;
+      Object.keys(PERSONALITY_PRESETS).forEach(function(k) {
+        if (PERSONALITY_PRESETS[k] === txt.value.trim()) { sel.value = k; matched = true; }
+      });
+      if (!matched) sel.value = 'custom';
+    }
+  });
+}
+
+// --- Model Settings Helpers ---
+function getModelTemperature() {
+  var el = document.getElementById('sldTemperature');
+  return el ? parseFloat(el.value) : 0.7;
+}
+
+function getModelMaxTokens() {
+  var el = document.getElementById('txtMaxTokens');
+  return el ? (parseInt(el.value) || 4096) : 4096;
+}
+
+function getReasoningEffort() {
+  var el = document.getElementById('selReasoningEffort');
+  return el ? el.value : 'medium';
+}
+
+function onModelSettingsChange() {
+  var sel = document.getElementById('selModel');
+  if (!sel) return;
+  var model = sel.value;
+  // Show/hide reasoning effort (only for o3-mini variants)
+  var reOpt = document.getElementById('opt-reasoningEffort');
+  if (reOpt) {
+    reOpt.style.display = (model === 'o3-mini' || model === 'copilot-o3-mini') ? 'block' : 'none';
+  }
+  // Show/hide temperature (hidden for o3-mini, gpt-5-mini, latest, copilot-acp)
+  var tempOpt = document.getElementById('opt-temperature');
+  if (tempOpt) {
+    var hideTemp = ['o3-mini', 'copilot-o3-mini', 'gpt-5-mini', 'latest', 'copilot-acp'].indexOf(model) >= 0;
+    tempOpt.style.display = hideTemp ? 'none' : 'block';
+  }
+  // Show/hide ACP model selector (only for copilot-acp)
+  var acpOpt = document.getElementById('opt-acpModel');
+  if (acpOpt) {
+    acpOpt.style.display = (model === 'copilot-acp') ? 'block' : 'none';
+  }
+}
+
+function getACPModel() {
+  var el = document.getElementById('selACPModel');
+  return (el && el.value) ? el.value : '';
 }
 
 // --- Model option filtering per theme (LCARS-restricted) ---
@@ -63,8 +244,18 @@ function captureOriginalModelOptions() {
   if (__originalModelOptions) return;
   var sel = document.getElementById('selModel');
   if (!sel) return;
-  __originalModelOptions = Array.from(sel.options).map(function(o){
-    return { value: o.value, text: o.text, title: o.title || '' };
+  __originalModelOptions = [];
+  // Walk through child nodes to preserve optgroup structure
+  Array.from(sel.children).forEach(function(child) {
+    if (child.tagName === 'OPTGROUP') {
+      var group = { label: child.label, options: [] };
+      Array.from(child.children).forEach(function(o) {
+        group.options.push({ value: o.value, text: o.text, title: o.title || '' });
+      });
+      __originalModelOptions.push({ type: 'optgroup', group: group });
+    } else if (child.tagName === 'OPTION') {
+      __originalModelOptions.push({ type: 'option', value: child.value, text: child.text, title: child.title || '' });
+    }
   });
 }
 
@@ -72,18 +263,31 @@ function setModelOptions(list) {
   var sel = document.getElementById('selModel');
   if (!sel) return;
   var currentValue = sel.value;
-  // Rebuild options
   sel.innerHTML = '';
-  list.forEach(function(item){
-    var opt = document.createElement('option');
-    opt.value = item.value;
-    opt.text = item.text;
-    if (item.title) opt.title = item.title;
-    sel.appendChild(opt);
+  list.forEach(function(item) {
+    if (item.type === 'optgroup') {
+      var grp = document.createElement('optgroup');
+      grp.label = item.group.label;
+      item.group.options.forEach(function(o) {
+        var opt = document.createElement('option');
+        opt.value = o.value;
+        opt.text = o.text;
+        if (o.title) opt.title = o.title;
+        grp.appendChild(opt);
+      });
+      sel.appendChild(grp);
+    } else {
+      var opt = document.createElement('option');
+      opt.value = item.value;
+      opt.text = item.text;
+      if (item.title) opt.title = item.title;
+      sel.appendChild(opt);
+    }
   });
   // Try to keep current selection if still present; otherwise select first
-  var hasCurrent = list.some(function(i){ return i.value === currentValue; });
-  sel.value = hasCurrent ? currentValue : (list[0] ? list[0].value : '');
+  var allOpts = Array.from(sel.options);
+  var hasCurrent = allOpts.some(function(o) { return o.value === currentValue; });
+  sel.value = hasCurrent ? currentValue : (allOpts[0] ? allOpts[0].value : '');
   // Trigger change to rewire send behavior
   sel.dispatchEvent(new Event('change', { bubbles: true }));
 }
@@ -95,11 +299,19 @@ function updateModelOptionsForTheme(theme) {
   if (theme === 'lcars') {
     // Remember current model to restore when leaving LCARS
     __modelBeforeLCARS = sel.value;
-    var allowed = new Set(['gpt-5-mini', 'o3-mini', 'dall-e-3', 'gemini', 'lm-studio']);
-    var filtered = (__originalModelOptions || []).filter(function(o){ return allowed.has(o.value); });
-    if (filtered.length) {
-      setModelOptions(filtered);
-    }
+    var allowed = new Set(['gpt-5-mini', 'o3-mini', 'dall-e-3', 'gemini', 'lm-studio', 'copilot-gpt-4o', 'copilot-gpt-4o-mini', 'copilot-o3-mini', 'copilot-acp']);
+    var filtered = [];
+    (__originalModelOptions || []).forEach(function(item) {
+      if (item.type === 'optgroup') {
+        var filteredOpts = item.group.options.filter(function(o) { return allowed.has(o.value); });
+        if (filteredOpts.length) {
+          filtered.push({ type: 'optgroup', group: { label: item.group.label, options: filteredOpts } });
+        }
+      } else if (allowed.has(item.value)) {
+        filtered.push(item);
+      }
+    });
+    if (filtered.length) setModelOptions(filtered);
   } else if (__originalModelOptions) {
     setModelOptions(__originalModelOptions);
     // Restore pre-LCARS selection if it exists
@@ -133,10 +345,16 @@ document.addEventListener('DOMContentLoaded', () => {
 
   function toggleSettings(event) {
     event.stopPropagation();
-    settingsMenu.style.display =
-      (settingsMenu.style.display === 'none' || !settingsMenu.style.display)
-        ? 'block'
-        : 'none';
+    var overlay = document.getElementById('settingsOverlay');
+    var isOpen = settingsMenu.classList.contains('open');
+    if (isOpen) {
+      settingsMenu.classList.remove('open');
+      if (overlay) overlay.classList.remove('open');
+    } else {
+      settingsMenu.classList.add('open');
+      if (overlay) overlay.classList.add('open');
+      populateAuthFields();
+    }
   }
 
   // Attach event via JavaScript
@@ -154,7 +372,9 @@ document.addEventListener('DOMContentLoaded', () => {
   // Close the menu when clicking outside
   document.addEventListener('click', (event) => {
     if (!settingsMenu.contains(event.target) && event.target !== settingsButton) {
-      settingsMenu.style.display = 'none';
+      settingsMenu.classList.remove('open');
+      var overlay = document.getElementById('settingsOverlay');
+      if (overlay) overlay.classList.remove('open');
     }
   });
 
@@ -236,6 +456,47 @@ document.addEventListener('DOMContentLoaded', () => {
       });
     });
   }
+
+  // Settings panel tab switching
+  var settingsTabs = document.querySelectorAll('.settings-tab');
+  var settingsPanels = document.querySelectorAll('.settings-panel');
+  settingsTabs.forEach(function(tab) {
+    tab.addEventListener('click', function() {
+      var target = tab.getAttribute('data-stab');
+      settingsTabs.forEach(function(t) {
+        t.classList.toggle('active', t === tab);
+      });
+      settingsPanels.forEach(function(p) {
+        p.classList.toggle('active', p.getAttribute('data-stab') === target);
+      });
+    });
+  });
+
+  // Settings close button
+  var settingsCloseBtn = document.getElementById('settingsClose');
+  if (settingsCloseBtn) {
+    settingsCloseBtn.addEventListener('click', function(e) {
+      e.stopPropagation();
+      settingsMenu.classList.remove('open');
+      var overlay = document.getElementById('settingsOverlay');
+      if (overlay) overlay.classList.remove('open');
+    });
+  }
+
+  // Settings overlay click to close
+  var settingsOverlayEl = document.getElementById('settingsOverlay');
+  if (settingsOverlayEl) {
+    settingsOverlayEl.addEventListener('click', function() {
+      settingsMenu.classList.remove('open');
+      settingsOverlayEl.classList.remove('open');
+    });
+  }
+
+  // Init auth, system prompt, and model settings
+  loadAuthOverrides();
+  populateAuthFields();
+  initSystemPrompt();
+  onModelSettingsChange();
 
   // Initialize status panel with any pending config/init notes
   setStatus('info', document.getElementById('idText') && document.getElementById('idText').textContent ? document.getElementById('idText').textContent : '');
@@ -340,27 +601,67 @@ function unloadThemeStylesheet(themeName) {
 }
 
 
+// Track user intent for image handling
+var _lastUserAskedGenerate = false;
+var _lastUserImageSubject = '';  // extracted from user's message before send
+
+/**
+ * Extract image subject from the user's own message.
+ * "show me an image of a cat" → "cat"
+ * "generate a picture of a sunset over mountains" → "sunset over mountains"
+ */
+function _extractUserImageSubject(text) {
+  if (!text) return '';
+  // Match patterns like "image of X", "picture of X", "photo of X"
+  var m = text.match(/(?:image|picture|photo|illustration|drawing|painting)\s+(?:of\s+)?(?:an?\s+)?(.+)/i);
+  if (m) return m[1].replace(/[?.!]+$/, '').trim();
+  // Match "show me X", "generate X"
+  m = text.match(/(?:show\s+me|generate|create|draw|make|display)\s+(?:an?\s+)?(?:image\s+)?(?:of\s+)?(?:an?\s+)?(.+)/i);
+  if (m) return m[1].replace(/[?.!]+$/, '').trim();
+  return '';
+}
+
+// Detect image generation intent from user input (called before every send)
+function _detectGenerationIntent() {
+  var txtMsg = document.getElementById('txtMsg');
+  if (txtMsg) {
+    var userText = txtMsg.innerText || txtMsg.textContent || '';
+    _lastUserAskedGenerate = _isGenerationRequest(userText);
+    _lastUserImageSubject = _extractUserImageSubject(userText);
+  }
+}
+
 function updateButton() {
     var selModel = document.getElementById("selModel");
     var btnSend = document.getElementById("btnSend");
 
-  if (selModel.value == "gpt-4o-mini" || selModel.value == "o1" || selModel.value == "o1-mini" || selModel.value == "gpt-4o" || selModel.value == "o3-mini" || selModel.value == "o1-preview" || selModel.value == "gpt-5-mini" || selModel.value == "latest") {
+  if (selModel.value.indexOf('copilot-') === 0) {
         btnSend.onclick = function() {
+            _detectGenerationIntent();
+            clearText();
+            copilotSend();
+        };
+    } else if (selModel.value == "gpt-4o-mini" || selModel.value == "o1" || selModel.value == "o1-mini" || selModel.value == "gpt-4o" || selModel.value == "o3-mini" || selModel.value == "o1-preview" || selModel.value == "gpt-5-mini" || selModel.value == "latest") {
+        btnSend.onclick = function() {
+            _detectGenerationIntent();
             clearText();
             trboSend();
         };
     } else if (selModel.value == "gemini") {
         btnSend.onclick = function() {
+            _detectGenerationIntent();
             clearText();
             geminiSend();
         };
    } else if (selModel.value == "lm-studio") {
         btnSend.onclick = function() {
+            _detectGenerationIntent();
             clearText();
             lmsSend();
         };
     } else if (selModel.value == "dall-e-3") {
         btnSend.onclick = function() {
+            _detectGenerationIntent();
             clearText();
             dalle3Send();
         };
@@ -378,7 +679,13 @@ function sendData() {
     // Logic required for initial message
     var selModel = document.getElementById("selModel");
 
-  if (selModel.value == "gpt-4o-mini" || selModel.value == "o1" || selModel.value == "o1-mini" || selModel.value == "gpt-4o" || selModel.value == "o3-mini" || selModel.value == "o1-preview" || selModel.value == "gpt-5-mini" || selModel.value == "latest") {
+  // Detect if user wants image generation (for renderEvaResponse routing)
+  _detectGenerationIntent();
+
+  if (selModel.value.indexOf('copilot-') === 0) {
+        clearText();
+        copilotSend();
+    } else if (selModel.value == "gpt-4o-mini" || selModel.value == "o1" || selModel.value == "o1-mini" || selModel.value == "gpt-4o" || selModel.value == "o3-mini" || selModel.value == "o1-preview" || selModel.value == "gpt-5-mini" || selModel.value == "latest") {
         clearText();
         trboSend();
     } else if (selModel.value == "gemini") {
@@ -409,15 +716,20 @@ function setStatus(type, text) {
   if (text) el.textContent = text;
 }
 
-// --- Lightweight token/context window monitor ---
-// Simple per-character heuristic when tokenizer not available
+// --- Monitors: Token, Network, Session ---
+
+// Better token estimation: ~3.5 chars per token for English, account for whitespace/punctuation
 function estimateTokensFromText(str) {
   if (!str) return 0;
-  // crude: ~4 chars per token
-  return Math.ceil(String(str).length / 4);
+  var s = String(str);
+  // Count words (roughly 1.3 tokens per word on average)
+  var words = s.split(/\s+/).filter(function(w) { return w.length > 0; }).length;
+  // Count special chars/punctuation as extra tokens
+  var specials = (s.match(/[^a-zA-Z0-9\s]/g) || []).length;
+  return Math.ceil(words * 1.3 + specials * 0.5);
 }
 
-// Map of model -> context window size (approx) for display
+// Map of model -> context window size
 const MODEL_CONTEXT_WINDOWS = {
   'gpt-4o': 128000,
   'gpt-4o-mini': 128000,
@@ -427,80 +739,252 @@ const MODEL_CONTEXT_WINDOWS = {
   'o3-mini': 200000,
   'gpt-5-mini': 200000,
   'latest': 200000,
-  'gemini': 128000,
+  'copilot-gpt-4o': 128000,
+  'copilot-gpt-4o-mini': 128000,
+  'copilot-o3-mini': 200000,
+  'copilot-acp': 128000,
+  'gemini': 1000000,
   'lm-studio': 32768,
   'dall-e-3': 0
 };
+
+// Network monitoring state
+var _netStats = { requests: 0, errors: 0, lastLatency: 0, lastStatus: '', lastProvider: '' };
+
+// Intercept fetch to track network stats
+var _apiHostnames = ['api.openai.com', 'models.inference.ai.azure.com', 'generativelanguage.googleapis.com'];
+
+function _isAPICall(url) {
+  if (typeof url !== 'string') return false;
+  try {
+    var parsed = new URL(url, window.location.origin);
+    if (_apiHostnames.indexOf(parsed.hostname) >= 0) return true;
+    if (parsed.hostname === 'localhost' && (parsed.port === '1234' || parsed.port === '8888')) return true;
+    if (parsed.port === '8888') return true;
+    return false;
+  } catch (e) {
+    return false;
+  }
+}
+
+(function() {
+  var origFetch = window.fetch;
+  window.fetch = function() {
+    var url = arguments[0];
+    if (!_isAPICall(url)) return origFetch.apply(this, arguments);
+
+    _netStats.requests++;
+    var start = performance.now();
+    _netStats.lastProvider = _detectProvider(url);
+
+    return origFetch.apply(this, arguments).then(function(resp) {
+      _netStats.lastLatency = Math.round(performance.now() - start);
+      _netStats.lastStatus = resp.status + ' ' + (resp.ok ? 'OK' : resp.statusText);
+      if (!resp.ok) _netStats.errors++;
+      updateNetMonitor();
+      return resp;
+    }).catch(function(err) {
+      _netStats.lastLatency = Math.round(performance.now() - start);
+      _netStats.lastStatus = 'Error';
+      _netStats.errors++;
+      updateNetMonitor();
+      throw err;
+    });
+  };
+})();
+
+function _detectProvider(url) {
+  try {
+    var parsed = new URL(url, window.location.origin);
+    if (parsed.hostname === 'api.openai.com') return 'OpenAI';
+    if (parsed.hostname === 'models.inference.ai.azure.com') return 'GitHub Models';
+    if (parsed.hostname === 'generativelanguage.googleapis.com') return 'Gemini';
+    if (parsed.hostname === 'localhost' && parsed.port === '1234') return 'lm-studio';
+    if (parsed.port === '8888') return 'ACP Bridge';
+  } catch (e) {}
+  return 'Unknown';
+}
 
 function getSelectedModel() {
   const sel = document.getElementById('selModel');
   return sel ? sel.value : '';
 }
 
-function computeMessagesTokens() {
-  try {
-    const raw = localStorage.getItem('messages');
-    if (!raw) return 0;
-    const msgs = JSON.parse(raw);
-    let acc = 0;
-    msgs.forEach(m => {
-      if (!m) return;
-      if (typeof m.content === 'string') {
-        acc += estimateTokensFromText(m.content);
-      } else if (Array.isArray(m.content)) {
-        m.content.forEach(part => {
-          if (part.type === 'text' && part.text) acc += estimateTokensFromText(part.text);
-          // ignore images for now
-        });
+// Count all conversation messages across all providers
+function _countAllMessages() {
+  var count = 0;
+  ['messages', 'copilotMessages', 'copilotACPMessages', 'geminiMessages', 'openLLMessages'].forEach(function(key) {
+    try {
+      var raw = localStorage.getItem(key);
+      if (raw) {
+        var msgs = JSON.parse(raw);
+        count += msgs.length;
       }
-    });
-    return acc;
-  } catch(e) { return 0; }
+    } catch(e) {}
+  });
+  return count;
+}
+
+// Compute tokens from all active message stores
+function computeMessagesTokens() {
+  var model = getSelectedModel();
+  var keys = ['messages']; // default OpenAI
+  if (model === 'copilot-acp') keys = ['copilotACPMessages'];
+  else if (model.indexOf('copilot-') === 0) keys = ['copilotMessages'];
+  else if (model === 'gemini') keys = ['geminiMessages'];
+  else if (model === 'lm-studio') keys = ['openLLMessages'];
+
+  var acc = 0;
+  keys.forEach(function(key) {
+    try {
+      var raw = localStorage.getItem(key);
+      if (!raw) return;
+      var msgs = JSON.parse(raw);
+      msgs.forEach(function(m) {
+        if (!m) return;
+        if (typeof m.content === 'string') {
+          acc += estimateTokensFromText(m.content);
+        } else if (Array.isArray(m.content)) {
+          m.content.forEach(function(part) {
+            if (part.type === 'text' && part.text) acc += estimateTokensFromText(part.text);
+            if (part.text) acc += estimateTokensFromText(part.text);
+          });
+        }
+        // Gemini format (parts array)
+        if (Array.isArray(m.parts)) {
+          m.parts.forEach(function(part) {
+            if (part.text) acc += estimateTokensFromText(part.text);
+          });
+        }
+      });
+    } catch(e) {}
+  });
+  return acc;
 }
 
 function computeLastResponseTokens() {
   try {
-    const txtOut = document.getElementById('txtOutput');
+    var txtOut = document.getElementById('txtOutput');
     if (!txtOut) return 0;
-    // grab last Eva bubble text, fall back to all innerText
-    const evaSpans = txtOut.querySelectorAll('.eva');
-    let last = '';
-    if (evaSpans && evaSpans.length) {
-      last = evaSpans[evaSpans.length - 1].parentElement ? evaSpans[evaSpans.length - 1].parentElement.textContent : evaSpans[evaSpans.length - 1].textContent;
-    } else {
-      last = txtOut.textContent || '';
+    var bubbles = txtOut.querySelectorAll('.eva-bubble .md, .eva-bubble');
+    if (bubbles && bubbles.length) {
+      return estimateTokensFromText(bubbles[bubbles.length - 1].textContent || '');
     }
-    return estimateTokensFromText(last);
+    return 0;
   } catch(e) { return 0; }
 }
 
 function updateTokenMonitor() {
-  const model = getSelectedModel();
-  const windowSize = MODEL_CONTEXT_WINDOWS[model] || 128000;
-  const msgTokens = computeMessagesTokens();
-  const respTokens = computeLastResponseTokens();
-  const used = msgTokens + respTokens;
-  const pct = windowSize > 0 ? Math.min(100, Math.round((used / windowSize) * 100)) : 0;
+  var model = getSelectedModel();
+  var windowSize = MODEL_CONTEXT_WINDOWS[model] || 128000;
+  var msgTokens = computeMessagesTokens();
+  var respTokens = computeLastResponseTokens();
+  var used = msgTokens + respTokens;
+  var pct = windowSize > 0 ? Math.min(100, Math.round((used / windowSize) * 100)) : 0;
 
-  const bar = document.getElementById('ctxFillBar');
-  const text = document.getElementById('ctxFillText');
-  const winText = document.getElementById('modelWindowText');
-  const msgText = document.getElementById('messagesTokensText');
-  const respText = document.getElementById('lastResponseTokensText');
-  if (bar) bar.style.width = pct + '%';
-  if (text) text.textContent = pct + '% (' + used + ' / ' + windowSize + ')';
-  if (winText) winText.textContent = windowSize ? (windowSize.toLocaleString() + ' tokens') : '—';
-  if (msgText) msgText.textContent = msgTokens.toLocaleString();
-  if (respText) respText.textContent = respTokens.toLocaleString();
+  var bar = document.getElementById('ctxFillBar');
+  var text = document.getElementById('ctxFillText');
+  var winText = document.getElementById('modelWindowText');
+  var msgText = document.getElementById('messagesTokensText');
+  var respText = document.getElementById('lastResponseTokensText');
+
+  if (bar) {
+    bar.style.width = pct + '%';
+    // Color the bar based on fill level
+    if (pct > 80) bar.style.background = 'linear-gradient(90deg, #ff6b6b, #ee5a24)';
+    else if (pct > 50) bar.style.background = 'linear-gradient(90deg, #feca57, #ff9f43)';
+    else bar.style.background = '';
+  }
+  if (text) text.textContent = pct + '% \u2014 ~' + used.toLocaleString() + ' / ' + windowSize.toLocaleString();
+
+  // Show model name + window
+  var modelName = model || 'none';
+  var sel = document.getElementById('selModel');
+  if (sel && sel.selectedOptions && sel.selectedOptions[0]) {
+    modelName = sel.selectedOptions[0].text;
+  }
+  if (winText) winText.textContent = modelName + ' (' + (windowSize > 0 ? (windowSize / 1000) + 'k' : 'N/A') + ')';
+  if (msgText) msgText.textContent = '~' + msgTokens.toLocaleString() + ' tokens';
+  if (respText) respText.textContent = '~' + respTokens.toLocaleString() + ' tokens';
 }
 
-// Periodic update
-setInterval(updateTokenMonitor, 1500);
-// Also update on model change
+function updateNetMonitor() {
+  var latEl = document.getElementById('netLatencyText');
+  var statEl = document.getElementById('netStatusText');
+  var reqEl = document.getElementById('netRequestCountText');
+  var errEl = document.getElementById('netErrorCountText');
+
+  if (latEl) {
+    var lat = _netStats.lastLatency;
+    latEl.textContent = lat > 0 ? (lat < 1000 ? lat + 'ms' : (lat / 1000).toFixed(1) + 's') + ' \u2014 ' + _netStats.lastProvider : '\u2014';
+  }
+  if (statEl) statEl.textContent = _netStats.lastStatus || '\u2014';
+  if (reqEl) reqEl.textContent = _netStats.requests.toString();
+  if (errEl) {
+    errEl.textContent = _netStats.errors.toString();
+    errEl.style.color = _netStats.errors > 0 ? '#ff6b6b' : '';
+  }
+}
+
+function updateSessionMonitor() {
+  var model = getSelectedModel();
+  var provEl = document.getElementById('sessProviderText');
+  var msgEl = document.getElementById('sessMsgCountText');
+  var acpEl = document.getElementById('sessACPText');
+  var mcpEl = document.getElementById('sessMCPText');
+
+  // Provider
+  if (provEl) {
+    if (model.indexOf('copilot-') === 0) provEl.textContent = model === 'copilot-acp' ? 'Copilot ACP' : 'GitHub Models';
+    else if (model === 'gemini') provEl.textContent = 'Google Gemini';
+    else if (model === 'lm-studio') provEl.textContent = 'lm-studio (local)';
+    else if (model === 'dall-e-3') provEl.textContent = 'DALL-E 3';
+    else provEl.textContent = 'OpenAI';
+  }
+
+  // Message count
+  if (msgEl) msgEl.textContent = _countAllMessages().toString();
+
+  // ACP Bridge status
+  if (acpEl) {
+    if (model === 'copilot-acp') {
+      // Async check
+      (function() {
+        var url = (typeof getACPBridgeUrl === 'function') ? getACPBridgeUrl() : 'http://localhost:8888';
+        fetch(url.replace(/\/+$/, '') + '/health', { signal: AbortSignal.timeout(2000) })
+          .then(function(r) { return r.json(); })
+          .then(function(d) {
+            acpEl.textContent = d.status === 'ok' ? '\u2705 Connected' : '\u274C Down';
+          })
+          .catch(function() { acpEl.textContent = '\u274C Offline'; });
+      })();
+    } else {
+      acpEl.textContent = 'N/A';
+    }
+  }
+
+  // MCP tools
+  if (mcpEl) {
+    try {
+      var cfg = JSON.parse(localStorage.getItem('mcp_config') || '{}');
+      var active = Object.keys(cfg);
+      mcpEl.textContent = active.length > 0 ? active.map(function(n) { return n.replace(/-mcp-server$/, ''); }).join(', ') : 'None';
+    } catch(e) { mcpEl.textContent = 'None'; }
+  }
+}
+
+// Periodic updates
+setInterval(updateTokenMonitor, 2000);
+setInterval(updateSessionMonitor, 5000);
 document.addEventListener('DOMContentLoaded', function(){
-  const sel = document.getElementById('selModel');
-  if (sel) sel.addEventListener('change', updateTokenMonitor);
+  var sel = document.getElementById('selModel');
+  if (sel) sel.addEventListener('change', function() {
+    updateTokenMonitor();
+    updateSessionMonitor();
+    updateNetMonitor();
+  });
   updateTokenMonitor();
+  updateSessionMonitor();
 });
 
 // Languages
@@ -1010,6 +1494,324 @@ function escapeHtml(str) {
     .replace(/'/g, '&#39;');
 }
 
+// --- Unified Response Renderer ---
+// Single function all models call to render Eva's response with images
+
+// --- Image Generation & Rendering ---
+// State: _lastUserAskedGenerate and _lastUserImageSubject declared near _detectGenerationIntent
+
+/**
+ * Check if user's message is asking for image generation (not just showing).
+ */
+function _isGenerationRequest(text) {
+  if (!text) return false;
+  return /\b(generate|create|draw|make|design|paint|render|imagine|produce|craft)\b.*\b(image|picture|photo|illustration|artwork|art|drawing|painting)\b/i.test(text) ||
+         /\b(image|picture|illustration|artwork)\b.*\b(generate|create|draw|make|design)\b/i.test(text) ||
+         /\bdall-?e\b/i.test(text);
+}
+
+/**
+ * Generate an image using DALL-E 3.
+ * @returns {Promise<string|null>} Image URL or null
+ */
+async function _generateImage(prompt) {
+  var apiKey = (typeof getAuthKey === 'function') ? getAuthKey('OPENAI_API_KEY') : (typeof OPENAI_API_KEY !== 'undefined' ? OPENAI_API_KEY : '');
+  if (!apiKey) {
+    return null;
+  }
+
+  try {
+    var resp = await fetch('https://api.openai.com/v1/images/generations', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': 'Bearer ' + apiKey
+      },
+      body: JSON.stringify({
+        model: 'dall-e-3',
+        prompt: prompt,
+        n: 1,
+        size: '1024x1024'
+      })
+    });
+
+    if (!resp.ok) {
+      return null;
+    }
+
+    var data = await resp.json();
+    if (data.data && data.data[0] && data.data[0].url) {
+      return data.data[0].url;
+    }
+    return null;
+  } catch (e) {
+    return null;
+  }
+}
+
+/**
+ * Render an Eva response with markdown and inline images.
+ * Detects [Image of ...] placeholders, routes to DALL-E (generation)
+ * or Wikimedia (search) based on the user's original request.
+ */
+async function renderEvaResponse(content, txtOutput) {
+  if (!content || !content.trim()) {
+    txtOutput.innerHTML += '<div class="chat-bubble eva-bubble"><span class="eva">Eva:</span> Sorry, can you please ask me in another way?</div>';
+    txtOutput.scrollTop = txtOutput.scrollHeight;
+    return;
+  }
+
+  var text = content.trim();
+
+  // Detect image placeholders — multiple patterns models use
+  var imagePatterns = [
+    /\[Image of ([^\]]+)\]/gi,           // [Image of description]
+    /\[image:\s*([^\]]+)\]/gi,           // [image: description]
+    /\[🖼️?\s*([^\]]+)\]/gi,             // [🖼️ description] or [🖼 description]
+    /!\[([^\]]*)\]\(\s*\)/g,             // ![alt]() — empty URL markdown images
+    /\(Image:\s*([^)]+)\)/gi             // (Image: description) — some models use parens
+  ];
+
+  var imagePlaceholders = [];
+  var seen = {};
+  imagePatterns.forEach(function(rx) {
+    var match;
+    while ((match = rx.exec(text)) !== null) {
+      if (!seen[match[0]]) {
+        seen[match[0]] = true;
+        // Use the user's original subject if available, otherwise extract from AI description
+        var query = _lastUserImageSubject || _extractImageSubject(match[1].trim());
+        imagePlaceholders.push({ full: match[0], query: query });
+      }
+    }
+  });
+
+  // Limit to 3 images per response
+  imagePlaceholders = imagePlaceholders.slice(0, 3);
+
+  if (imagePlaceholders.length > 0) {
+    var useGeneration = _lastUserAskedGenerate;
+
+    var fetchPromises = imagePlaceholders.map(function(ph) {
+      if (useGeneration) {
+        // Use the user's simple subject for DALL-E (avoids content policy triggers from verbose AI descriptions)
+        var dallePrompt = _lastUserImageSubject || ph.query;
+        return _generateImage(dallePrompt).then(function(url) {
+          if (url) return { placeholder: ph, url: url, generated: true };
+          // Fall back to search if generation fails
+          return _searchImage(ph.query).then(function(url2) {
+            return { placeholder: ph, url: url2, generated: false };
+          });
+        }).catch(function() {
+          return { placeholder: ph, url: null, generated: false };
+        });
+      } else {
+        return _searchImage(ph.query).then(function(url) {
+          return { placeholder: ph, url: url, generated: false };
+        }).catch(function() {
+          return { placeholder: ph, url: null, generated: false };
+        });
+      }
+    });
+
+    var results = await Promise.all(fetchPromises);
+
+    results.forEach(function(r) {
+      if (r.url) {
+        // Replace placeholder with image tag
+        var genLabel = r.generated ? ' data-generated="true"' : '';
+        var imgTag = '<img src="' + escapeHtml(r.url) + '" title="' + escapeHtml(r.placeholder.query) + '" alt="' + escapeHtml(r.placeholder.query) + '" class="eva-inline-img"' + genLabel + '>';
+        if (r.generated) {
+          imgTag = '<div class="eva-generated-wrap">' + imgTag + '<span class="eva-generated-badge">AI Generated</span></div>';
+        }
+        text = text.replace(r.placeholder.full, imgTag);
+      } else {
+        // Replace with a styled placeholder showing what was requested
+        text = text.replace(r.placeholder.full, '[🖼️ ' + r.placeholder.query + ']');
+      }
+    });
+
+    // If we successfully generated/found images, strip common AI disclaimers
+    var anySuccess = results.some(function(r) { return r.url; });
+    if (anySuccess && _lastUserAskedGenerate) {
+      // Remove lines where the AI says it can't generate/create images
+      text = text.replace(/I\s+(cannot|can't|can not|am unable to|don't have the ability to)\s+(generate|create|produce|make|draw|render)\s+(images?|pictures?|photos?|illustrations?|artwork)[^.]*\./gi, '');
+      text = text.replace(/I\s+(can only|only)\s+describe[^.]*\./gi, '');
+      text = text.replace(/\n{3,}/g, '\n\n'); // clean up extra blank lines
+    }
+
+    // Tokenize generated image wrappers and standalone <img> tags before markdown
+    var imgFragments = [];
+    text = text.replace(/<div class="eva-generated-wrap">[\s\S]*?<\/div>/g, function(m) {
+      imgFragments.push(m);
+      return '\u0000IMG' + (imgFragments.length - 1) + '\u0000';
+    });
+    text = text.replace(/<img[^>]*>/g, function(m) {
+      imgFragments.push(m);
+      return '\u0000IMG' + (imgFragments.length - 1) + '\u0000';
+    });
+
+    // Render markdown
+    var html = (typeof renderMarkdown === 'function') ? renderMarkdown(text) : text;
+
+    // Restore <img> tags
+    html = html.replace(/\u0000IMG(\d+)\u0000/g, function(m, idx) {
+      return imgFragments[Number(idx)] || m;
+    });
+
+    txtOutput.innerHTML += '<div class="chat-bubble eva-bubble"><span class="eva">Eva:</span> <div class="md">' + html + '</div></div>';
+  } else {
+    // No images or no search keys — just render markdown
+    var html2 = (typeof renderMarkdown === 'function') ? renderMarkdown(text) : text;
+    txtOutput.innerHTML += '<div class="chat-bubble eva-bubble"><span class="eva">Eva:</span> <div class="md">' + html2 + '</div></div>';
+  }
+
+  txtOutput.scrollTop = txtOutput.scrollHeight;
+}
+
+/**
+ * Extract the key subject from a verbose image description.
+ * "GitHub's Octocat mascot - a friendly cartoon cat..." → "GitHub Octocat mascot"
+ */
+function _extractImageSubject(rawDesc) {
+  if (!rawDesc) return '';
+  var desc = rawDesc;
+
+  // Cut at first " - " or " — " or ", " comma phrase
+  var dashIdx = desc.search(/\s[-–—]\s/);
+  if (dashIdx > 3) desc = desc.substring(0, dashIdx);
+
+  // Cut at first comma if still long (keep just the subject noun phrase)
+  if (desc.length > 40) {
+    var commaIdx = desc.indexOf(',');
+    if (commaIdx > 3) desc = desc.substring(0, commaIdx);
+  }
+
+  // Cut at first period
+  if (desc.length > 40) {
+    var dotIdx = desc.indexOf('.');
+    if (dotIdx > 3) desc = desc.substring(0, dotIdx);
+  }
+
+  // 1. Find proper nouns (capitalized words like "Octocat", "GitHub")
+  var properNouns = desc.match(/\b[A-Z][a-zA-Z]+\b/g) || [];
+  var ignoreCapitalized = new Set(['Image', 'Picture', 'Photo', 'The', 'An', 'This', 'Here', 'Its', 'Each', 'Very', 'Some', 'With', 'And']);
+  properNouns = properNouns.filter(function(w) { return !ignoreCapitalized.has(w); });
+
+  if (properNouns.length > 0) {
+    return properNouns.slice(0, 4).join(' ');
+  }
+
+  // 2. Strip filler — keep nouns (which come early in the description)
+  desc = desc
+    .replace(/^(an?|the|image of|picture of|photo of|showing|depicting|illustration of)\s+/gi, '')
+    .replace(/\b(friendly|cartoon|cartoonish|cute|classic|iconic|simple|round|large|small|playful|beloved|stylized|detailed|colorful|whimsical|famous|popular|vibrant|modern|typical|standard|featuring|with|that|has|and|or|its|soft|warm|bright|relaxed|graceful|sunny|patterned)\b\s*/gi, '')
+    .replace(/[''\u2019]s\b/g, '')
+    .replace(/[,;]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+  // Take FIRST 2-3 meaningful words (the subject noun is at the beginning)
+  var words = desc.split(/\s+/).filter(function(w) { return w.length > 2; });
+  if (words.length > 3) {
+    desc = words.slice(0, 3).join(' ');
+  }
+
+  return desc || rawDesc.substring(0, 30);
+}
+
+/**
+ * Search for an image using Wikimedia Commons (free, no API key needed).
+ */
+async function _searchImage(query) {
+  if (!query) return null;
+
+  var cleanQuery = query.trim();
+  if (!cleanQuery) return null;
+
+  // Try progressively simpler queries
+  var queries = [cleanQuery];
+  var words = cleanQuery.split(/\s+/);
+  if (words.length > 2) queries.push(words.slice(0, 2).join(' '));
+  if (words.length > 1) queries.push(words[words.length - 1]); // try just the last word (often the noun)
+
+  for (var qi = 0; qi < queries.length; qi++) {
+    var q = queries[qi];
+    try {
+      var wUrl = 'https://commons.wikimedia.org/w/api.php?' +
+        'action=query&list=search&srnamespace=6' +
+        '&srsearch=' + encodeURIComponent(q) +
+        '&srlimit=5&format=json&origin=*';
+
+      var wResp = await fetch(wUrl);
+      if (wResp.ok) {
+        var wData = await wResp.json();
+        var results = (wData.query && wData.query.search) || [];
+        if (results.length > 0) {
+          // Get the actual image URL from the file title
+          var fileTitle = results[0].title;
+          var imgUrl = 'https://commons.wikimedia.org/w/api.php?' +
+            'action=query&titles=' + encodeURIComponent(fileTitle) +
+            '&prop=imageinfo&iiprop=url&iiurlwidth=400&format=json&origin=*';
+
+          var imgResp = await fetch(imgUrl);
+          if (imgResp.ok) {
+            var imgData = await imgResp.json();
+            var pages = imgData.query && imgData.query.pages;
+            if (pages) {
+              var pageId = Object.keys(pages)[0];
+              var info = pages[pageId].imageinfo;
+              if (info && info[0]) {
+                return info[0].thumburl || info[0].url;
+              }
+            }
+          }
+        } else if (qi < queries.length - 1) {
+          // Try simpler query
+        }
+      }
+    } catch (e) {
+      console.warn('Wikimedia search error:', e.message);
+    }
+  }
+
+  return null;
+}
+
+// --- Image Lightbox ---
+document.addEventListener('DOMContentLoaded', function() {
+  var lightbox = document.getElementById('evaLightbox');
+  var lightboxImg = document.getElementById('evaLightboxImg');
+  var lightboxClose = lightbox ? lightbox.querySelector('.eva-lightbox-close') : null;
+
+  // Click on any inline image to expand
+  document.addEventListener('click', function(e) {
+    var img = e.target.closest('.eva-inline-img');
+    if (img && lightbox && lightboxImg) {
+      lightboxImg.src = img.src;
+      lightboxImg.alt = img.alt || 'Expanded image';
+      lightbox.classList.add('open');
+      e.preventDefault();
+    }
+  });
+
+  // Close lightbox
+  if (lightbox) {
+    lightbox.addEventListener('click', function(e) {
+      if (e.target === lightbox || e.target === lightboxClose) {
+        lightbox.classList.remove('open');
+      }
+    });
+  }
+
+  // Escape key closes lightbox
+  document.addEventListener('keydown', function(e) {
+    if (e.key === 'Escape' && lightbox && lightbox.classList.contains('open')) {
+      lightbox.classList.remove('open');
+    }
+  });
+});
+
 // Capture Shift + Enter Keys for new line
 function shiftBreak() {
 document.querySelector("#txtMsg").addEventListener("keydown", function(event) {
@@ -1041,7 +1843,16 @@ document.querySelector("#txtMsg").addEventListener("keydown", function(event) {
 
 // Clear Messages for Clear Memory Button
 function clearMessages() {
+    // Preserve auth keys and settings across clear
+    var keysToKeep = [];
+    for (var i = 0; i < localStorage.length; i++) {
+      var key = localStorage.key(i);
+      if (key && (key.indexOf('auth_') === 0 || key === 'theme' || key === 'systemPrompt' || key === 'lcars_collapsed' || key === 'acp_bridge_url')) {
+        keysToKeep.push({ k: key, v: localStorage.getItem(key) });
+      }
+    }
     localStorage.clear();
+    keysToKeep.forEach(function(item) { localStorage.setItem(item.k, item.v); });
     document.getElementById("txtOutput").innerHTML = "\n" + "		MEMORY CLEARED";
 }
 

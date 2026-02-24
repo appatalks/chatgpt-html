@@ -22,22 +22,205 @@ body {
 /* LCARS side accents */
 /* removed lcars side accents */
 
+/* ------------------------------------------------------------
+ *  Settings Overlay & Panel
+ * ------------------------------------------------------------- */
+.settings-overlay {
+  display: none;
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.5);
+  z-index: 9998;
+}
+.settings-overlay.open { display: block; }
+
     #settingsMenu {
-      display: none;  
-      position: absolute;
-      top: 60px;       
-      left: 60px;    
-      color: blue;
-      opacity: 89%;	
-      background-color: #ddd;
-      border: 1px solid #ccc;
-      padding: 1em;
-      z-index: 9999;              /* Make sure it’s on top of other elements */
-      width: 250px;               /* Optional fixed width */
-      box-shadow: 0 2px 8px rgba(0, 0, 4, 2.0);
+      display: none;
+      position: fixed;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      width: 500px;
+      max-width: 95vw;
+      max-height: 85vh;
+      background: #fff;
+      border-radius: 12px;
+      box-shadow: 0 8px 32px rgba(0,0,0,0.3);
+      z-index: 9999;
+      overflow: hidden;
+      flex-direction: column;
+      color: #333;
     }
-    #settingsMenu h3 {
-      margin-top: 0;
+    #settingsMenu.open {
+      display: flex;
+    }
+
+    .settings-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 16px 20px;
+      border-bottom: 1px solid #e0e0e0;
+    }
+    .settings-header h3 {
+      margin: 0;
+      font-size: 18px;
+      color: #333;
+    }
+    .settings-close {
+      background: none;
+      border: none;
+      font-size: 24px;
+      cursor: pointer;
+      color: #666;
+      padding: 0 4px;
+      line-height: 1;
+      border-radius: 4px;
+    }
+    .settings-close:hover { color: #333; background: #eee; }
+
+    .settings-tabs {
+      display: flex;
+      border-bottom: 2px solid #ccc;
+      padding: 0 20px;
+      gap: 2px;
+      background: #f0f0f0;
+    }
+    .settings-tab {
+      padding: 10px 16px;
+      border: none;
+      background: #e0e0e0;
+      cursor: pointer;
+      font-size: 14px;
+      font-weight: 600;
+      color: #555;
+      border-bottom: 3px solid transparent;
+      margin-bottom: -2px;
+      transition: color 0.2s, border-color 0.2s, background 0.2s;
+      border-radius: 6px 6px 0 0;
+    }
+    .settings-tab:hover { color: #111; background: #d0d0d0; }
+    .settings-tab.active {
+      color: #007bff;
+      background: #fff;
+      border-bottom-color: #007bff;
+    }
+
+    .settings-body {
+      padding: 20px;
+      overflow-y: auto;
+      flex: 1;
+    }
+    .settings-panel { display: none; }
+    .settings-panel.active { display: block; }
+
+    .settings-panel label {
+      display: block;
+      margin: 14px 0 4px;
+      font-weight: 600;
+      font-size: 13px;
+      color: #555;
+    }
+    .settings-panel label:first-child { margin-top: 0; }
+    .settings-panel select,
+    .settings-panel input[type="number"],
+    .settings-panel input[type="text"],
+    .settings-panel input[type="password"],
+    .settings-panel textarea {
+      width: 100%;
+      padding: 8px 10px;
+      border: 1px solid #ccc;
+      border-radius: 6px;
+      font-size: 14px;
+      box-sizing: border-box;
+      color: #333;
+      background: #fff;
+    }
+    .settings-panel textarea {
+      resize: vertical;
+      font-family: monospace;
+      line-height: 1.5;
+    }
+    .settings-panel input[type="range"] {
+      width: 100%;
+    }
+    .settings-panel input[type="checkbox"] {
+      margin-left: 0;
+    }
+
+    /* Model options */
+    .model-options { margin-top: 12px; }
+    .model-opt { margin-bottom: 10px; }
+
+    /* Auth fields */
+    .auth-note {
+      font-size: 12px;
+      color: #888;
+      margin: 0 0 12px;
+    }
+    .auth-field { margin-bottom: 12px; }
+    .auth-input-wrap {
+      display: flex;
+      gap: 6px;
+    }
+    .auth-input-wrap input { flex: 1; }
+    .auth-toggle {
+      padding: 6px 10px;
+      font-size: 12px;
+      border: 1px solid #ccc;
+      border-radius: 6px;
+      background: #f5f5f5;
+      cursor: pointer;
+      white-space: nowrap;
+      color: #333;
+    }
+    .auth-toggle:hover { background: #e8e8e8; }
+
+    /* MCP tab */
+    .mcp-preset {
+      margin-bottom: 16px;
+      padding: 12px;
+      border: 1px solid #ddd;
+      border-radius: 8px;
+      background: #f9f9f9;
+    }
+    .mcp-preset label { display: flex; align-items: center; gap: 8px; margin: 0; cursor: pointer; }
+    .mcp-preset strong { font-size: 14px; }
+    .mcp-preset .prompt-hint { margin: 6px 0 0 26px; }
+    .mcp-status { margin: 12px 0; padding: 10px; border-radius: 6px; background: #f0f4ff; font-size: 13px; min-height: 24px; }
+    .mcp-badge {
+      display: inline-block;
+      padding: 2px 8px;
+      margin: 2px;
+      border-radius: 999px;
+      background: #007bff;
+      color: #fff;
+      font-size: 12px;
+      font-weight: 600;
+    }
+    /* LCARS MCP overrides */
+    body.theme-lcars .mcp-preset { background: rgba(255,255,255,0.05); border-color: rgba(255,255,255,0.15); }
+    body.theme-lcars .mcp-status { background: rgba(0,0,0,0.3); color: #d0defa; }
+    body.theme-lcars .mcp-badge { background: var(--ld-alpha-blue); }
+
+    .auth-save {
+      margin-top: 16px;
+      padding: 10px 20px;
+      background: #007bff;
+      color: #fff;
+      border: none;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 14px;
+      width: 100%;
+    }
+    .auth-save:hover { background: #0056b3; }
+
+    /* Prompt hints */
+    .prompt-hint {
+      font-size: 12px;
+      color: #888;
+      margin: 6px 0 0;
     }
 
 
@@ -425,46 +608,89 @@ body.theme-lcars.lcars-collapsed .speakSend::before {
 }
 
 /* LCARS (Unified: Lower Decks palette + black background) */
-body.theme-lcars { background: #000 !important; color: #eef5ff; }
+@import url('https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;600;700&display=swap');
+body.theme-lcars { background: #000 !important; color: #eef5ff; font-family: "Barlow Condensed", sans-serif; }
 /* LCARS layout: grid with left rail + main app container */
 #lcarsSidebar { display: none; }
 body.theme-lcars {
   display: grid;
-  grid-template-columns: 220px minmax(720px, 1100px); /* left rail, centered main */
-  grid-template-rows: 1fr auto; /* main fills, footer anchors bottom */
-  gap: 8px; /* thin LCARS-style gap between rail and main */
-  align-items: start;
-  justify-content: center; /* center the two-column layout on screen */
+  grid-template-columns: 200px 1fr;
+  grid-template-rows: 1fr; /* single row fills viewport */
+  gap: 0;
+  align-items: stretch; /* both columns stretch to same height */
+  justify-content: stretch;
   height: 100vh;
   padding: 16px;
+  box-sizing: border-box;
+  overflow: hidden; /* prevent body scroll */
   background-size: cover;
 }
 body.theme-lcars #lcarsSidebar {
   display: flex;
-  position: sticky; /* stays visible while main scrolls */
-  top: 20px;
-  align-self: start;
-  height: calc(95vh - 32px);
+  align-self: stretch; /* match main column height exactly */
   flex-direction: column;
-  gap: 12px;
-  background: var(--ld-night-rain);
-  border-top-left-radius: 120px;
-  border-bottom-left-radius: 120px;
-  padding: 12px 12px 16px 20px;
-  border: 2px solid var(--ld-arctic-snow);
-  border-right: 2px solid var(--ld-arctic-snow); /* visible seam near main */
+  gap: 4px;
+  background: transparent;
+  border: none;
+  border-radius: 0;
+  padding: 0;
+  position: relative; /* not sticky — stretches with grid */
+  top: auto;
+  height: auto;
+}
+/* LCARS top elbow — the signature curved connector */
+body.theme-lcars #lcarsSidebar::before {
+  content: '';
+  display: block;
+  height: 80px;
+  background: var(--ld-alpha-blue);
+  border-top-left-radius: 80px;
+  border-bottom: 4px solid #000;
+  flex-shrink: 0;
+}
+/* LCARS bottom elbow */
+body.theme-lcars #lcarsSidebar::after {
+  content: '';
+  display: block;
+  height: 40px;
+  background: var(--ld-beta-blue);
+  border-bottom-left-radius: 40px;
+  border-top: 4px solid #000;
+  flex-shrink: 0;
+  margin-top: auto;
 }
 /* Make the top chip act as a handle (tooltip provided via title attribute) */
 body.theme-lcars #lcarsChipTop { cursor: pointer; }
 body.theme-lcars #lcarsSidebar .lcars-rail { display: none; }
-/* Decorative chips to suggest LCARS bands */
-body.theme-lcars #lcarsSidebar .lcars-chip { height: 242px; border-radius: 90px 0 0 28px; background: var(--ld-alpha-blue); }
-body.theme-lcars #lcarsSidebar .lcars-chip.peach { background: var(--ld-arctic-ice); height: 50px; border-radius: 0 0 0 0px; }
-body.theme-lcars #lcarsSidebar .lcars-chip.red { background: var(--ld-sunset-red); height: 50px; border-radius: 0 0 0 0px;}
-body.theme-lcars #lcarsSidebar .lcars-chip.sand { background: var(--cl-amber); height: 50px; border-radius: 0 0 0 0px; }
-
+/* LCARS chip bands — flat colored bars with consistent gaps */
+body.theme-lcars #lcarsSidebar .lcars-chip {
+  height: auto;
+  flex: 1 1 auto;
+  border-radius: 0;
+  background: var(--ld-alpha-blue);
+  border-bottom: 4px solid #000;
+}
+body.theme-lcars #lcarsSidebar .lcars-chip.peach {
+  background: var(--ld-arctic-ice);
+  flex: 0 0 48px;
+  border-radius: 0;
+}
+body.theme-lcars #lcarsSidebar .lcars-chip.red {
+  background: var(--ld-sunset-red);
+  flex: 0 0 48px;
+  border-radius: 0;
+}
+body.theme-lcars #lcarsSidebar .lcars-chip.sand {
+  background: var(--cl-amber);
+  flex: 0 0 48px;
+  border-radius: 0;
+}
 /* Sidebar controls */
-body.theme-lcars #lcarsSidebar .lcars-chip.print { background: var(--ld-radioactive); height: 50px; border-radius: 0 0 0 0px; }
+body.theme-lcars #lcarsSidebar .lcars-chip.print {
+  background: var(--ld-radioactive);
+  flex: 0 0 48px;
+  border-radius: 0;
+}
 /* Monitors dock next to chat input */
 /* Default theme: wrapper is inert to avoid layout changes */
 .input-monitors-row { display: block; }
@@ -474,19 +700,22 @@ body.theme-lcars #lcarsSidebar .lcars-chip.print { background: var(--ld-radioact
 body.theme-lcars .input-monitors-row {
   display: flex;
   align-items: stretch;
-  gap: 10px;
+  gap: 6px;
   width: 100%;
-  margin-top: 8px;
+  margin-top: 6px;
+  flex: 0 0 auto;
+  min-height: 140px; /* ensure send button is always visible */
+  max-height: 200px;
 }
 body.theme-lcars .lcars-monitors {
-  background: var(--ld-night-cloud);
-  border: 2px solid var(--ld-arctic-snow);
-  border-radius: 16px;
-  padding: 10px;
-  width: 260px; /* fixed rail-like width */
-  flex: 0 0 260px;
-  /* Normalize total dock height so switching tabs doesn't move layout */
-  height: 280px;
+  background: rgba(0,0,0,0.4);
+  border: 1px solid rgba(255,255,255,0.08);
+  border-radius: 8px;
+  padding: 8px;
+  width: 240px;
+  flex: 0 0 240px;
+  height: auto;
+  max-height: 200px;
   box-sizing: border-box;
   display: flex;
   flex-direction: column;
@@ -515,9 +744,9 @@ body.theme-lcars .monitor-tab {
   text-overflow: ellipsis;
 }
 body.theme-lcars .monitor-tab.active { background: var(--ld-alpha-blue); }
-body.theme-lcars #lcarsMonitorPanels { background: rgba(0,0,0,0.2); border: 1px solid rgba(255,255,255,0.2); border-radius: 10px; padding: 8px; overflow: hidden; }
+body.theme-lcars #lcarsMonitorPanels { background: transparent; border: none; border-radius: 0; padding: 4px; overflow: hidden; }
 /* Normalize panel height across tabs to avoid layout shift */
-body.theme-lcars #lcarsMonitorPanels { height: 210px; flex: 1 1 auto; min-height: 0; }
+body.theme-lcars #lcarsMonitorPanels { flex: 1 1 auto; min-height: 0; }
 body.theme-lcars .monitor-panel { height: 100%; }
 body.theme-lcars .monitor-grid { height: 100%; align-content: start; }
 body.theme-lcars .monitor-panel { display: none; }
@@ -525,11 +754,18 @@ body.theme-lcars .monitor-panel.active { display: block; }
 body.theme-lcars .monitor-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; }
 /* Single-column variant for Sys panel terminal */
 body.theme-lcars .monitor-grid.one-col { grid-template-columns: 1fr; }
-body.theme-lcars .monitor-card { background: rgba(0,0,0,0.35); border: 1px solid rgba(255,255,255,0.25); border-radius: 10px; padding: 8px; min-height: 68px; color: #eef5ff; }
+body.theme-lcars .monitor-card {
+  background: rgba(255,255,255,0.04);
+  border: 1px solid rgba(255,255,255,0.08);
+  border-radius: 4px;
+  padding: 6px 8px;
+  min-height: 56px;
+  color: #eef5ff;
+}
 /* Slightly taller card for terminal/status panel */
 body.theme-lcars .monitor-card.monitor-terminal { min-height: 120px; height: 100%; background: rgba(0,0,0,0.55); }
-body.theme-lcars .monitor-title { font: 700 12px "Barlow Condensed",sans-serif; letter-spacing: .1em; text-transform: uppercase; color: #d0defa; margin-bottom: 6px; }
-body.theme-lcars .monitor-value { font: 600 16px system-ui, Arial, sans-serif; }
+body.theme-lcars .monitor-title { font: 700 10px "Barlow Condensed",sans-serif; letter-spacing: .12em; text-transform: uppercase; color: #8899bb; margin-bottom: 2px; }
+body.theme-lcars .monitor-value { font: 600 13px "Barlow Condensed", sans-serif; letter-spacing: .04em; }
 body.theme-lcars .progress { height: 10px; background: rgba(255,255,255,0.15); border-radius: 6px; overflow: hidden; border: 1px solid rgba(255,255,255,0.18); }
 body.theme-lcars .progress .bar { height: 100%; background: linear-gradient(90deg, var(--ld-arctic-ice), var(--ld-alpha-blue)); width: 0%; transition: width .3s ease; }
 /* Sidebar controls inside chips */
@@ -556,18 +792,25 @@ body.theme-lcars #lcarsSidebar .lcars-chip > .speakSend:hover {
   border-color: #fff;
 }
 body.theme-lcars #lcarsSidebar .lcars-label {
-  margin-top: inherit; font: 700 14px "Barlow Condensed",sans-serif;
-  letter-spacing: .12em; text-transform: uppercase; color: #d0defa;
+  padding: 4px 8px;
+  font: 700 12px "Barlow Condensed",sans-serif;
+  letter-spacing: .12em;
+  text-transform: uppercase;
+  color: #8899bb;
+  text-align: center;
+  flex-shrink: 0;
 }
 
 /* Collapsed LCARS sidebar state */
 body.theme-lcars.lcars-collapsed {
-  grid-template-columns: 56px minmax(720px, 1100px);
+  grid-template-columns: 48px 1fr;
 }
 body.theme-lcars.lcars-collapsed #lcarsSidebar {
-  padding: 8px;
-  gap: 8px;
+  padding: 0;
+  gap: 2px;
 }
+body.theme-lcars.lcars-collapsed #lcarsSidebar::before { height: 40px; border-top-left-radius: 40px; }
+body.theme-lcars.lcars-collapsed #lcarsSidebar::after { height: 20px; border-bottom-left-radius: 20px; }
 body.theme-lcars.lcars-collapsed #lcarsSidebar .lcars-label { display: none; }
 /* Keep chips visible but compact in collapsed mode */
 body.theme-lcars.lcars-collapsed #lcarsSidebar .lcars-chip {
@@ -605,32 +848,54 @@ body.theme-lcars.lcars-collapsed #lcarsChipPrint #printButton::before {
 body.theme-lcars .container { display: none; }
 /* Main app container styling under LCARS */
 body.theme-lcars #idContainer,
-body.theme-lcars .settingsMenu,
 body.theme-lcars .chat-input-container,
 body.theme-lcars #txtOutput {
-  background: var(--ld-night-rain);
   color: #eef5ff;
-  border-radius: 18px;
-  border: 2px solid var(--ld-arctic-snow);
 }
+/* LCARS Settings Panel overrides */
+body.theme-lcars .settings-overlay { background: rgba(0,0,0,0.7); }
+body.theme-lcars #settingsMenu {
+  background: #0c0f14;
+  color: #eef5ff;
+  border: 1px solid rgba(255,255,255,0.12);
+}
+body.theme-lcars .settings-header { border-color: rgba(255,255,255,0.1); }
+body.theme-lcars .settings-header h3 { color: #eef5ff; }
+body.theme-lcars .settings-close { color: #eef5ff; }
+body.theme-lcars .settings-close:hover { background: rgba(255,255,255,0.1); color: #fff; }
+body.theme-lcars .settings-tabs { border-color: rgba(255,255,255,0.1); background: rgba(255,255,255,0.03); }
+body.theme-lcars .settings-tab { color: #6677aa; background: transparent; border-radius: 0; }
+body.theme-lcars .settings-tab:hover { color: #d0defa; background: rgba(255,255,255,0.06); }
+body.theme-lcars .settings-tab.active { color: #fff; background: var(--ld-alpha-blue); border-bottom-color: var(--ld-arctic-ice); }
+body.theme-lcars .settings-panel label { color: #d0defa; }
+body.theme-lcars .settings-panel select,
+body.theme-lcars .settings-panel input[type="number"],
+body.theme-lcars .settings-panel input[type="text"],
+body.theme-lcars .settings-panel input[type="password"],
+body.theme-lcars .settings-panel textarea {
+  background: #0c0f14;
+  color: #eef5ff;
+  border-color: rgba(255,255,255,0.2);
+}
+body.theme-lcars .settings-panel select optgroup { background: #0c0f14; color: #eef5ff; }
+body.theme-lcars .auth-note { color: #8899bb; }
+body.theme-lcars .auth-toggle { background: var(--ld-night-cloud); color: #eef5ff; border-color: rgba(255,255,255,0.2); }
+body.theme-lcars .auth-toggle:hover { background: var(--ld-arctic-ice); color: #000; }
+body.theme-lcars .auth-save { background: var(--ld-alpha-blue); color: #fff; }
+body.theme-lcars .auth-save:hover { background: var(--ld-arctic-ice); color: #000; }
+body.theme-lcars .prompt-hint { color: #8899bb; }
 /* Per request: make txtOutput and chat-input-container black in LCARS */
-body.theme-lcars #txtOutput { background: #000; }
-body.theme-lcars .chat-input-container { background: #000; border-color: var(--ld-arctic-snow); }
+body.theme-lcars .chat-input-container { border-color: rgba(255,255,255,0.08); }
 body.theme-lcars #txtMsg { color: #eef5ff; }
-body.theme-lcars footer { background: var(--ld-night-rain); color: #eef5ff; }
+body.theme-lcars footer { background: transparent; color: #eef5ff; }
 /* LCARS-styled status panel */
 body.theme-lcars #idText {
-  border: 2px solid var(--ld-arctic-snow);
-  /* Terminal-style dark surface with subtle scanlines */
-  background:
-    linear-gradient(rgba(255,255,255,0.04) 1px, transparent 1px),
-    #0c0f14;
-  background-size: 100% 18px, auto;
-  color: #dbe7ff;
-  /* width: 100%; */
-  min-height: 40px;
-  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
-  box-shadow: inset 0 0 0 1px rgba(255,255,255,0.05);
+  border: 1px solid rgba(255,255,255,0.08);
+  background: rgba(0,0,0,0.6);
+  color: #8899bb;
+  min-height: 28px;
+  font: 600 12px "Barlow Condensed", ui-monospace, monospace;
+  letter-spacing: .04em;
 }
 body.theme-lcars #idText.status-info { border-color: var(--ld-arctic-ice); background: rgba(153,204,255,0.10); }
 body.theme-lcars #idText.status-warn { border-color: var(--cl-amber); background: rgba(255,204,102,0.10); }
@@ -694,6 +959,76 @@ body.theme-lcars #lcarsChipPrint #printButton::before {
   background-image: url('img/icon-print.svg');
 }
 
+/* Inline images in Eva responses */
+.eva-inline-img {
+  display: block;
+  max-width: 360px;
+  max-height: 300px;
+  width: auto;
+  height: auto;
+  border-radius: 8px;
+  margin: 8px 0;
+  border: 1px solid rgba(255,255,255,0.1);
+  cursor: pointer;
+  transition: transform 0.2s;
+}
+.eva-inline-img:hover { transform: scale(1.02); }
+.eva-inline-img { cursor: zoom-in; }
+
+/* Lightbox overlay for expanded images */
+.eva-lightbox {
+  display: none;
+  position: fixed;
+  inset: 0;
+  z-index: 99999;
+  background: rgba(0,0,0,0.85);
+  backdrop-filter: blur(4px);
+  cursor: zoom-out;
+  align-items: center;
+  justify-content: center;
+}
+.eva-lightbox.open { display: flex; }
+.eva-lightbox img {
+  max-width: 90vw;
+  max-height: 90vh;
+  border-radius: 8px;
+  box-shadow: 0 8px 40px rgba(0,0,0,0.5);
+  object-fit: contain;
+}
+.eva-lightbox-close {
+  position: absolute;
+  top: 16px;
+  right: 20px;
+  background: none;
+  border: none;
+  color: #fff;
+  font-size: 32px;
+  cursor: pointer;
+  opacity: 0.7;
+  transition: opacity 0.2s;
+  z-index: 100000;
+}
+.eva-lightbox-close:hover { opacity: 1; }
+
+/* AI Generated badge */
+.eva-generated-wrap { display: inline-block; position: relative; }
+.eva-generated-badge {
+  position: absolute;
+  bottom: 12px;
+  right: 4px;
+  background: rgba(0,0,0,0.7);
+  color: #fff;
+  font-size: 10px;
+  font-weight: 600;
+  padding: 2px 6px;
+  border-radius: 4px;
+  letter-spacing: 0.04em;
+}
+body.theme-lcars .eva-inline-img {
+  border-color: rgba(255,255,255,0.15);
+  border-radius: 4px;
+}
+
 /* Markdown inside #txtOutput */
 #txtOutput .md h1,
 #txtOutput .md h2,
@@ -719,127 +1054,146 @@ body.theme-lcars #lcarsChipPrint #printButton::before {
 
 /* LCARS chat bubbles inside txtOutput */
 body.theme-lcars #txtOutput .chat-bubble {
-  margin: 6px 0;
-  padding: 10px 12px;
-  border-radius: 12px;
-  background: transparent;
-  border: 1px solid rgba(255,255,255,0.18);
+  margin: 4px 0;
+  padding: 10px 14px;
+  border-radius: 4px 16px 16px 4px;
+  background: rgba(255,255,255,0.03);
+  border: none;
+  border-left: 4px solid rgba(255,255,255,0.15);
   box-shadow: none;
   color: #eef5ff;
 }
 body.theme-lcars #txtOutput .chat-bubble .eva,
 body.theme-lcars #txtOutput .chat-bubble .user { font-weight: 700; margin-right: 6px; }
-body.theme-lcars #txtOutput .eva-bubble { border-color: var(--ld-beta-blue); }
-body.theme-lcars #txtOutput .user-bubble { border-color: var(--ld-alpha-blue); }
+body.theme-lcars #txtOutput .eva-bubble { border-left-color: var(--ld-arctic-ice); }
+body.theme-lcars #txtOutput .user-bubble { border-left-color: var(--ld-alpha-blue); border-radius: 16px 4px 4px 16px; border-left: none; border-right: 4px solid var(--ld-alpha-blue); }
 body.theme-lcars #txtOutput .chat-bubble .md code { background: rgba(255,255,255,0.12); color: #e6e6e6; }
 
 /* LCARS-only responsive scaling and modern markdown */
 body.theme-lcars {
   min-height: 100vh;
-  height: auto;
+  max-height: 100vh;
   overflow: hidden;
   background-size: cover;
 }
 /* Place sidebar in col 1 and main content in col 2; let main fill available space */
-body.theme-lcars #lcarsSidebar { grid-column: 1; }
+body.theme-lcars #lcarsSidebar { grid-column: 1; grid-row: 1; }
 body.theme-lcars #idContainer {
   grid-column: 2;
+  grid-row: 1;
   max-width: none;
   width: 100%;
-  justify-self: stretch;
-  align-self: stretch;
-  height: 92%;
-  margin: 0; /* remove base margins that create gaps */
-  border-left: 2px solid var(--ld-arctic-snow);
-  border-top-left-radius: 18px;
-  border-bottom-left-radius: 18px;
-  display: flex;           /* ensure column layout inside main */
+  align-self: stretch; /* fill same height as sidebar */
+  height: auto;
+  margin: 0;
+  border: none;
+  border-radius: 0;
+  display: flex;
   flex-direction: column;
+  padding: 0 12px;
+  background: transparent;
+  overflow: hidden; /* prevent container overflow */
 }
-body.theme-lcars footer { grid-column: 2; }
+body.theme-lcars footer { grid-column: 2; display: none; } /* footer hidden in LCARS — controls in sidebar */
 body.theme-lcars #txtOutput {
-  width: 98%;
-  /* Flex to fill remaining space, scroll internally */
+  width: 100%;
   flex: 1 1 auto;
-  min-height: 0;          /* allow flex item to shrink and enable scrolling */
+  min-height: 0;
   height: auto;
   overflow-y: auto;
+  border: 1px solid rgba(255,255,255,0.08);
+  border-radius: 8px;
+  padding: 12px;
+  background: rgba(0,0,0,0.6);
+  font-size: 15px;
 }
 body.theme-lcars .chat-input-container {
   width: 100%;
-  margin-top: 8px;        /* small separation from chat */
-  align-self: flex-end;   /* LCARS-only alignment, avoids impacting default theme */
-  /* In the input-monitors-row, grow to fill remaining space beside the dock */
-  flex: 1 1 auto;
+  margin-top: 0;
+  flex: 1 1 auto; /* fill remaining space in monitors row */
   max-width: none;
-  min-height: 230px; /* align roughly with monitor dock */
-  align-items: stretch; /* allow #txtMsg to stretch vertically */
+  min-height: 0;
+  max-height: none;
+  align-items: stretch;
   display: grid;
-  grid-template-columns: 1fr 170px; /* text area + windowed controls column */
+  grid-template-columns: 1fr 140px;
   gap: 6px;
+  border: 1px solid rgba(255,255,255,0.08);
+  border-radius: 8px;
+  padding: 6px;
+  background: rgba(0,0,0,0.4);
+  box-sizing: border-box;
 }
 /* LCARS: controls window panel */
 body.theme-lcars .input-controls-window {
-  background: var(--ld-night-cloud); /* distinct from black input area */
-  border: 2px solid var(--ld-arctic-snow);
-  border-radius: 10px;
-  padding: 8px;
+  background: transparent;
+  border: none;
+  border-radius: 0;
+  padding: 0;
   display: flex;
   box-sizing: border-box;
 }
 body.theme-lcars .input-controls-window .input-controls {
-  border: 1px solid rgba(255,255,255,0.25);
-  background: rgba(255,255,255,0.06); /* slightly lighter inner panel */
-  border-radius: 8px;
-  padding: 8px;
+  border: none;
+  background: transparent;
+  border-radius: 0;
+  padding: 0;
   width: 100%;
   box-sizing: border-box;
-  overflow: hidden; /* keep children fully inside rounded panel */
+  overflow: visible;
 }
 /* LCARS: let input fill the container vertically */
 body.theme-lcars #txtMsg { max-height: none; height: 100%; }
 /* LCARS input controls column */
 body.theme-lcars .input-controls {
-  display: flex;
-  flex-direction: column;
+  display: grid;
+  grid-template-rows: 1fr 1fr 2fr; /* Upload | Mic | Send — proportional */
   gap: 4px;
   height: 100%;
-  padding: 2px; /* small border space around buttons */
+  padding: 0;
   box-sizing: border-box;
 }
-/* Top: two small buttons */
+/* All three buttons: uniform LCARS style */
 body.theme-lcars .input-controls .controls-top {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 6px; /* visible separation between Upload and Mic */
-  flex: 0 0 34%; /* about half the height of Send below */
-  min-height: 0;
-  align-items: stretch;
+  display: contents; /* dissolve wrapper — children go into parent grid */
 }
-body.theme-lcars .input-controls .controls-top .lcars-btn {
-  padding: 8px 6px;
-  font-size: 12px;
-  height: 100%;
-}
-/* Bottom: Send fills remaining vertical space */
 body.theme-lcars .input-controls .controls-bottom {
   display: flex;
-  flex-direction: column;
-  flex: 1 1 66%;
   min-height: 0;
 }
 body.theme-lcars .input-controls .controls-bottom #btnSend {
   flex: 1 1 auto;
-  height: 100%;
+  width: 100%;
 }
+/* Each button gets identical base styling */
+body.theme-lcars .input-controls .lcars-btn,
+body.theme-lcars .input-controls #btnSend {
+  font: 700 14px "Barlow Condensed", sans-serif;
+  letter-spacing: .1em;
+  text-transform: uppercase;
+  padding: 0;
+  margin: 0;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+}
+/* Individual button colors */
+body.theme-lcars #uploadButton { background: var(--ld-arctic-ice); color: #000; }
+body.theme-lcars #uploadButton:hover { background: var(--ld-alpha-blue); color: #fff; }
+body.theme-lcars #micButton { background: var(--ld-beta-blue); color: #000; }
+body.theme-lcars #micButton:hover { background: var(--ld-alpha-blue); color: #fff; }
+body.theme-lcars #btnSend { background: var(--ld-arctic-snow); color: #000; font-size: 18px; letter-spacing: .14em; }
+body.theme-lcars #btnSend:hover { background: var(--ld-alpha-blue); color: #fff; }
+
 body.theme-lcars .lcars-btn {
   background: var(--ld-arctic-ice);
   color: #000;
-  border: 0px solid var(--ld-arctic-snow); /* thinner, subtle border */
-  border-radius: 0; /* square corners per LCARS chip styling request */
-  padding: 10px 8px;
+  border: none;
+  border-radius: 2px;
+  padding: 8px 10px;
   font: 700 13px "Barlow Condensed", sans-serif;
-  letter-spacing: .06em;
+  letter-spacing: .08em;
+  text-transform: uppercase;
   cursor: pointer;
   width: 100%;
   box-sizing: border-box;
@@ -847,17 +1201,26 @@ body.theme-lcars .lcars-btn {
   align-items: center;
   justify-content: center;
   line-height: 1.2;
+  transition: background 0.15s, color 0.15s;
 }
-body.theme-lcars .lcars-btn:hover { background: var(--ld-alpha-blue); }
-/* Mic button visuals match lcars-btn and drop icon image */
-body.theme-lcars .mic-button { background-image: none; width: 100%; height: 100%; border-radius: 0; margin-left: 0; }
+body.theme-lcars .lcars-btn:hover { background: var(--ld-alpha-blue); color: #fff; }
+/* Mic button: reset base styles so it matches other buttons */
+body.theme-lcars .mic-button {
+  background-image: none;
+  width: 100%;
+  height: 100%;
+  border-radius: 2px;
+  margin-left: 0;
+  margin: 0;
+}
 
 /* Ensure inner wrapper lets #txtOutput grow */
 body.theme-lcars #textToSynth {
   display: flex;
   flex-direction: column;
   flex: 1 1 auto;
-  min-height: 0;
+  min-height: 0; /* critical: allows flex children to shrink */
+  overflow: hidden;
 }
 
 /* Phone */

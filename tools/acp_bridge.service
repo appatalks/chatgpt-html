@@ -1,0 +1,20 @@
+[Unit]
+Description=Eva ACP Bridge - Copilot CLI to HTTP bridge
+Documentation=https://github.com/appatalks/chatgpt-html
+After=network.target
+
+[Service]
+Type=simple
+User=www-data
+Group=www-data
+WorkingDirectory=/usr/share/nginx/html/eva.hoshisato.com/public_html
+ExecStart=/usr/bin/python3 /usr/share/nginx/html/eva.hoshisato.com/public_html/tools/acp_bridge.py --port 8888
+Restart=on-failure
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=acp-bridge
+Environment=HOME=/var/www
+
+[Install]
+WantedBy=multi-user.target
