@@ -1611,9 +1611,18 @@ async function renderEvaResponse(content, txtOutput) {
       }
     });
 
-    // Tokenize <img> and generated image wrappers before markdown to protect them
+    // If we successfully generated/found images, strip common AI disclaimers
+    var anySuccess = results.some(function(r) { return r.url; });
+    if (anySuccess && _lastUserAskedGenerate) {
+      // Remove lines where the AI says it can't generate/create images
+      text = text.replace(/I\s+(cannot|can't|can not|am unable to|don't have the ability to)\s+(generate|create|produce|make|draw|render)\s+(images?|pictures?|photos?|illustrations?|artwork)[^.]*\./gi, '');
+      text = text.replace(/I\s+(can only|only)\s+describe[^.]*\./gi, '');
+      text = text.replace(/\n{3,}/g, '\n\n'); // clean up extra blank lines
+    }
+
+    // Tokenize generated image wrappers and standalone <img> tags before markdown
     var imgFragments = [];
-    text = text.replace(/<div class="eva-generated-wrap">.*?<\/div>/g, function(m) {
+    text = text.replace(/<div class="eva-generated-wrap">[\s\S]*?<\/div>/g, function(m) {
       imgFragments.push(m);
       return '\u0000IMG' + (imgFragments.length - 1) + '\u0000';
     });
