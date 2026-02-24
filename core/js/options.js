@@ -1594,8 +1594,9 @@ async function renderEvaResponse(content, txtOutput) {
 
     var fetchPromises = imagePlaceholders.map(function(ph) {
       if (useGeneration) {
-        // Use the full original description for better DALL-E prompts
-        return _generateImage(ph.full.replace(/^\[Image of\s*/i, '').replace(/\]$/, '')).then(function(url) {
+        // Use the user's simple subject for DALL-E (avoids content policy triggers from verbose AI descriptions)
+        var dallePrompt = _lastUserImageSubject || ph.query;
+        return _generateImage(dallePrompt).then(function(url) {
           if (url) return { placeholder: ph, url: url, generated: true };
           // Fall back to search if generation fails
           return _searchImage(ph.query).then(function(url2) {
