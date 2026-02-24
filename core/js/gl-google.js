@@ -113,5 +113,3 @@ function geminiSend() {
             });
     });
 }
-
-// fetchGoogleImages is now in options.js (unified image handling)

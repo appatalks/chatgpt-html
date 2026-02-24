@@ -184,78 +184,6 @@ function trboSend() {
           newMessages.push({ role: 'user', content: "Today's " + solarContents + " " + sQuestion.replace(/\n/g, '') });
         }
 
-	// Google That
-        // Do I still need this with Gemini and gpt-4o? Need to investigate further. 
-	const keyword_google = 'google';
-	const keyword_Google = 'Google';
-	const query = sQuestion.replace(/<[^>]*>/g, '').replace(/google|Google/g, '').trim();
-
-	let googleContents; 
-	if (sQuestion.includes(keyword_google) || sQuestion.includes(keyword_Google)) {
-  const apiUrl = `https://www.googleapis.com/customsearch/v1?key=${GOOGLE_SEARCH_KEY}&cx=${GOOGLE_SEARCH_ID}&q=${encodeURIComponent(query)}&fields=kind,items(title,snippet,link)&num=5`;
- 	    fetch(apiUrl)
-    	      .then(response => response.json())
-    	      .then(data => {
-		 googleContents = data.items.map(item => {
-  		   return {
-    		     title: item.title,
-		     snippet: item.snippet,
-		     // displayLink: item.displayLink
-    		     link: item.link
-  		   };
-		 });
-		newMessages.push({ role: 'assistant', content: "Google search results for " + query + "in JSON Format: " + JSON.stringify(googleContents) });
-                newMessages.push({ role: 'user', content: "What are the search results for: " + sQuestion.replace(/\n/g, '') + " Please summarize results and provide associated links." });
-	      	let existingMessages = JSON.parse(localStorage.getItem("messages")) || [];
-      		existingMessages = existingMessages.concat(newMessages);
-	      	localStorage.setItem("messages", JSON.stringify(existingMessages));
-		    var cStoredMessages = localStorage.getItem("messages");
-            kMessages = cStoredMessages ? JSON.parse(cStoredMessages) : [];
-            var data = {
-                model: sModel,
-                messages: kMessages,
-                max_completion_tokens: iMaxTokens,
-                temperature:  dTemperature,
-                frequency_penalty: eFrequency_penalty,
-                presence_penalty: cPresence_penalty,
-                stop: hStop
-            }
-            // Additional parameters for GPT-5 family and 'latest' alias
-            if (isGpt5 || isLatest) {
-              data.top_p = topP;
-              // Do not send max_tokens for gpt-5; use max_completion_tokens only
-            }
-		    // If using the o3-mini model, add the reasoning_effort parameter (low, medium, high)
-		    if (sModel === "o3-mini") {
-  		      data.reasoning_effort = (typeof getReasoningEffort === 'function') ? getReasoningEffort() : "high";
-		      delete data.temperature; // Exclude temperature for o3-mini	    
-		    }   
-		    // Send Payload		      
-		    oHttp.send(JSON.stringify(data));
-
-		// Check if imgSrcGlobal is not empty or undefined
-		if (imgSrcGlobal) {
-		    var responseImage = document.createElement("img");
-		    responseImage.src = imgSrcGlobal;
-		    // Ensure there's a way to handle the case where the image cannot be loaded
-		    responseImage.onerror = function() {
-		        console.error("Error loading image at " + imgSrcGlobal);
-		        responseImage.remove(); // Optionally remove the img element if it fails to load
-		    };
-		    // Only append the image if imgSrcGlobal is valid
-		    if (txtOutput.innerHTML != "") txtOutput.innerHTML += "\n";
-		    txtOutput.innerHTML += '<span class="user">You: </span>' + sQuestion;
-		    txtOutput.appendChild(responseImage);
-		} else {
-		    // Handle the case where imgSrcGlobal is not provided
-		    if (txtOutput.innerHTML != "") txtOutput.innerHTML += "\n";
-		    txtOutput.innerHTML += '<span class="user">You: </span>' + sQuestion;
-		}
-		txtMsg.innerHTML = "";
-	      });
-	      return;
-	}
-
     // Append the new messages to the existing messages in localStorage
     let existingMessages = JSON.parse(localStorage.getItem("messages")) || [];
     existingMessages = existingMessages.concat(newMessages);
@@ -337,17 +265,4 @@ function trboSend() {
     element.scrollTop = element.scrollHeight;
   }
   imgSrcGlobal = '';
-}
-
-// Google Image Seach
-async function fetchGoogleImages(query) {
-  const maxResults = 1;
-
-  return fetch(`https://www.googleapis.com/customsearch/v1?key=${GOOGLE_SEARCH_KEY}&cx=${GOOGLE_SEARCH_ID}&searchType=image&num=${maxResults}&sort_by=""&q=${encodeURIComponent(query)}`)
-    .then((response) => response.json())
-    .then((result) => result)     
-    .catch((error) => {
-      console.error("Error fetching Google Images:", error);
-      throw error;
-    });
 }

@@ -40,7 +40,7 @@ A lightweight web UI for interacting with multiple AI providers — OpenAI, GitH
 - Full-featured **Settings panel** (General, Models, Auth, Prompts, MCP tabs)
 - Editable **system/developer prompt** with personality presets
 - **Conversation memory** (localStorage)
-- **Google Search** augmentation (keyword "Google")
+- **Inline images** via Wikimedia Commons (auto-detected from AI responses)
 - **Google Vision** for image analysis
 - **Amazon Polly** and **Bark** text-to-speech
 - **LCARS theme** (Star Trek-inspired UI)

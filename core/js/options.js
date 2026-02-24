@@ -42,8 +42,6 @@ function auth() {
 
 function applyConfig(config) {
   OPENAI_API_KEY = config.OPENAI_API_KEY;
-  GOOGLE_SEARCH_KEY = config.GOOGLE_SEARCH_KEY;
-  GOOGLE_SEARCH_ID = config.GOOGLE_SEARCH_ID;
   // Google Gemini key if provided
   GOOGLE_GL_KEY = config.GOOGLE_GL_KEY;
   GOOGLE_VISION_KEY = config.GOOGLE_VISION_KEY;
@@ -67,7 +65,7 @@ function getAuthKey(key) {
 }
 
 function loadAuthOverrides() {
-  var keys = ['OPENAI_API_KEY', 'GOOGLE_GL_KEY', 'GOOGLE_SEARCH_KEY', 'GOOGLE_SEARCH_ID', 'GOOGLE_VISION_KEY', 'GITHUB_PAT'];
+  var keys = ['OPENAI_API_KEY', 'GOOGLE_GL_KEY', 'GOOGLE_VISION_KEY', 'GITHUB_PAT'];
   keys.forEach(function(key) {
     var val = localStorage.getItem('auth_' + key);
     if (val) window[key] = val;
@@ -79,8 +77,6 @@ function saveAuthKeys() {
     'authOpenAI': 'OPENAI_API_KEY',
     'authGitHub': 'GITHUB_PAT',
     'authGemini': 'GOOGLE_GL_KEY',
-    'authGoogleSearch': 'GOOGLE_SEARCH_KEY',
-    'authGoogleCX': 'GOOGLE_SEARCH_ID',
     'authGoogleVision': 'GOOGLE_VISION_KEY'
   };
   Object.keys(map).forEach(function(fieldId) {
@@ -108,8 +104,6 @@ function populateAuthFields() {
     'authOpenAI': 'OPENAI_API_KEY',
     'authGitHub': 'GITHUB_PAT',
     'authGemini': 'GOOGLE_GL_KEY',
-    'authGoogleSearch': 'GOOGLE_SEARCH_KEY',
-    'authGoogleCX': 'GOOGLE_SEARCH_ID',
     'authGoogleVision': 'GOOGLE_VISION_KEY'
   };
   Object.keys(map).forEach(function(fieldId) {
@@ -1576,7 +1570,7 @@ function _extractImageSubject(rawDesc) {
 }
 
 /**
- * Search for an image. Tries Google Custom Search first, falls back to Wikimedia Commons.
+ * Search for an image using Wikimedia Commons (free, no API key needed).
  */
 async function _searchImage(query) {
   if (!query) return null;
@@ -1584,38 +1578,7 @@ async function _searchImage(query) {
   var cleanQuery = query.trim();
   if (!cleanQuery) return null;
 
-  // Try Google Custom Search first (if configured)
-  if (typeof GOOGLE_SEARCH_KEY !== 'undefined' && GOOGLE_SEARCH_KEY) {
-    try {
-      var gUrl = 'https://www.googleapis.com/customsearch/v1?' +
-        'key=' + GOOGLE_SEARCH_KEY +
-        '&cx=' + GOOGLE_SEARCH_ID +
-        '&searchType=image' +
-        '&num=3' +
-        '&imgSize=medium' +
-        '&safe=active' +
-        '&q=' + encodeURIComponent(cleanQuery);
-
-      var gResp = await fetch(gUrl);
-      if (gResp.ok) {
-        var gData = await gResp.json();
-        if (gData.items && gData.items.length > 0) {
-          var preferred = gData.items.find(function(item) {
-            var link = (item.link || '').toLowerCase();
-            return link.includes('github') || link.includes('wikipedia') ||
-                   link.includes('wikimedia') || link.includes('cdn');
-          });
-          return (preferred || gData.items[0]).link;
-        }
-      } else {
-        console.warn('Google Image Search failed (' + gResp.status + '), trying Wikimedia...');
-      }
-    } catch (e) {
-      console.warn('Google Image Search error:', e.message, '— trying Wikimedia...');
-    }
-  }
-
-  // Fallback: Wikimedia Commons (free, no API key needed)
+  // Wikimedia Commons search
   try {
     var wUrl = 'https://commons.wikimedia.org/w/api.php?' +
       'action=query&list=search&srnamespace=6' +
@@ -1652,13 +1615,6 @@ async function _searchImage(query) {
   }
 
   return null;
-}
-
-// Keep backward compatibility — old code may call fetchGoogleImages
-async function fetchGoogleImages(query) {
-  var url = await _searchImage(query);
-  if (url) return { items: [{ link: url }] };
-  return { items: [] };
 }
 
 // Capture Shift + Enter Keys for new line

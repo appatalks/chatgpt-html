@@ -142,23 +142,6 @@ async function copilotSend() {
     newMessages.push({ role: 'user', content: "Today's " + solarContents + " " + sQuestion });
   }
 
-  // Google search augmentation
-  if ((sQuestion.includes('google') || sQuestion.includes('Google')) && typeof GOOGLE_SEARCH_KEY !== 'undefined' && GOOGLE_SEARCH_KEY) {
-    var query = sQuestion.replace(/<[^>]*>/g, '').replace(/google|Google/g, '').trim();
-    try {
-      var apiUrl = 'https://www.googleapis.com/customsearch/v1?key=' + GOOGLE_SEARCH_KEY + '&cx=' + GOOGLE_SEARCH_ID + '&q=' + encodeURIComponent(query) + '&fields=kind,items(title,snippet,link)&num=5';
-      var gResp = await fetch(apiUrl);
-      var gData = await gResp.json();
-      if (gData.items) {
-        var googleContents = gData.items.map(function(item) { return { title: item.title, snippet: item.snippet, link: item.link }; });
-        newMessages.push({ role: 'assistant', content: 'Google search results for ' + query + ' in JSON Format: ' + JSON.stringify(googleContents) });
-        newMessages.push({ role: 'user', content: 'What are the search results for: ' + sQuestion + ' Please summarize results and provide associated links.' });
-      }
-    } catch (e) {
-      console.error('Google search error:', e);
-    }
-  }
-
   var existingMessages = JSON.parse(localStorage.getItem(storageKey)) || [];
   existingMessages = existingMessages.concat(newMessages);
   localStorage.setItem(storageKey, JSON.stringify(existingMessages));

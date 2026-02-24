@@ -31,7 +31,7 @@ This project is a simple web UI for interacting with OpenAI, Google Generative m
 - The settings panel is a tabbed modal with four tabs: General, Models, Auth, and Prompts.
 - **General**: Theme, TTS engine/voice, auto-speak.
 - **Models**: Model selector (grouped by provider with `<optgroup>`), temperature, max tokens, reasoning effort (o3-mini).
-- **Auth**: API key inputs stored in `localStorage` (override `config.json`). Keys: OpenAI, GitHub PAT, Google Gemini, Google Search, Google Vision.
+- **Auth**: API key inputs stored in `localStorage` (override `config.json`). Keys: OpenAI, GitHub PAT, Google Gemini, Google Vision.
 - **Prompts**: Personality presets and editable system/developer prompt textarea. `getSystemPrompt()` returns the textarea value.
 
 ## OpenAI Models
