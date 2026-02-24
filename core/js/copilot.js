@@ -319,11 +319,10 @@ async function applyMCPConfig() {
   // GitHub MCP
   var githubCheck = document.getElementById('mcpGitHub');
   if (githubCheck && githubCheck.checked) {
-    var ghPat = getAuthKey('GITHUB_PAT');
     mcpServers['github-mcp-server'] = {
       command: 'docker',
       args: ['run', '-i', '--rm', '-e', 'GITHUB_PERSONAL_ACCESS_TOKEN', 'ghcr.io/github/github-mcp-server'],
-      env: ghPat ? { GITHUB_PERSONAL_ACCESS_TOKEN: ghPat } : {}
+      env: { _useGitHubPAT: true }  // flag — bridge resolves PAT server-side
     };
   }
 

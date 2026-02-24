@@ -732,20 +732,27 @@ const MODEL_CONTEXT_WINDOWS = {
 // Network monitoring state
 var _netStats = { requests: 0, errors: 0, lastLatency: 0, lastStatus: '', lastProvider: '' };
 
-// Intercept fetch/XHR to track network stats
+// Intercept fetch to track network stats
+var _apiHostnames = ['api.openai.com', 'models.inference.ai.azure.com', 'generativelanguage.googleapis.com'];
+
+function _isAPICall(url) {
+  if (typeof url !== 'string') return false;
+  try {
+    var parsed = new URL(url, window.location.origin);
+    if (_apiHostnames.indexOf(parsed.hostname) >= 0) return true;
+    if (parsed.hostname === 'localhost' && (parsed.port === '1234' || parsed.port === '8888')) return true;
+    if (parsed.port === '8888') return true;
+    return false;
+  } catch (e) {
+    return false;
+  }
+}
+
 (function() {
   var origFetch = window.fetch;
   window.fetch = function() {
     var url = arguments[0];
-    var isAPI = typeof url === 'string' && (
-      url.includes('api.openai.com') ||
-      url.includes('models.inference.ai.azure.com') ||
-      url.includes('generativelanguage.googleapis.com') ||
-      url.includes('localhost:1234') ||
-      url.includes('localhost:8888') ||
-      url.includes(':8888/')
-    );
-    if (!isAPI) return origFetch.apply(this, arguments);
+    if (!_isAPICall(url)) return origFetch.apply(this, arguments);
 
     _netStats.requests++;
     var start = performance.now();
@@ -768,11 +775,14 @@ var _netStats = { requests: 0, errors: 0, lastLatency: 0, lastStatus: '', lastPr
 })();
 
 function _detectProvider(url) {
-  if (url.includes('openai.com')) return 'OpenAI';
-  if (url.includes('models.inference.ai.azure.com')) return 'GitHub Models';
-  if (url.includes('generativelanguage.googleapis.com')) return 'Gemini';
-  if (url.includes('localhost:1234')) return 'lm-studio';
-  if (url.includes(':8888')) return 'ACP Bridge';
+  try {
+    var parsed = new URL(url, window.location.origin);
+    if (parsed.hostname === 'api.openai.com') return 'OpenAI';
+    if (parsed.hostname === 'models.inference.ai.azure.com') return 'GitHub Models';
+    if (parsed.hostname === 'generativelanguage.googleapis.com') return 'Gemini';
+    if (parsed.hostname === 'localhost' && parsed.port === '1234') return 'lm-studio';
+    if (parsed.port === '8888') return 'ACP Bridge';
+  } catch (e) {}
   return 'Unknown';
 }
 
