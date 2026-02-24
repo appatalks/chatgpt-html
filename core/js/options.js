@@ -1468,7 +1468,8 @@ async function renderEvaResponse(content, txtOutput) {
     /\[Image of ([^\]]+)\]/gi,           // [Image of description]
     /\[image:\s*([^\]]+)\]/gi,           // [image: description]
     /\[🖼️?\s*([^\]]+)\]/gi,             // [🖼️ description] or [🖼 description]
-    /!\[([^\]]*)\]\(\s*\)/g              // ![alt]() — empty URL markdown images
+    /!\[([^\]]*)\]\(\s*\)/g,             // ![alt]() — empty URL markdown images
+    /\(Image:\s*([^)]+)\)/gi             // (Image: description) — some models use parens
   ];
 
   var imagePlaceholders = [];
@@ -1478,7 +1479,9 @@ async function renderEvaResponse(content, txtOutput) {
     while ((match = rx.exec(text)) !== null) {
       if (!seen[match[0]]) {
         seen[match[0]] = true;
-        imagePlaceholders.push({ full: match[0], query: _extractImageSubject(match[1].trim()) });
+        var extracted = _extractImageSubject(match[1].trim());
+        console.log('[Eva Images] Found placeholder:', match[0].substring(0, 60), '→ query:', extracted);
+        imagePlaceholders.push({ full: match[0], query: extracted });
       }
     }
   });
@@ -1486,7 +1489,11 @@ async function renderEvaResponse(content, txtOutput) {
   // Limit to 3 images per response
   imagePlaceholders = imagePlaceholders.slice(0, 3);
 
-  // Fetch images in parallel (Google or Wikimedia fallback)
+  if (imagePlaceholders.length === 0) {
+    console.log('[Eva Images] No image placeholders found in response');
+  }
+
+  // Fetch images in parallel via Wikimedia
   if (imagePlaceholders.length > 0) {
     var fetchPromises = imagePlaceholders.map(function(ph) {
       return _searchImage(ph.query).then(function(url) {
@@ -1578,6 +1585,8 @@ async function _searchImage(query) {
   var cleanQuery = query.trim();
   if (!cleanQuery) return null;
 
+  console.log('[Eva Images] Searching Wikimedia for:', cleanQuery);
+
   // Wikimedia Commons search
   try {
     var wUrl = 'https://commons.wikimedia.org/w/api.php?' +
@@ -1604,6 +1613,7 @@ async function _searchImage(query) {
             var pageId = Object.keys(pages)[0];
             var info = pages[pageId].imageinfo;
             if (info && info[0]) {
+              console.log('[Eva Images] Found:', info[0].thumburl || info[0].url);
               return info[0].thumburl || info[0].url;
             }
           }
