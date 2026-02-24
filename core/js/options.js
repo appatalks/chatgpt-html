@@ -640,6 +640,12 @@ function sendData() {
     // Logic required for initial message
     var selModel = document.getElementById("selModel");
 
+  // Detect if user wants image generation (for renderEvaResponse routing)
+  var txtMsg = document.getElementById("txtMsg");
+  if (txtMsg) {
+    _lastUserAskedGenerate = _isGenerationRequest(txtMsg.innerText || txtMsg.textContent || '');
+  }
+
   if (selModel.value.indexOf('copilot-') === 0) {
         clearText();
         copilotSend();
@@ -1445,14 +1451,71 @@ function escapeHtml(str) {
 // --- Unified Response Renderer ---
 // Single function all models call to render Eva's response with images
 
+// --- Image Generation & Rendering ---
+
+// Track if the user's last message requested image generation
+var _lastUserAskedGenerate = false;
+
+/**
+ * Check if user's message is asking for image generation (not just showing).
+ */
+function _isGenerationRequest(text) {
+  if (!text) return false;
+  return /\b(generate|create|draw|make|design|paint|render|imagine|produce|craft)\b.*\b(image|picture|photo|illustration|artwork|art|drawing|painting)\b/i.test(text) ||
+         /\b(image|picture|illustration|artwork)\b.*\b(generate|create|draw|make|design)\b/i.test(text) ||
+         /\bdall-?e\b/i.test(text);
+}
+
+/**
+ * Generate an image using DALL-E 3.
+ * @returns {Promise<string|null>} Image URL or null
+ */
+async function _generateImage(prompt) {
+  var apiKey = (typeof getAuthKey === 'function') ? getAuthKey('OPENAI_API_KEY') : (typeof OPENAI_API_KEY !== 'undefined' ? OPENAI_API_KEY : '');
+  if (!apiKey) {
+    console.warn('[Eva Images] No OpenAI API key for DALL-E generation');
+    return null;
+  }
+
+  console.log('[Eva Images] Generating image via DALL-E 3:', prompt.substring(0, 60));
+
+  try {
+    var resp = await fetch('https://api.openai.com/v1/images/generations', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': 'Bearer ' + apiKey
+      },
+      body: JSON.stringify({
+        model: 'dall-e-3',
+        prompt: prompt,
+        n: 1,
+        size: '1024x1024'
+      })
+    });
+
+    if (!resp.ok) {
+      var errData = await resp.json().catch(function() { return {}; });
+      console.warn('[Eva Images] DALL-E error:', resp.status, errData.error ? errData.error.message : '');
+      return null;
+    }
+
+    var data = await resp.json();
+    if (data.data && data.data[0] && data.data[0].url) {
+      console.log('[Eva Images] DALL-E generated:', data.data[0].url.substring(0, 80));
+      return data.data[0].url;
+    }
+    return null;
+  } catch (e) {
+    console.warn('[Eva Images] DALL-E error:', e.message);
+    return null;
+  }
+}
+
 /**
  * Render an Eva response with markdown and inline images.
- * Detects [Image of ...] placeholders AND markdown image syntax ![alt](url),
- * fetches images from Google Image Search, and falls back gracefully.
- *
- * @param {string} content   - Raw response text from the AI
- * @param {HTMLElement} txtOutput - The output container element
- * @returns {Promise<void>}
+ * Detects [Image of ...] placeholders, routes to DALL-E (generation)
+ * or Wikimedia (search) based on the user's original request.
  */
 async function renderEvaResponse(content, txtOutput) {
   if (!content || !content.trim()) {
@@ -1493,14 +1556,30 @@ async function renderEvaResponse(content, txtOutput) {
     console.log('[Eva Images] No image placeholders found in response');
   }
 
-  // Fetch images in parallel via Wikimedia
+  // Fetch images: DALL-E for generation requests, Wikimedia for search
   if (imagePlaceholders.length > 0) {
+    var useGeneration = _lastUserAskedGenerate;
+    console.log('[Eva Images] Mode:', useGeneration ? 'DALL-E generation' : 'Wikimedia search');
+
     var fetchPromises = imagePlaceholders.map(function(ph) {
-      return _searchImage(ph.query).then(function(url) {
-        return { placeholder: ph, url: url };
-      }).catch(function() {
-        return { placeholder: ph, url: null };
-      });
+      if (useGeneration) {
+        // Use the full original description for better DALL-E prompts
+        return _generateImage(ph.full.replace(/^\[Image of\s*/i, '').replace(/\]$/, '')).then(function(url) {
+          if (url) return { placeholder: ph, url: url, generated: true };
+          // Fall back to search if generation fails
+          return _searchImage(ph.query).then(function(url2) {
+            return { placeholder: ph, url: url2, generated: false };
+          });
+        }).catch(function() {
+          return { placeholder: ph, url: null, generated: false };
+        });
+      } else {
+        return _searchImage(ph.query).then(function(url) {
+          return { placeholder: ph, url: url, generated: false };
+        }).catch(function() {
+          return { placeholder: ph, url: null, generated: false };
+        });
+      }
     });
 
     var results = await Promise.all(fetchPromises);
@@ -1508,7 +1587,11 @@ async function renderEvaResponse(content, txtOutput) {
     results.forEach(function(r) {
       if (r.url) {
         // Replace placeholder with image tag
-        var imgTag = '<img src="' + escapeHtml(r.url) + '" title="' + escapeHtml(r.placeholder.query) + '" alt="' + escapeHtml(r.placeholder.query) + '" class="eva-inline-img">';
+        var genLabel = r.generated ? ' data-generated="true"' : '';
+        var imgTag = '<img src="' + escapeHtml(r.url) + '" title="' + escapeHtml(r.placeholder.query) + '" alt="' + escapeHtml(r.placeholder.query) + '" class="eva-inline-img"' + genLabel + '>';
+        if (r.generated) {
+          imgTag = '<div class="eva-generated-wrap">' + imgTag + '<span class="eva-generated-badge">AI Generated</span></div>';
+        }
         text = text.replace(r.placeholder.full, imgTag);
       } else {
         // Replace with a styled placeholder showing what was requested
@@ -1516,8 +1599,12 @@ async function renderEvaResponse(content, txtOutput) {
       }
     });
 
-    // Tokenize <img> tags before markdown to protect them
+    // Tokenize <img> and generated image wrappers before markdown to protect them
     var imgFragments = [];
+    text = text.replace(/<div class="eva-generated-wrap">.*?<\/div>/g, function(m) {
+      imgFragments.push(m);
+      return '\u0000IMG' + (imgFragments.length - 1) + '\u0000';
+    });
     text = text.replace(/<img[^>]*>/g, function(m) {
       imgFragments.push(m);
       return '\u0000IMG' + (imgFragments.length - 1) + '\u0000';

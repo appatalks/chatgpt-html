@@ -975,6 +975,20 @@ body.theme-lcars #lcarsChipPrint #printButton::before {
 .eva-inline-img:hover { transform: scale(1.02); }
 /* Click to open full size */
 .eva-inline-img { cursor: zoom-in; }
+/* AI Generated badge */
+.eva-generated-wrap { display: inline-block; position: relative; }
+.eva-generated-badge {
+  position: absolute;
+  bottom: 12px;
+  right: 4px;
+  background: rgba(0,0,0,0.7);
+  color: #fff;
+  font-size: 10px;
+  font-weight: 600;
+  padding: 2px 6px;
+  border-radius: 4px;
+  letter-spacing: 0.04em;
+}
 body.theme-lcars .eva-inline-img {
   border-color: rgba(255,255,255,0.15);
   border-radius: 4px;
