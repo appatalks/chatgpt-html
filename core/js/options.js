@@ -1562,7 +1562,7 @@ async function renderEvaResponse(content, txtOutput) {
     while ((match = rx.exec(text)) !== null) {
       if (!seen[match[0]]) {
         seen[match[0]] = true;
-        imagePlaceholders.push({ full: match[0], query: extracted });
+        imagePlaceholders.push({ full: match[0], query: _extractImageSubject(match[1].trim()) });
       }
     }
   });
