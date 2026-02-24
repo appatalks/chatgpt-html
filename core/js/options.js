@@ -601,28 +601,41 @@ function unloadThemeStylesheet(themeName) {
 }
 
 
+// Detect image generation intent from user input (called before every send)
+function _detectGenerationIntent() {
+  var txtMsg = document.getElementById('txtMsg');
+  if (txtMsg) {
+    _lastUserAskedGenerate = _isGenerationRequest(txtMsg.innerText || txtMsg.textContent || '');
+    if (_lastUserAskedGenerate) console.log('[Eva Images] Generation request detected');
+  }
+}
+
 function updateButton() {
     var selModel = document.getElementById("selModel");
     var btnSend = document.getElementById("btnSend");
 
   if (selModel.value.indexOf('copilot-') === 0) {
         btnSend.onclick = function() {
+            _detectGenerationIntent();
             clearText();
             copilotSend();
         };
     } else if (selModel.value == "gpt-4o-mini" || selModel.value == "o1" || selModel.value == "o1-mini" || selModel.value == "gpt-4o" || selModel.value == "o3-mini" || selModel.value == "o1-preview" || selModel.value == "gpt-5-mini" || selModel.value == "latest") {
         btnSend.onclick = function() {
+            _detectGenerationIntent();
             clearText();
             trboSend();
         };
     } else if (selModel.value == "gemini") {
    } else if (selModel.value == "lm-studio") {
         btnSend.onclick = function() {
+            _detectGenerationIntent();
             clearText();
             lmsSend();
         };
     } else if (selModel.value == "dall-e-3") {
         btnSend.onclick = function() {
+            _detectGenerationIntent();
             clearText();
             dalle3Send();
         };
