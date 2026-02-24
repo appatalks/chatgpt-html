@@ -601,11 +601,33 @@ function unloadThemeStylesheet(themeName) {
 }
 
 
+// Track user intent for image handling
+var _lastUserAskedGenerate = false;
+var _lastUserImageSubject = '';  // extracted from user's message before send
+
+/**
+ * Extract image subject from the user's own message.
+ * "show me an image of a cat" → "cat"
+ * "generate a picture of a sunset over mountains" → "sunset over mountains"
+ */
+function _extractUserImageSubject(text) {
+  if (!text) return '';
+  // Match patterns like "image of X", "picture of X", "photo of X"
+  var m = text.match(/(?:image|picture|photo|illustration|drawing|painting)\s+(?:of\s+)?(?:an?\s+)?(.+)/i);
+  if (m) return m[1].replace(/[?.!]+$/, '').trim();
+  // Match "show me X", "generate X"
+  m = text.match(/(?:show\s+me|generate|create|draw|make|display)\s+(?:an?\s+)?(?:image\s+)?(?:of\s+)?(?:an?\s+)?(.+)/i);
+  if (m) return m[1].replace(/[?.!]+$/, '').trim();
+  return '';
+}
+
 // Detect image generation intent from user input (called before every send)
 function _detectGenerationIntent() {
   var txtMsg = document.getElementById('txtMsg');
   if (txtMsg) {
-    _lastUserAskedGenerate = _isGenerationRequest(txtMsg.innerText || txtMsg.textContent || '');
+    var userText = txtMsg.innerText || txtMsg.textContent || '';
+    _lastUserAskedGenerate = _isGenerationRequest(userText);
+    _lastUserImageSubject = _extractUserImageSubject(userText);
   }
 }
 
@@ -658,10 +680,7 @@ function sendData() {
     var selModel = document.getElementById("selModel");
 
   // Detect if user wants image generation (for renderEvaResponse routing)
-  var txtMsg = document.getElementById("txtMsg");
-  if (txtMsg) {
-    _lastUserAskedGenerate = _isGenerationRequest(txtMsg.innerText || txtMsg.textContent || '');
-  }
+  _detectGenerationIntent();
 
   if (selModel.value.indexOf('copilot-') === 0) {
         clearText();
@@ -1479,9 +1498,7 @@ function escapeHtml(str) {
 // Single function all models call to render Eva's response with images
 
 // --- Image Generation & Rendering ---
-
-// Track if the user's last message requested image generation
-var _lastUserAskedGenerate = false;
+// State: _lastUserAskedGenerate and _lastUserImageSubject declared near _detectGenerationIntent
 
 /**
  * Check if user's message is asking for image generation (not just showing).
@@ -1562,7 +1579,9 @@ async function renderEvaResponse(content, txtOutput) {
     while ((match = rx.exec(text)) !== null) {
       if (!seen[match[0]]) {
         seen[match[0]] = true;
-        imagePlaceholders.push({ full: match[0], query: _extractImageSubject(match[1].trim()) });
+        // Use the user's original subject if available, otherwise extract from AI description
+        var query = _lastUserImageSubject || _extractImageSubject(match[1].trim());
+        imagePlaceholders.push({ full: match[0], query: query });
       }
     }
   });
