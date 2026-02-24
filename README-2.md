@@ -164,6 +164,33 @@ The bridge implements the [Agent Client Protocol (ACP)](https://agentclientproto
 | `terminal/output` | Agent → Client | Get command output |
 | `terminal/release` | Agent → Client | Release terminal |
 
+### Available ACP Models
+
+Models available through the Copilot CLI (requires a GitHub Copilot license):
+
+| Provider | Model ID | Notes |
+|---|---|---|
+| **Anthropic** | `claude-sonnet-4.6` | Default model |
+| | `claude-opus-4.6` | Most capable Claude |
+| | `claude-opus-4.6-fast` | Faster Opus variant |
+| | `claude-sonnet-4.5` | |
+| | `claude-opus-4.5` | |
+| | `claude-haiku-4.5` | Fastest Claude |
+| | `claude-sonnet-4` | |
+| **OpenAI** | `gpt-5.3-codex` | Latest codex |
+| | `gpt-5.2-codex` | |
+| | `gpt-5.2` | |
+| | `gpt-5.1-codex-max` | Extended context |
+| | `gpt-5.1-codex` | |
+| | `gpt-5.1` | |
+| | `gpt-5.1-codex-mini` | Lighter codex |
+| | `gpt-5-mini` | |
+| | `gpt-4.1` | |
+| **Google** | `gemini-3-pro-preview` | Preview access |
+
+> Model availability depends on your Copilot license tier and may change.
+> The default model (when none is specified) is determined by the Copilot CLI.
+
 ### CLI Flags
 
 ```bash
