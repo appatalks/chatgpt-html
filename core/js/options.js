@@ -1492,8 +1492,8 @@ async function renderEvaResponse(content, txtOutput) {
   // Limit to 3 images per response
   imagePlaceholders = imagePlaceholders.slice(0, 3);
 
-  // Fetch images in parallel if we have search keys
-  if (imagePlaceholders.length > 0 && typeof GOOGLE_SEARCH_KEY !== 'undefined' && GOOGLE_SEARCH_KEY) {
+  // Fetch images in parallel (Google or Wikimedia fallback)
+  if (imagePlaceholders.length > 0) {
     var fetchPromises = imagePlaceholders.map(function(ph) {
       return _searchImage(ph.query).then(function(url) {
         return { placeholder: ph, url: url };
@@ -1576,45 +1576,82 @@ function _extractImageSubject(rawDesc) {
 }
 
 /**
- * Search for an image using Google Custom Search API.
- * Uses multiple search strategies for better relevance.
+ * Search for an image. Tries Google Custom Search first, falls back to Wikimedia Commons.
  */
 async function _searchImage(query) {
-  if (!query || typeof GOOGLE_SEARCH_KEY === 'undefined' || !GOOGLE_SEARCH_KEY) {
-    return null;
-  }
+  if (!query) return null;
 
-  // The query is already cleaned by _extractImageSubject
   var cleanQuery = query.trim();
   if (!cleanQuery) return null;
 
-  try {
-    var url = 'https://www.googleapis.com/customsearch/v1?' +
-      'key=' + GOOGLE_SEARCH_KEY +
-      '&cx=' + GOOGLE_SEARCH_ID +
-      '&searchType=image' +
-      '&num=3' +  // fetch 3, pick best
-      '&imgSize=medium' +
-      '&safe=active' +
-      '&q=' + encodeURIComponent(cleanQuery);
+  // Try Google Custom Search first (if configured)
+  if (typeof GOOGLE_SEARCH_KEY !== 'undefined' && GOOGLE_SEARCH_KEY) {
+    try {
+      var gUrl = 'https://www.googleapis.com/customsearch/v1?' +
+        'key=' + GOOGLE_SEARCH_KEY +
+        '&cx=' + GOOGLE_SEARCH_ID +
+        '&searchType=image' +
+        '&num=3' +
+        '&imgSize=medium' +
+        '&safe=active' +
+        '&q=' + encodeURIComponent(cleanQuery);
 
-    var resp = await fetch(url);
-    var data = await resp.json();
-
-    if (data.items && data.items.length > 0) {
-      // Prefer results from well-known domains
-      var preferred = data.items.find(function(item) {
-        var link = (item.link || '').toLowerCase();
-        return link.includes('github') || link.includes('wikipedia') ||
-               link.includes('wikimedia') || link.includes('cdn');
-      });
-      return (preferred || data.items[0]).link;
+      var gResp = await fetch(gUrl);
+      if (gResp.ok) {
+        var gData = await gResp.json();
+        if (gData.items && gData.items.length > 0) {
+          var preferred = gData.items.find(function(item) {
+            var link = (item.link || '').toLowerCase();
+            return link.includes('github') || link.includes('wikipedia') ||
+                   link.includes('wikimedia') || link.includes('cdn');
+          });
+          return (preferred || gData.items[0]).link;
+        }
+      } else {
+        console.warn('Google Image Search failed (' + gResp.status + '), trying Wikimedia...');
+      }
+    } catch (e) {
+      console.warn('Google Image Search error:', e.message, '— trying Wikimedia...');
     }
-    return null;
-  } catch (e) {
-    console.error('Image search error:', e);
-    return null;
   }
+
+  // Fallback: Wikimedia Commons (free, no API key needed)
+  try {
+    var wUrl = 'https://commons.wikimedia.org/w/api.php?' +
+      'action=query&list=search&srnamespace=6' +
+      '&srsearch=' + encodeURIComponent(cleanQuery) +
+      '&srlimit=5&format=json&origin=*';
+
+    var wResp = await fetch(wUrl);
+    if (wResp.ok) {
+      var wData = await wResp.json();
+      var results = (wData.query && wData.query.search) || [];
+      if (results.length > 0) {
+        // Get the actual image URL from the file title
+        var fileTitle = results[0].title;
+        var imgUrl = 'https://commons.wikimedia.org/w/api.php?' +
+          'action=query&titles=' + encodeURIComponent(fileTitle) +
+          '&prop=imageinfo&iiprop=url&iiurlwidth=400&format=json&origin=*';
+
+        var imgResp = await fetch(imgUrl);
+        if (imgResp.ok) {
+          var imgData = await imgResp.json();
+          var pages = imgData.query && imgData.query.pages;
+          if (pages) {
+            var pageId = Object.keys(pages)[0];
+            var info = pages[pageId].imageinfo;
+            if (info && info[0]) {
+              return info[0].thumburl || info[0].url;
+            }
+          }
+        }
+      }
+    }
+  } catch (e) {
+    console.warn('Wikimedia search error:', e.message);
+  }
+
+  return null;
 }
 
 // Keep backward compatibility — old code may call fetchGoogleImages
