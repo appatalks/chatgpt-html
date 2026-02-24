@@ -1640,27 +1640,42 @@ function _extractImageSubject(rawDesc) {
   var dashIdx = desc.search(/\s[-–—]\s/);
   if (dashIdx > 5) desc = desc.substring(0, dashIdx);
 
-  // Cut at first period or comma if the remaining is still long
+  // Cut at first period if the remaining is still long
   if (desc.length > 60) {
-    var cutIdx = desc.search(/[.,;:]/);
-    if (cutIdx > 5) desc = desc.substring(0, cutIdx);
+    var dotIdx = desc.indexOf('.');
+    if (dotIdx > 5) desc = desc.substring(0, dotIdx);
   }
 
-  // Remove filler/adjective words for a cleaner search query
+  // Strategy: extract proper nouns and key nouns, drop everything else
+  // 1. Find capitalized words (proper nouns like "Octocat", "GitHub")
+  var properNouns = desc.match(/\b[A-Z][a-zA-Z]+\b/g) || [];
+  // Remove common sentence-starter words that happen to be capitalized
+  var ignoreCapitalized = new Set(['Image', 'Picture', 'Photo', 'The', 'An', 'This', 'Here', 'Its', 'Each', 'Very', 'Some']);
+  properNouns = properNouns.filter(function(w) { return !ignoreCapitalized.has(w); });
+
+  if (properNouns.length > 0) {
+    // Use proper nouns as the search query (e.g. "GitHub Octocat")
+    var result = properNouns.slice(0, 4).join(' ');
+    console.log('[Eva Images] Extracted proper nouns:', result);
+    return result;
+  }
+
+  // 2. Fallback: remove common adjectives and filler, keep what's left
   desc = desc
     .replace(/^(an?|the|image of|picture of|photo of|showing|depicting|illustration of)\s+/gi, '')
-    .replace(/(friendly|cartoon|cartoonish|cute|classic|iconic|simple|round|large|small|playful|beloved|stylized|detailed|colorful|whimsical|famous|popular|well-known|traditional|modern|typical|standard|featuring|with)\s+/gi, '')
-    .replace(/['']s\b/g, '')  // possessives
+    .replace(/\b(friendly|cartoon|cartoonish|cute|classic|iconic|simple|round|large|small|playful|beloved|stylized|detailed|colorful|whimsical|famous|popular|vibrant|modern|typical|standard|featuring|with|that|has|and|or|its)\b\s*/gi, '')
+    .replace(/['']s\b/g, '')
+    .replace(/[,;]+/g, ' ')
     .replace(/\s+/g, ' ')
     .trim();
 
-  // If still too long, take just the first ~6 meaningful words
-  var words = desc.split(/\s+/);
-  if (words.length > 6) {
-    desc = words.slice(0, 6).join(' ');
+  // Take last 2-3 meaningful words (nouns tend to be at the end)
+  var words = desc.split(/\s+/).filter(function(w) { return w.length > 2; });
+  if (words.length > 3) {
+    desc = words.slice(-3).join(' ');
   }
 
-  return desc || rawDesc.substring(0, 40);
+  return desc || rawDesc.substring(0, 30);
 }
 
 /**
