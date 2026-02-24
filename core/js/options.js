@@ -1657,41 +1657,44 @@ function _extractImageSubject(rawDesc) {
   if (!rawDesc) return '';
   var desc = rawDesc;
 
-  // Cut at first " - " or " — " (models often add long descriptions after)
+  // Cut at first " - " or " — " or ", " comma phrase
   var dashIdx = desc.search(/\s[-–—]\s/);
-  if (dashIdx > 5) desc = desc.substring(0, dashIdx);
+  if (dashIdx > 3) desc = desc.substring(0, dashIdx);
 
-  // Cut at first period if the remaining is still long
-  if (desc.length > 60) {
-    var dotIdx = desc.indexOf('.');
-    if (dotIdx > 5) desc = desc.substring(0, dotIdx);
+  // Cut at first comma if still long (keep just the subject noun phrase)
+  if (desc.length > 40) {
+    var commaIdx = desc.indexOf(',');
+    if (commaIdx > 3) desc = desc.substring(0, commaIdx);
   }
 
-  // Strategy: extract proper nouns and key nouns, drop everything else
-  // 1. Find capitalized words (proper nouns like "Octocat", "GitHub")
+  // Cut at first period
+  if (desc.length > 40) {
+    var dotIdx = desc.indexOf('.');
+    if (dotIdx > 3) desc = desc.substring(0, dotIdx);
+  }
+
+  // 1. Find proper nouns (capitalized words like "Octocat", "GitHub")
   var properNouns = desc.match(/\b[A-Z][a-zA-Z]+\b/g) || [];
-  // Remove common sentence-starter words that happen to be capitalized
-  var ignoreCapitalized = new Set(['Image', 'Picture', 'Photo', 'The', 'An', 'This', 'Here', 'Its', 'Each', 'Very', 'Some']);
+  var ignoreCapitalized = new Set(['Image', 'Picture', 'Photo', 'The', 'An', 'This', 'Here', 'Its', 'Each', 'Very', 'Some', 'With', 'And']);
   properNouns = properNouns.filter(function(w) { return !ignoreCapitalized.has(w); });
 
   if (properNouns.length > 0) {
-    var result = properNouns.slice(0, 4).join(' ');
-    return result;
+    return properNouns.slice(0, 4).join(' ');
   }
 
-  // 2. Fallback: remove common adjectives and filler, keep what's left
+  // 2. Strip filler — keep nouns (which come early in the description)
   desc = desc
     .replace(/^(an?|the|image of|picture of|photo of|showing|depicting|illustration of)\s+/gi, '')
-    .replace(/\b(friendly|cartoon|cartoonish|cute|classic|iconic|simple|round|large|small|playful|beloved|stylized|detailed|colorful|whimsical|famous|popular|vibrant|modern|typical|standard|featuring|with|that|has|and|or|its)\b\s*/gi, '')
-    .replace(/['']s\b/g, '')
+    .replace(/\b(friendly|cartoon|cartoonish|cute|classic|iconic|simple|round|large|small|playful|beloved|stylized|detailed|colorful|whimsical|famous|popular|vibrant|modern|typical|standard|featuring|with|that|has|and|or|its|soft|warm|bright|relaxed|graceful|sunny|patterned)\b\s*/gi, '')
+    .replace(/[''\u2019]s\b/g, '')
     .replace(/[,;]+/g, ' ')
     .replace(/\s+/g, ' ')
     .trim();
 
-  // Take last 2-3 meaningful words (nouns tend to be at the end)
+  // Take FIRST 2-3 meaningful words (the subject noun is at the beginning)
   var words = desc.split(/\s+/).filter(function(w) { return w.length > 2; });
   if (words.length > 3) {
-    desc = words.slice(-3).join(' ');
+    desc = words.slice(0, 3).join(' ');
   }
 
   return desc || rawDesc.substring(0, 30);
