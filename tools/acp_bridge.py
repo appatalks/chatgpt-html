@@ -493,56 +493,80 @@ def _kusto_query_direct(cluster_url, database, query, is_mgmt=False):
     global _kusto_token_cache
     if not _kusto_token_cache:
         return None
-    try:
-        endpoint = "mgmt" if is_mgmt else "query"
-        url = f"{cluster_url}/v1/rest/{endpoint}"
-        resp = __import__('requests').post(url, json={"csl": query, "db": database},
-            headers={"Authorization": f"Bearer {_kusto_token_cache}", "Content-Type": "application/json"},
-            timeout=15)
-        if resp.status_code == 200:
-            data = resp.json()
-            tables = data.get("Tables", [])
-            if tables:
-                rows = tables[0].get("Rows", [])
-                cols = [c["ColumnName"] for c in tables[0].get("Columns", [])]
-                if rows:
-                    return [dict(zip(cols, row)) for row in rows]
-            return []
-        return None
-    except Exception as e:
-        print(f"[Cognition] Kusto query error: {e}")
-        return None
+    import requests as _requests_mod
+    endpoint = "mgmt" if is_mgmt else "query"
+    url = f"{cluster_url}/v1/rest/{endpoint}"
+    headers = {"Authorization": f"Bearer {_kusto_token_cache}", "Content-Type": "application/json"}
+    payload = {"csl": query, "db": database}
+
+    # Retry up to 3 times with fresh sessions for transient SSL errors
+    for attempt in range(3):
+        try:
+            session = _requests_mod.Session()
+            resp = session.post(url, json=payload, headers=headers, timeout=15)
+            session.close()
+            if resp.status_code == 200:
+                data = resp.json()
+                tables = data.get("Tables", [])
+                if tables:
+                    rows = tables[0].get("Rows", [])
+                    cols = [c["ColumnName"] for c in tables[0].get("Columns", [])]
+                    if rows:
+                        return [dict(zip(cols, row)) for row in rows]
+                return []
+            return None
+        except (_requests_mod.exceptions.SSLError, _requests_mod.exceptions.ConnectionError) as e:
+            if attempt < 2:
+                print(f"[Cognition] Kusto SSL retry {attempt+1}/3: {e}")
+                time.sleep(1)
+            else:
+                print(f"[Cognition] Kusto query failed after 3 retries: {e}")
+                return None
+        except Exception as e:
+            print(f"[Cognition] Kusto query error: {e}")
+            return None
 
 def _kusto_ingest_direct(cluster_url, database, table, columns, rows_data):
     """Ingest data directly into Kusto via .ingest inline."""
     global _kusto_token_cache
     if not _kusto_token_cache:
         return False
-    try:
-        rows_csv = []
-        for row_obj in rows_data:
-            vals = []
-            for col in columns:
-                v = row_obj.get(col, "")
-                if v is None:
-                    vals.append("")
-                elif isinstance(v, bool):
-                    vals.append("true" if v else "false")
-                elif isinstance(v, (dict, list)):
-                    vals.append(json.dumps(v))
-                else:
-                    vals.append(str(v).replace("\n", "\\n").replace("\r", ""))
-            rows_csv.append(", ".join(vals))
+    import requests as _requests_mod
+    rows_csv = []
+    for row_obj in rows_data:
+        vals = []
+        for col in columns:
+            v = row_obj.get(col, "")
+            if v is None:
+                vals.append("")
+            elif isinstance(v, bool):
+                vals.append("true" if v else "false")
+            elif isinstance(v, (dict, list)):
+                vals.append(json.dumps(v))
+            else:
+                vals.append(str(v).replace("\n", "\\n").replace("\r", ""))
+        rows_csv.append(", ".join(vals))
 
-        cmd = f".ingest inline into table {table} <|\n" + "\n".join(rows_csv)
-        resp = __import__('requests').post(f"{cluster_url}/v1/rest/mgmt",
-            json={"csl": cmd, "db": database},
-            headers={"Authorization": f"Bearer {_kusto_token_cache}", "Content-Type": "application/json"},
-            timeout=15)
-        return resp.status_code == 200
-    except Exception as e:
-        print(f"[Cognition] Kusto ingest error: {e}")
-        return False
+    cmd = f".ingest inline into table {table} <|\n" + "\n".join(rows_csv)
+    url = f"{cluster_url}/v1/rest/mgmt"
+    headers = {"Authorization": f"Bearer {_kusto_token_cache}", "Content-Type": "application/json"}
+
+    for attempt in range(3):
+        try:
+            session = _requests_mod.Session()
+            resp = session.post(url, json={"csl": cmd, "db": database}, headers=headers, timeout=15)
+            session.close()
+            return resp.status_code == 200
+        except (_requests_mod.exceptions.SSLError, _requests_mod.exceptions.ConnectionError) as e:
+            if attempt < 2:
+                print(f"[Cognition] Kusto ingest SSL retry {attempt+1}/3: {e}")
+                time.sleep(1)
+            else:
+                print(f"[Cognition] Kusto ingest failed after 3 retries: {e}")
+                return False
+        except Exception as e:
+            print(f"[Cognition] Kusto ingest error: {e}")
+            return False
 
 def _get_kusto_config():
     """Get Kusto cluster URL and database from the running MCP config."""
