@@ -168,11 +168,51 @@ class KustoMCPServer:
                 self._credential = _StaticTokenCredential(pre_token)
                 return self._credential
 
-            # Try persistent token cache
+            # Try MSAL silent refresh from cached token first
+            try:
+                import msal as _msal
+                _cache_path = os.path.expanduser("~/.azure/msal_token_cache.json")
+                if os.path.isfile(_cache_path):
+                    self._log("Trying MSAL silent refresh...")
+                    _msal_cache = _msal.SerializableTokenCache()
+                    with open(_cache_path) as _cf:
+                        _msal_cache.deserialize(_cf.read())
+                    _app = _msal.PublicClientApplication(
+                        "04b07795-8ddb-461a-bbee-02f9e1bf7b46",
+                        authority="https://login.microsoftonline.com/organizations",
+                        token_cache=_msal_cache
+                    )
+                    _accounts = _app.get_accounts()
+                    if _accounts:
+                        _result = _app.acquire_token_silent(
+                            scopes=["https://kusto.kusto.windows.net/.default"],
+                            account=_accounts[0]
+                        )
+                        if _result and "access_token" in _result:
+                            import collections
+                            class _MSALCred:
+                                def __init__(self, tok):
+                                    self._tok = tok
+                                def get_token(self, *a, **kw):
+                                    Token = collections.namedtuple("Token", ["token", "expires_on"])
+                                    return Token(self._tok, 0)
+                            self._credential = _MSALCred(_result["access_token"])
+                            self._log("Using cached token (MSAL silent refresh)")
+                            if _msal_cache.has_state_changed:
+                                with open(_cache_path, "w") as _cf:
+                                    _cf.write(_msal_cache.serialize())
+                            return self._credential
+            except ImportError:
+                self._log("msal not available, skipping silent refresh")
+            except Exception as e:
+                self._log(f"MSAL silent refresh attempt: {e}")
+
+            # Try DeviceCodeCredential with persistent cache
             try:
                 from azure.identity import TokenCachePersistenceOptions
+                cache_opts = TokenCachePersistenceOptions(allow_unencrypted_storage=True)
                 cred = DeviceCodeCredential(
-                    cache_persistence_options=TokenCachePersistenceOptions(allow_unencrypted_storage=True)
+                    cache_persistence_options=cache_opts
                 )
                 token = cred.get_token("https://kusto.kusto.windows.net/.default")
                 if token:
