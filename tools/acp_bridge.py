@@ -788,6 +788,8 @@ class BridgeHandler(BaseHTTPRequestHandler):
             self._mcp_configure()
         elif self.path == "/v1/memory/reflect":
             self._memory_reflect()
+        elif self.path == "/v1/aig/chat":
+            self._aig_chat()
         else:
             self.send_error(404, "Not Found")
 
@@ -835,6 +837,163 @@ class BridgeHandler(BaseHTTPRequestHandler):
                 }
             }
         })
+
+    def _aig_chat(self):
+        """AIG orchestrator — intelligently routes to the best model for each task."""
+        content_length = int(self.headers.get("Content-Length", 0))
+        if content_length == 0:
+            self._json_response(400, {"error": {"message": "Empty request body"}})
+            return
+
+        body = self.rfile.read(content_length).decode("utf-8")
+        try:
+            data = json.loads(body)
+        except json.JSONDecodeError:
+            self._json_response(400, {"error": {"message": "Invalid JSON"}})
+            return
+
+        messages = data.get("messages", [])
+        user_message = data.get("user_message", "")
+
+        if not user_message and messages:
+            for msg in reversed(messages):
+                if msg.get("role") == "user":
+                    user_message = msg.get("content", "")
+                    break
+
+        if not user_message:
+            self._json_response(400, {"error": {"message": "No user message provided"}})
+            return
+
+        print(f"[AIG] Processing: {user_message[:80]}...")
+
+        # Step 1: Build memory context + proactive data retrieval
+        memory_context = _build_memory_context(user_message) if _cognition_enabled else ""
+
+        # Step 2: Determine if we need ACP tools (MCP/Kusto queries beyond heuristics)
+        import re as _re
+        needs_acp_tools = False
+        if acp_client and acp_client.alive:
+            # Detect queries that need live MCP tool execution
+            if _re.search(r'\b(query|run|execute|kql|sample|schema|ingest|write|store|save|remember)\b', user_message.lower()):
+                needs_acp_tools = True
+            # Detect requests for data we can't pre-fetch with heuristics
+            if _re.search(r'\b(show me|count|sum|average|where|filter|join|extend|project)\b', user_message.lower()):
+                needs_acp_tools = True
+
+        acp_data = ""
+        acp_model_used = ""
+        if needs_acp_tools:
+            print(f"[AIG] Step 2: Using ACP for data retrieval...")
+            # Use ACP to run the data query (it has MCP tools)
+            acp_prompt = f"You are a data retrieval assistant. Execute the appropriate Kusto MCP tool to answer this request. Return ONLY the raw data results, no commentary:\n\n{user_message}"
+            acp_result = acp_client.prompt(acp_prompt, timeout=60)
+            if acp_result and "text" in acp_result and acp_result["text"]:
+                acp_data = acp_result["text"]
+                acp_model_used = acp_client.model or "copilot-acp"
+                print(f"[AIG] ACP returned {len(acp_data)} chars of data")
+
+        # Step 3: Build the final prompt for Eva's persona model (PAT)
+        eva_system = (
+            "You are Eva, a knowledgeable AI assistant. Your goal is to provide accurate, "
+            "and helpful responses to questions, while being honest and straightforward. "
+            "You have access to persistent memory and data systems. "
+            "Use the context provided below to inform your responses naturally — "
+            "don't mention 'system prompts' or 'memory injection', just use the knowledge as your own.\n\n"
+        )
+
+        if memory_context:
+            eva_system += memory_context
+
+        if acp_data:
+            eva_system += f"\n[Data Retrieved]\n{acp_data}\n\n"
+            eva_system += "Use the data above to answer the user's question accurately. Present it clearly.\n"
+
+        # Step 4: Pick the best PAT model for response generation
+        # Priority: GPT-4.1 (best all-rounder for persona), fallback to GPT-4o
+        github_pat = ""
+        if hasattr(__builtins__, '__dict__'):
+            pass
+        # Try to get PAT from environment or config
+        github_pat = os.environ.get("GITHUB_PAT", "")
+
+        model_for_response = "gpt-4.1"  # default best for persona
+        response_text = ""
+        model_used = "aig"
+
+        if github_pat:
+            # Use GitHub Models API (PAT) for persona-friendly response
+            print(f"[AIG] Step 3: Generating response via PAT model ({model_for_response})...")
+            try:
+                import requests as _req
+                pat_messages = [{"role": "system", "content": eva_system}]
+                # Add recent conversation context (last few messages)
+                for msg in messages[-6:]:
+                    if msg.get("role") in ("user", "assistant"):
+                        pat_messages.append({"role": msg["role"], "content": msg.get("content", "")[:500]})
+
+                pat_resp = _req.post("https://models.inference.ai.azure.com/chat/completions",
+                    headers={
+                        "Authorization": f"Bearer {github_pat}",
+                        "Content-Type": "application/json"
+                    },
+                    json={
+                        "model": model_for_response,
+                        "messages": pat_messages,
+                        "max_tokens": 4096
+                    },
+                    timeout=60
+                )
+                if pat_resp.status_code == 200:
+                    pat_data = pat_resp.json()
+                    response_text = pat_data.get("choices", [{}])[0].get("message", {}).get("content", "")
+                    model_used = f"aig:{model_for_response}"
+                    if acp_model_used:
+                        model_used += f"+{acp_model_used}"
+                    print(f"[AIG] PAT response: {len(response_text)} chars")
+                else:
+                    print(f"[AIG] PAT model failed ({pat_resp.status_code}), falling back to ACP")
+                    github_pat = ""  # trigger ACP fallback
+            except Exception as e:
+                print(f"[AIG] PAT error: {e}, falling back to ACP")
+                github_pat = ""
+
+        if not github_pat or not response_text:
+            # Fallback: use ACP for response generation (less persona-friendly but functional)
+            print(f"[AIG] Fallback: Using ACP for response generation...")
+            if acp_client and acp_client.alive:
+                full_prompt = eva_system + "\n\nUser: " + user_message
+                acp_result = acp_client.prompt(full_prompt, timeout=120)
+                response_text = acp_result.get("text", "I'm having trouble processing that right now.")
+                model_used = f"aig:{acp_client.model or 'acp-default'}"
+            else:
+                response_text = "The AIG system needs either a GitHub PAT or a running ACP bridge to generate responses."
+                model_used = "aig:unavailable"
+
+        # Step 5: Post-response reflection (background)
+        if response_text and _cognition_enabled:
+            threading.Thread(target=_post_response_reflection,
+                           args=(user_message, response_text, model_used),
+                           daemon=True).start()
+
+        # Return OpenAI-compatible response
+        response = {
+            "id": f"aig-{int(time.time())}",
+            "object": "chat.completion",
+            "created": int(time.time()),
+            "model": model_used,
+            "choices": [{
+                "index": 0,
+                "message": {
+                    "role": "assistant",
+                    "content": response_text
+                },
+                "finish_reason": "stop"
+            }],
+            "usage": {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
+        }
+        self._json_response(200, response)
+        print(f"[AIG] Complete: {model_used} ({len(response_text)} chars)")
 
     def _memory_context(self):
         """Return Eva's memory context as text for injection into any model's system prompt."""

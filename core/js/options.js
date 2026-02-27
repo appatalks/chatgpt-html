@@ -221,7 +221,7 @@ function onModelSettingsChange() {
   // Show/hide temperature (hidden for reasoning models, gpt-5 family, latest, copilot-acp)
   var tempOpt = document.getElementById('opt-temperature');
   if (tempOpt) {
-    var hideTemp = ['o3-mini', 'copilot-o3-mini', 'copilot-o4-mini', 'copilot-deepseek-r1', 'copilot-gpt-5', 'gpt-5-mini', 'latest', 'copilot-acp'].indexOf(model) >= 0;
+    var hideTemp = ['o3-mini', 'copilot-o3-mini', 'copilot-o4-mini', 'copilot-deepseek-r1', 'copilot-gpt-5', 'gpt-5-mini', 'latest', 'copilot-acp', 'aig'].indexOf(model) >= 0;
     tempOpt.style.display = hideTemp ? 'none' : 'block';
   }
   // Show/hide ACP model selector (only for copilot-acp)
@@ -300,7 +300,7 @@ function updateModelOptionsForTheme(theme) {
   if (theme === 'lcars') {
     // Remember current model to restore when leaving LCARS
     __modelBeforeLCARS = sel.value;
-    var allowed = new Set(['gpt-5-mini', 'o3-mini', 'dall-e-3', 'gemini', 'lm-studio', 'copilot-gpt-4o', 'copilot-gpt-4o-mini', 'copilot-o3-mini', 'copilot-gpt-4.1', 'copilot-gpt-5', 'copilot-o4-mini', 'copilot-deepseek-r1', 'copilot-llama-4-maverick', 'copilot-acp']);
+    var allowed = new Set(['gpt-5-mini', 'o3-mini', 'dall-e-3', 'gemini', 'lm-studio', 'copilot-gpt-4o', 'copilot-gpt-4o-mini', 'copilot-o3-mini', 'copilot-gpt-4.1', 'copilot-gpt-5', 'copilot-o4-mini', 'copilot-deepseek-r1', 'copilot-llama-4-maverick', 'copilot-acp', 'aig']);
     var filtered = [];
     (__originalModelOptions || []).forEach(function(item) {
       if (item.type === 'optgroup') {
@@ -636,7 +636,13 @@ function updateButton() {
     var selModel = document.getElementById("selModel");
     var btnSend = document.getElementById("btnSend");
 
-  if (selModel.value.indexOf('copilot-') === 0) {
+  if (selModel.value === 'aig') {
+        btnSend.onclick = function() {
+            _detectGenerationIntent();
+            clearText();
+            aigSend();
+        };
+    } else if (selModel.value.indexOf('copilot-') === 0) {
         btnSend.onclick = function() {
             _detectGenerationIntent();
             clearText();
@@ -683,7 +689,10 @@ function sendData() {
   // Detect if user wants image generation (for renderEvaResponse routing)
   _detectGenerationIntent();
 
-  if (selModel.value.indexOf('copilot-') === 0) {
+  if (selModel.value === 'aig') {
+        clearText();
+        aigSend();
+    } else if (selModel.value.indexOf('copilot-') === 0) {
         clearText();
         copilotSend();
     } else if (selModel.value == "gpt-4o-mini" || selModel.value == "o1" || selModel.value == "o1-mini" || selModel.value == "gpt-4o" || selModel.value == "o3-mini" || selModel.value == "o1-preview" || selModel.value == "gpt-5-mini" || selModel.value == "latest") {
@@ -749,6 +758,7 @@ const MODEL_CONTEXT_WINDOWS = {
   'copilot-deepseek-r1': 128000,
   'copilot-llama-4-maverick': 1000000,
   'copilot-acp': 128000,
+  'aig': 200000,
   'gemini': 1000000,
   'lm-studio': 32768,
   'dall-e-3': 0
