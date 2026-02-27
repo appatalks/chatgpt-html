@@ -29,6 +29,23 @@ function lmsSend() {
         return;
     }
 
+    // --- Cognition: Fetch memory context from bridge ---
+    var _lmsMemoryPromise = Promise.resolve('');
+    try {
+      var _bridgeUrl = (typeof getACPBridgeUrl === 'function') ? getACPBridgeUrl() : 'http://localhost:8888';
+      _lmsMemoryPromise = fetch(_bridgeUrl.replace(/\/+$/, '') + '/v1/memory/context?message=' + encodeURIComponent(sQuestion), {
+        signal: AbortSignal.timeout(3000)
+      }).then(function(r) { return r.ok ? r.json() : { context: '' }; })
+        .then(function(d) { return (d.context && d.cognition_enabled) ? d.context : ''; })
+        .catch(function() { return ''; });
+    } catch (e) {}
+
+    _lmsMemoryPromise.then(function(_memCtx) {
+      // Inject memory context into system message if available
+      if (_memCtx && openLLMessages.length > 0 && openLLMessages[0].role === 'system') {
+        openLLMessages[0].content = _memCtx + '\n\n' + openLLMessages[0].content;
+      }
+
                 // Document the user's message (match chat-bubble UI and sanitize)
                 document.getElementById("txtMsg").innerHTML = "";
                 (function appendUserBubble(raw){
@@ -85,9 +102,25 @@ function lmsSend() {
                             const audio = document.getElementById("audioPlayback");
                             if (audio) audio.setAttribute("autoplay", true);
                         }
+
+                        // --- Cognition: Post-response reflection ---
+                        try {
+                          var _brUrl = (typeof getACPBridgeUrl === 'function') ? getACPBridgeUrl() : 'http://localhost:8888';
+                          fetch(_brUrl.replace(/\/+$/, '') + '/v1/memory/reflect', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({
+                              user_message: sQuestion.substring(0, 500),
+                              assistant_message: candidate.substring(0, 500),
+                              model: 'lm-studio'
+                            }),
+                            signal: AbortSignal.timeout(5000)
+                          }).catch(function() {});
+                        } catch (e) {}
                 })
         .catch(error => {
             console.error("Error:", error);
             document.getElementById("txtOutput").innerHTML += '<span class="error">Error: </span>' + error.message + "<br>\n";
         });
+    }); // end _lmsMemoryPromise.then
 }

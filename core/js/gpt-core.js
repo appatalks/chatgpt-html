@@ -2,7 +2,7 @@
 // For OpenAI API
 
 // API Call for latest gpt classes
-function trboSend() {
+async function trboSend() {
 
   // Remove occurrences of the specific syntax from the txtMsg element
 	txtMsg.innerHTML = txtMsg.innerHTML.replace(/<img\b[^>]*>/g, '');
@@ -105,6 +105,21 @@ function trboSend() {
 	    // Set lastResponse
 	    lastResponse = s.content + "\n";
             // console.log("gpt-core.js Line 152" + lastResponse);
+
+            // --- Cognition: Post-response reflection ---
+            try {
+              var _brUrl = (typeof getACPBridgeUrl === 'function') ? getACPBridgeUrl() : 'http://localhost:8888';
+              fetch(_brUrl.replace(/\/+$/, '') + '/v1/memory/reflect', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  user_message: sQuestion.substring(0, 500),
+                  assistant_message: s.content.substring(0, 500),
+                  model: sModel
+                }),
+                signal: AbortSignal.timeout(5000)
+              }).catch(function() {});
+            } catch (e) {}
             }            
         }
 
@@ -142,6 +157,27 @@ function trboSend() {
       // Store the initial messages in localStorage
       localStorage.setItem("messages", JSON.stringify(iMessages));
     }
+
+    // --- Cognition: Fetch memory context from bridge ---
+    var _gptMemoryContext = '';
+    try {
+      var _bridgeUrl = (typeof getACPBridgeUrl === 'function') ? getACPBridgeUrl() : 'http://localhost:8888';
+      var _ctxResp = await fetch(_bridgeUrl.replace(/\/+$/, '') + '/v1/memory/context?message=' + encodeURIComponent(sQuestion), {
+        signal: AbortSignal.timeout(3000)
+      });
+      if (_ctxResp.ok) {
+        var _ctxData = await _ctxResp.json();
+        if (_ctxData.context && _ctxData.cognition_enabled) {
+          _gptMemoryContext = _ctxData.context;
+          // Inject into the first developer/system message in localStorage
+          var _storedMsgs = JSON.parse(localStorage.getItem('messages')) || [];
+          if (_storedMsgs.length > 0 && (_storedMsgs[0].role === 'developer' || _storedMsgs[0].role === 'system')) {
+            _storedMsgs[0].content = _gptMemoryContext + '\n\n' + _storedMsgs[0].content.replace(/^\[Morning Reflection[\s\S]*?\n\n/m, '');
+            localStorage.setItem('messages', JSON.stringify(_storedMsgs));
+          }
+        }
+      }
+    } catch (e) {}
 
     // Create a new array to store the messages
     let newMessages = [];
