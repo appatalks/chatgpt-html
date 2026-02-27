@@ -610,6 +610,19 @@ def _build_memory_context(user_message):
             f"Concern:{e.get('Concern',0):.2f} Excitement:{e.get('Excitement',0):.2f} "
             f"Calm:{e.get('Calm',0):.2f} Empathy:{e.get('Empathy',0):.2f}")
 
+    # Inject SelfState capabilities so the model knows what it can do
+    selfstate = _kusto_query_direct(cluster, db,
+        "SelfState | order by Timestamp desc | take 10")
+    if selfstate:
+        caps = [f"{s.get('Capability','?')}={s.get('Status','?')}" for s in selfstate]
+        context_parts.append(f"[Capabilities] {', '.join(caps)}")
+    # Always tell the model about its Kusto database access
+    context_parts.append(
+        f"[System] You have access to the Eva Kusto database at {cluster}. "
+        f"Database: {db}. Tables: Conversations, Knowledge, MemorySummaries, "
+        f"HeuristicsIndex, SelfState, Reflections, EmotionState, EmotionBaseline. "
+        f"You can query and write to these tables to remember information about users and conversations.")
+
     if context_parts:
         return "\n".join(context_parts) + "\n\n"
     return ""
