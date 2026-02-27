@@ -874,11 +874,10 @@ class BridgeHandler(BaseHTTPRequestHandler):
         import re as _re
         needs_acp_tools = False
         if acp_client and acp_client.alive:
-            # Detect queries that need live MCP tool execution
-            if _re.search(r'\b(query|run|execute|kql|sample|schema|ingest|write|store|save|remember)\b', user_message.lower()):
+            # Detect queries that need live MCP tool execution beyond what heuristics provide
+            if _re.search(r'\b(query|run|execute|kql|sample|schema|ingest|write|store|save|remember|show me data|row|record)\b', user_message.lower()):
                 needs_acp_tools = True
-            # Detect requests for data we can't pre-fetch with heuristics
-            if _re.search(r'\b(show me|count|sum|average|where|filter|join|extend|project)\b', user_message.lower()):
+            if _re.search(r'\b(count|sum|average|where|filter|join|extend|project|distinct|top|take \d)\b', user_message.lower()):
                 needs_acp_tools = True
 
         acp_data = ""
@@ -931,6 +930,9 @@ class BridgeHandler(BaseHTTPRequestHandler):
                 for msg in messages[-6:]:
                     if msg.get("role") in ("user", "assistant"):
                         pat_messages.append({"role": msg["role"], "content": msg.get("content", "")[:500]})
+                # Always ensure the current user message is the last message
+                if not pat_messages or pat_messages[-1].get("content") != user_message:
+                    pat_messages.append({"role": "user", "content": user_message})
 
                 pat_resp = _req.post("https://models.inference.ai.azure.com/chat/completions",
                     headers={
