@@ -581,16 +581,25 @@ def _build_memory_context(user_message):
         else:
             context_parts.append(f"[Morning Reflection — New day {today}]\nNo previous memory summaries found. This is a fresh start.")
 
-    # Recall relevant knowledge based on user's message
-    # Extract key words (simple: take first 3 significant words)
-    words = [w for w in user_message.split() if len(w) > 3][:3]
+    # Always inject core identity knowledge (user name, key facts) regardless of query
+    core_knowledge = _kusto_query_direct(cluster, db,
+        "Knowledge | where Confidence >= 0.6 | order by Confidence desc, Timestamp desc | take 10")
+    if core_knowledge:
+        for k in core_knowledge:
+            context_parts.append(f"[Memory] {k.get('Entity','?')} — {k.get('Relation','?')}: {k.get('Value','?')} (confidence: {k.get('Confidence',0)})")
+
+    # Also recall knowledge relevant to the user's specific message
+    words = [w.strip('?.,!') for w in user_message.split() if len(w) > 3][:4]
     if words:
-        for word in words[:2]:
-            knowledge = _kusto_query_direct(cluster, db,
-                f"Knowledge | where Entity has_cs '{word}' or Value has_cs '{word}' | order by Confidence desc | take 5")
-            if knowledge:
-                for k in knowledge:
-                    context_parts.append(f"[Memory] {k.get('Entity','?')} — {k.get('Relation','?')}: {k.get('Value','?')} (confidence: {k.get('Confidence',0)})")
+        # Use case-insensitive 'has' instead of 'has_cs' for broader matching
+        word_filters = " or ".join(f"Entity has '{w}' or Value has '{w}'" for w in words[:3])
+        knowledge = _kusto_query_direct(cluster, db,
+            f"Knowledge | where ({word_filters}) and Confidence < 0.6 | order by Confidence desc | take 5")
+        if knowledge:
+            for k in knowledge:
+                entry = f"[Memory] {k.get('Entity','?')} — {k.get('Relation','?')}: {k.get('Value','?')} (confidence: {k.get('Confidence',0)})"
+                if entry not in context_parts:
+                    context_parts.append(entry)
 
     # Get current emotion state
     emotion = _kusto_query_direct(cluster, db, "EmotionState | order by Timestamp desc | take 1")
