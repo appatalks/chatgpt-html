@@ -624,8 +624,62 @@ def _build_memory_context(user_message):
         f"SelfState, Reflections, EmotionState, EmotionBaseline. "
         f"The knowledge facts shown above in [Memory] tags come from this database. "
         f"When using Copilot ACP mode, you can query these tables directly via MCP tools. "
-        f"In other modes, your memory is automatically provided in your context — "
-        f"you know things about the user but cannot run live queries yourself.")
+        f"In other modes, relevant data is automatically fetched and provided below.")
+
+    # --- Proactive data retrieval: detect data-related questions and run queries ---
+    msg_lower = user_message.lower()
+    import re as _re
+
+    # Database listing
+    if _re.search(r'\b(database|databases|kusto|adx|data explorer)\b', msg_lower):
+        dbs = _kusto_query_direct(cluster, "Eva", ".show databases", is_mgmt=True)
+        if dbs:
+            db_names = [d.get('DatabaseName', '?') for d in dbs if 'DatabaseName' in d]
+            if db_names:
+                context_parts.append(f"[Live Data] Kusto databases available: {', '.join(db_names)}")
+
+    # Table listing
+    if _re.search(r'\b(tables?|schema|columns?)\b', msg_lower):
+        # Check which database they're asking about
+        target_db = db  # default to Eva
+        for known_db in ['ynot', 'MEMORY_CORE', 'Eva']:
+            if known_db.lower() in msg_lower:
+                target_db = known_db
+                break
+        tables = _kusto_query_direct(cluster, target_db, ".show tables", is_mgmt=True)
+        if tables:
+            tbl_names = [t.get('TableName', '?') for t in tables if 'TableName' in t]
+            if tbl_names:
+                context_parts.append(f"[Live Data] Tables in {target_db}: {', '.join(tbl_names)}")
+
+    # Recent conversations query
+    if _re.search(r'\b(conversation|history|recent|chat|talked|said)\b', msg_lower):
+        convos = _kusto_query_direct(cluster, db,
+            "Conversations | order by Timestamp desc | take 5 | project Timestamp, Role, Content")
+        if convos:
+            conv_text = "\n".join(f"  [{c.get('Role','?')}] {str(c.get('Content',''))[:100]}" for c in convos[:5])
+            context_parts.append(f"[Live Data] Recent conversations:\n{conv_text}")
+
+    # Emotion history query
+    if _re.search(r'\b(emotion|feeling|mood|how.*feel)\b', msg_lower):
+        emotions = _kusto_query_direct(cluster, db,
+            "EmotionState | order by Timestamp desc | take 5 | project Timestamp, Joy, Curiosity, Concern, Trigger")
+        if emotions:
+            emo_text = "\n".join(
+                f"  Joy:{e.get('Joy',0):.2f} Curiosity:{e.get('Curiosity',0):.2f} Concern:{e.get('Concern',0):.2f} Trigger:{str(e.get('Trigger',''))[:60]}"
+                for e in emotions[:5])
+            context_parts.append(f"[Live Data] Recent emotion history:\n{emo_text}")
+
+    # Generic KQL query detection — if user mentions a known table name, sample it
+    known_tables = ['Conversations', 'Knowledge', 'MemorySummaries', 'HeuristicsIndex',
+                    'SelfState', 'Reflections', 'EmotionState', 'EmotionBaseline']
+    for tbl in known_tables:
+        if tbl.lower() in msg_lower and not any(f'Tables in' in p for p in context_parts):
+            sample = _kusto_query_direct(cluster, db, f"{tbl} | order by Timestamp desc | take 5")
+            if sample:
+                sample_text = "\n".join(f"  {str(row)[:150]}" for row in sample[:5])
+                context_parts.append(f"[Live Data] {tbl} (latest 5 rows):\n{sample_text}")
+            break
 
     if context_parts:
         return "\n".join(context_parts) + "\n\n"
