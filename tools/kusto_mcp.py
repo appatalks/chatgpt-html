@@ -135,6 +135,89 @@ class KustoMCPServer:
                 },
                 "required": ["table"]
             }
+        },
+        {
+            "name": "kusto_ingest_inline",
+            "description": "Ingest (write) data into a Kusto table using inline ingestion. Use this to store new knowledge, conversations, emotions, reflections, or memory summaries.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "table": {
+                        "type": "string",
+                        "description": "Target table name (e.g. Knowledge, Conversations, EmotionState, Reflections, MemorySummaries, SelfState, HeuristicsIndex)"
+                    },
+                    "data": {
+                        "type": "array",
+                        "description": "Array of row objects. Each object's keys must match column names in the target table.",
+                        "items": {"type": "object"}
+                    },
+                    "database": {
+                        "type": "string",
+                        "description": "Database name. Uses KUSTO_DATABASE env if not provided."
+                    },
+                    "cluster_url": {
+                        "type": "string",
+                        "description": "Full Kusto cluster URL. Uses KUSTO_CLUSTER_URL env if not provided."
+                    }
+                },
+                "required": ["table", "data"]
+            }
+        },
+        {
+            "name": "eva_recall_knowledge",
+            "description": "Recall Eva's stored knowledge about a specific entity or topic from the Knowledge table. Returns relevant facts with confidence scores.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "entity": {
+                        "type": "string",
+                        "description": "Entity or topic to recall knowledge about (e.g. 'Steven', 'Starfleet', 'weather')"
+                    },
+                    "limit": {
+                        "type": "integer",
+                        "description": "Max results to return (default 20)"
+                    }
+                },
+                "required": ["entity"]
+            }
+        },
+        {
+            "name": "eva_get_emotion_state",
+            "description": "Get Eva's current emotional state — the most recent EmotionState record and the EmotionBaseline values.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {}
+            }
+        },
+        {
+            "name": "eva_get_recent_reflections",
+            "description": "Get Eva's recent self-reflections from the Reflections table.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "limit": {
+                        "type": "integer",
+                        "description": "Max reflections to return (default 5)"
+                    }
+                }
+            }
+        },
+        {
+            "name": "eva_get_memory_summary",
+            "description": "Get the latest memory summaries from the MemorySummaries table — periodic summaries of conversations and learned information.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "period": {
+                        "type": "string",
+                        "description": "Filter by period (e.g. 'daily', 'weekly'). If not provided, returns latest summaries."
+                    },
+                    "limit": {
+                        "type": "integer",
+                        "description": "Max summaries to return (default 5)"
+                    }
+                }
+            }
         }
     ]
 
@@ -336,6 +419,16 @@ class KustoMCPServer:
                 return self._tool_show_schema(args)
             elif name == "kusto_sample_data":
                 return self._tool_sample_data(args)
+            elif name == "kusto_ingest_inline":
+                return self._tool_ingest_inline(args)
+            elif name == "eva_recall_knowledge":
+                return self._tool_eva_recall_knowledge(args)
+            elif name == "eva_get_emotion_state":
+                return self._tool_eva_get_emotion_state(args)
+            elif name == "eva_get_recent_reflections":
+                return self._tool_eva_get_recent_reflections(args)
+            elif name == "eva_get_memory_summary":
+                return self._tool_eva_get_memory_summary(args)
             else:
                 return f"Unknown tool: {name}"
         except Exception as e:
@@ -395,6 +488,130 @@ class KustoMCPServer:
         if not database:
             return "Error: database name required."
         return self._kusto_query(cluster_url, database, f"{table} | take {count}")
+
+    def _tool_ingest_inline(self, args):
+        """Ingest data into a Kusto table using .ingest inline."""
+        cluster_url, err = self._resolve_cluster(args)
+        if err:
+            return err
+        table = args.get("table", "")
+        if not table:
+            return "Error: 'table' parameter is required."
+        data = args.get("data", [])
+        if not data:
+            return "Error: 'data' parameter is required (array of row objects)."
+        database = self._resolve_database(args)
+        if not database:
+            return "Error: database name required."
+
+        # Allowed tables for write operations (safety guard)
+        allowed_tables = {"Knowledge", "Conversations", "EmotionState", "EmotionBaseline",
+                          "HeuristicsIndex", "MemorySummaries", "SelfState", "Reflections"}
+        if table not in allowed_tables:
+            return f"Error: Table '{table}' is not in the allowed write list: {', '.join(sorted(allowed_tables))}"
+
+        # Get table schema to determine column order
+        schema_result = self._kusto_query(cluster_url, database, f".show table {table} schema as json", is_mgmt=True)
+        try:
+            # Parse schema to get column names in order
+            schema_lines = schema_result.split('\n')
+            # Try to extract column names from the schema JSON
+            token = self._get_token()
+            resp = _requests.post(f"{cluster_url}/v1/rest/mgmt",
+                json={"csl": f".show table {table} schema as json", "db": database},
+                headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
+                timeout=15)
+            if resp.status_code != 200:
+                return f"Error getting schema: {resp.status_code}"
+            schema_data = resp.json()
+            columns = []
+            for t in schema_data.get("Tables", []):
+                for row in t.get("Rows", []):
+                    try:
+                        import json as _json
+                        parsed = _json.loads(row[1]) if isinstance(row[1], str) else row[1]
+                        columns = [c["Name"] for c in parsed.get("OrderedColumns", [])]
+                    except Exception:
+                        pass
+            if not columns:
+                return "Error: Could not determine table schema columns."
+        except Exception as e:
+            return f"Error parsing schema: {e}"
+
+        # Build .ingest inline command
+        # Format: .ingest inline into table <name> <| val1, val2, val3 \n val4, val5, val6
+        rows_csv = []
+        for row_obj in data:
+            vals = []
+            for col in columns:
+                v = row_obj.get(col, "")
+                if v is None:
+                    vals.append("")
+                elif isinstance(v, bool):
+                    vals.append("true" if v else "false")
+                elif isinstance(v, (dict, list)):
+                    import json as _json
+                    vals.append(_json.dumps(v))
+                else:
+                    # Escape special chars for CSV-like inline format
+                    s = str(v).replace("\n", "\\n").replace("\r", "")
+                    vals.append(s)
+            rows_csv.append(", ".join(vals))
+
+        ingest_cmd = f".ingest inline into table {table} <|\n" + "\n".join(rows_csv)
+
+        result = self._kusto_query(cluster_url, database, ingest_cmd, is_mgmt=True)
+        return f"Ingested {len(data)} row(s) into {table}. {result}"
+
+    # --- Eva-specific tools ---
+
+    def _tool_eva_recall_knowledge(self, args):
+        """Recall knowledge about a specific entity."""
+        cluster_url, err = self._resolve_cluster(args)
+        if err:
+            return err
+        database = self._resolve_database(args) or "Eva"
+        entity = args.get("entity", "")
+        if not entity:
+            return "Error: 'entity' parameter is required."
+        limit = args.get("limit", 20)
+        query = f"Knowledge | where Entity has_cs '{entity}' or Value has_cs '{entity}' | order by Confidence desc, Timestamp desc | take {limit}"
+        return self._kusto_query(cluster_url, database, query)
+
+    def _tool_eva_get_emotion_state(self, args):
+        """Get Eva's current emotional state and baseline."""
+        cluster_url, err = self._resolve_cluster(args)
+        if err:
+            return err
+        database = self._resolve_database(args) or "Eva"
+        # Get latest emotion state
+        current = self._kusto_query(cluster_url, database, "EmotionState | order by Timestamp desc | take 1")
+        # Get baseline
+        baseline = self._kusto_query(cluster_url, database, "EmotionBaseline")
+        return f"=== Current Emotion State ===\n{current}\n\n=== Emotion Baseline ===\n{baseline}"
+
+    def _tool_eva_get_recent_reflections(self, args):
+        """Get recent reflections."""
+        cluster_url, err = self._resolve_cluster(args)
+        if err:
+            return err
+        database = self._resolve_database(args) or "Eva"
+        limit = args.get("limit", 5)
+        return self._kusto_query(cluster_url, database, f"Reflections | order by Timestamp desc | take {limit}")
+
+    def _tool_eva_get_memory_summary(self, args):
+        """Get memory summaries."""
+        cluster_url, err = self._resolve_cluster(args)
+        if err:
+            return err
+        database = self._resolve_database(args) or "Eva"
+        limit = args.get("limit", 5)
+        period = args.get("period", "")
+        query = "MemorySummaries"
+        if period:
+            query += f" | where Period == '{period}'"
+        query += f" | order by Timestamp desc | take {limit}"
+        return self._kusto_query(cluster_url, database, query)
 
     # --- MCP Protocol (JSON-RPC over NDJSON/stdio) ---
 
