@@ -76,7 +76,8 @@ class ACPClient:
             process_env = os.environ.copy()
             for srv_name, srv_cfg in self.mcp_config.items():
                 for k, v in srv_cfg.get('env', {}).items():
-                    process_env[k] = v
+                    # subprocess.Popen env requires all values to be strings
+                    process_env[k] = str(v) if not isinstance(v, str) else v
 
             self.process = subprocess.Popen(
                 cmd,
@@ -575,6 +576,24 @@ class BridgeHandler(BaseHTTPRequestHandler):
 
         mcp_servers = data.get("mcp_servers", {})
 
+        # Resolve internal flags in MCP server env before passing to copilot
+        for srv_name, srv_cfg in mcp_servers.items():
+            env = srv_cfg.get('env', {})
+            resolved_env = {}
+            for k, v in env.items():
+                # _useGitHubPAT: resolve to actual PAT from process environment
+                if k == '_useGitHubPAT':
+                    pat = os.environ.get('GITHUB_PERSONAL_ACCESS_TOKEN', '')
+                    if pat:
+                        resolved_env['GITHUB_PERSONAL_ACCESS_TOKEN'] = pat
+                    continue
+                # Skip any other internal flags (prefixed with _)
+                if k.startswith('_'):
+                    continue
+                # Ensure all env values are strings (subprocess.Popen requirement)
+                resolved_env[k] = str(v) if not isinstance(v, str) else v
+            srv_cfg['env'] = resolved_env
+
         # Inject cached Kusto token if kusto-mcp-server is being configured
         mcp_servers = _inject_kusto_token(mcp_servers)
 
@@ -696,12 +715,15 @@ class BridgeHandler(BaseHTTPRequestHandler):
 
     def _json_response(self, status, data):
         body = json.dumps(data).encode("utf-8")
-        self.send_response(status)
-        self._cors_headers()
-        self.send_header("Content-Type", "application/json")
-        self.send_header("Content-Length", str(len(body)))
-        self.end_headers()
-        self.wfile.write(body)
+        try:
+            self.send_response(status)
+            self._cors_headers()
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+        except BrokenPipeError:
+            pass  # Client disconnected (e.g. browser health poll timeout)
 
     def log_message(self, format, *args):
         # Quieter logging
@@ -776,11 +798,63 @@ def main():
         # Pre-fetch Kusto token so the MCP subprocess doesn't need interactive auth
         try:
             from azure.identity import DeviceCodeCredential, TokenCachePersistenceOptions
-            print("[Bridge] Authenticating for Kusto (may prompt for device code)...")
-            cred = DeviceCodeCredential(
-                cache_persistence_options=TokenCachePersistenceOptions(allow_unencrypted_storage=True)
-            )
-            token = cred.get_token("https://kusto.kusto.windows.net/.default")
+            cache_opts = TokenCachePersistenceOptions(allow_unencrypted_storage=True)
+
+            # Try silent refresh via MSAL directly (reads ~/.azure/msal_token_cache.json)
+            token = None
+            cred = None
+            try:
+                import msal as _msal
+                _cache_path = os.path.expanduser("~/.azure/msal_token_cache.json")
+                if os.path.isfile(_cache_path):
+                    print("[Bridge] Trying cached Kusto token (MSAL silent refresh)...")
+                    _msal_cache = _msal.SerializableTokenCache()
+                    with open(_cache_path) as _cf:
+                        _msal_cache.deserialize(_cf.read())
+                    _app = _msal.PublicClientApplication(
+                        "04b07795-8ddb-461a-bbee-02f9e1bf7b46",
+                        authority="https://login.microsoftonline.com/organizations",
+                        token_cache=_msal_cache
+                    )
+                    _accounts = _app.get_accounts()
+                    if _accounts:
+                        _result = _app.acquire_token_silent(
+                            scopes=["https://kusto.kusto.windows.net/.default"],
+                            account=_accounts[0]
+                        )
+                        if _result and "access_token" in _result:
+                            # Create a simple credential wrapper for compatibility
+                            class _MSALCredential:
+                                def __init__(self, tok):
+                                    self._tok = tok
+                                def get_token(self, *a, **kw):
+                                    import collections
+                                    T = collections.namedtuple("T", ["token", "expires_on"])
+                                    return T(self._tok, 0)
+                            token_str = _result["access_token"]
+                            token = type('T', (), {'token': token_str})()
+                            cred = _MSALCredential(token_str)
+                            print(f"[Bridge] Kusto token refreshed silently from MSAL cache")
+                            # Save updated cache
+                            if _msal_cache.has_state_changed:
+                                with open(_cache_path, "w") as _cf:
+                                    _cf.write(_msal_cache.serialize())
+                        else:
+                            print(f"[Bridge] MSAL silent refresh returned no token")
+                    else:
+                        print("[Bridge] No accounts in MSAL cache")
+            except ImportError:
+                print("[Bridge] msal package not available, skipping silent refresh")
+            except Exception as e:
+                print(f"[Bridge] MSAL silent refresh failed: {e}")
+
+            # Fall back to device code flow if no cached token
+            if not token:
+                print("[Bridge] Authenticating for Kusto (will prompt for device code)...")
+                cred = DeviceCodeCredential(
+                    cache_persistence_options=cache_opts
+                )
+                token = cred.get_token("https://kusto.kusto.windows.net/.default")
             kusto_env["KUSTO_ACCESS_TOKEN"] = token.token
             # Cache globally for model switches
             _kusto_token_cache = token.token

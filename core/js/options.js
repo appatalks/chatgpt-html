@@ -975,7 +975,7 @@ function updateSessionMonitor() {
 
 // Periodic updates
 setInterval(updateTokenMonitor, 2000);
-setInterval(updateSessionMonitor, 5000);
+setInterval(updateSessionMonitor, 60000);
 document.addEventListener('DOMContentLoaded', function(){
   var sel = document.getElementById('selModel');
   if (sel) sel.addEventListener('change', function() {
