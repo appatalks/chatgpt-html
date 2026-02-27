@@ -696,6 +696,8 @@ class BridgeHandler(BaseHTTPRequestHandler):
             self._models()
         elif self.path == "/v1/mcp":
             self._mcp_status()
+        elif self.path.startswith("/v1/memory/context"):
+            self._memory_context()
         else:
             self.send_error(404, "Not Found")
 
@@ -704,6 +706,8 @@ class BridgeHandler(BaseHTTPRequestHandler):
             self._chat_completions()
         elif self.path == "/v1/mcp/configure":
             self._mcp_configure()
+        elif self.path == "/v1/memory/reflect":
+            self._memory_reflect()
         else:
             self.send_error(404, "Not Found")
 
@@ -751,6 +755,53 @@ class BridgeHandler(BaseHTTPRequestHandler):
                 }
             }
         })
+
+    def _memory_context(self):
+        """Return Eva's memory context as text for injection into any model's system prompt."""
+        if not _cognition_enabled:
+            self._json_response(200, {"context": "", "cognition_enabled": False})
+            return
+
+        # Parse optional query param: ?message=...
+        from urllib.parse import urlparse, parse_qs
+        parsed = urlparse(self.path)
+        params = parse_qs(parsed.query)
+        user_message = params.get("message", [""])[0]
+
+        context = _build_memory_context(user_message)
+        self._json_response(200, {
+            "context": context,
+            "cognition_enabled": True
+        })
+
+    def _memory_reflect(self):
+        """Trigger post-response reflection for non-ACP models (browser calls this after getting a response)."""
+        if not _cognition_enabled:
+            self._json_response(200, {"status": "cognition_disabled"})
+            return
+
+        content_length = int(self.headers.get("Content-Length", 0))
+        if content_length == 0:
+            self._json_response(400, {"error": {"message": "Empty request body"}})
+            return
+
+        body = self.rfile.read(content_length).decode("utf-8")
+        try:
+            data = json.loads(body)
+        except json.JSONDecodeError:
+            self._json_response(400, {"error": {"message": "Invalid JSON"}})
+            return
+
+        user_msg = data.get("user_message", "")
+        assistant_msg = data.get("assistant_message", "")
+        model = data.get("model", "unknown")
+
+        if user_msg and assistant_msg:
+            threading.Thread(target=_post_response_reflection,
+                           args=(user_msg, assistant_msg, model),
+                           daemon=True).start()
+
+        self._json_response(200, {"status": "ok"})
 
     def _mcp_configure(self):
         """Configure MCP servers and restart the ACP client."""
