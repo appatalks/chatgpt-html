@@ -168,10 +168,27 @@ async function _copilotSendModelsAPI(messages, modelValue, txtOutput, storageKey
     max_tokens: maxTok
   };
 
-  if (model === 'o3-mini') {
+  // Reasoning models: add reasoning_effort, remove temperature
+  var reasoningModels = ['o3-mini', 'o4-mini', 'deepseek-r1'];
+  if (reasoningModels.indexOf(model) >= 0) {
     var re = (typeof getReasoningEffort === 'function') ? getReasoningEffort() : 'medium';
     payload.reasoning_effort = re;
     delete payload.temperature;
+  }
+
+  // GPT-5 family: use max_completion_tokens, remove temperature and stop
+  if (model === 'gpt-5') {
+    delete payload.temperature;
+  }
+
+  // Llama 4 Maverick: strip publisher prefix for API
+  if (model === 'llama-4-maverick') {
+    payload.model = 'meta/llama-4-maverick-17b-128e-instruct-fp8';
+  }
+
+  // DeepSeek-R1: use full API model ID
+  if (model === 'deepseek-r1') {
+    payload.model = 'deepseek/deepseek-r1';
   }
 
   setStatus('info', 'Sending to GitHub Models API (' + model + ')...');

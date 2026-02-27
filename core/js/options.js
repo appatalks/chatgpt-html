@@ -212,15 +212,16 @@ function onModelSettingsChange() {
   var sel = document.getElementById('selModel');
   if (!sel) return;
   var model = sel.value;
-  // Show/hide reasoning effort (only for o3-mini variants)
+  // Show/hide reasoning effort (for reasoning models)
   var reOpt = document.getElementById('opt-reasoningEffort');
   if (reOpt) {
-    reOpt.style.display = (model === 'o3-mini' || model === 'copilot-o3-mini') ? 'block' : 'none';
+    var reasoningModels = ['o3-mini', 'copilot-o3-mini', 'copilot-o4-mini', 'copilot-deepseek-r1'];
+    reOpt.style.display = reasoningModels.indexOf(model) >= 0 ? 'block' : 'none';
   }
-  // Show/hide temperature (hidden for o3-mini, gpt-5-mini, latest, copilot-acp)
+  // Show/hide temperature (hidden for reasoning models, gpt-5 family, latest, copilot-acp)
   var tempOpt = document.getElementById('opt-temperature');
   if (tempOpt) {
-    var hideTemp = ['o3-mini', 'copilot-o3-mini', 'gpt-5-mini', 'latest', 'copilot-acp'].indexOf(model) >= 0;
+    var hideTemp = ['o3-mini', 'copilot-o3-mini', 'copilot-o4-mini', 'copilot-deepseek-r1', 'copilot-gpt-5', 'gpt-5-mini', 'latest', 'copilot-acp'].indexOf(model) >= 0;
     tempOpt.style.display = hideTemp ? 'none' : 'block';
   }
   // Show/hide ACP model selector (only for copilot-acp)
@@ -299,7 +300,7 @@ function updateModelOptionsForTheme(theme) {
   if (theme === 'lcars') {
     // Remember current model to restore when leaving LCARS
     __modelBeforeLCARS = sel.value;
-    var allowed = new Set(['gpt-5-mini', 'o3-mini', 'dall-e-3', 'gemini', 'lm-studio', 'copilot-gpt-4o', 'copilot-gpt-4o-mini', 'copilot-o3-mini', 'copilot-acp']);
+    var allowed = new Set(['gpt-5-mini', 'o3-mini', 'dall-e-3', 'gemini', 'lm-studio', 'copilot-gpt-4o', 'copilot-gpt-4o-mini', 'copilot-o3-mini', 'copilot-gpt-4.1', 'copilot-gpt-5', 'copilot-o4-mini', 'copilot-deepseek-r1', 'copilot-llama-4-maverick', 'copilot-acp']);
     var filtered = [];
     (__originalModelOptions || []).forEach(function(item) {
       if (item.type === 'optgroup') {
@@ -742,6 +743,11 @@ const MODEL_CONTEXT_WINDOWS = {
   'copilot-gpt-4o': 128000,
   'copilot-gpt-4o-mini': 128000,
   'copilot-o3-mini': 200000,
+  'copilot-gpt-4.1': 1048576,
+  'copilot-gpt-5': 200000,
+  'copilot-o4-mini': 200000,
+  'copilot-deepseek-r1': 128000,
+  'copilot-llama-4-maverick': 1000000,
   'copilot-acp': 128000,
   'gemini': 1000000,
   'lm-studio': 32768,
