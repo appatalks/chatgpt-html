@@ -616,12 +616,16 @@ def _build_memory_context(user_message):
     if selfstate:
         caps = [f"{s.get('Capability','?')}={s.get('Status','?')}" for s in selfstate]
         context_parts.append(f"[Capabilities] {', '.join(caps)}")
-    # Always tell the model about its Kusto database access
+    # Always tell the model about its Kusto-backed memory
     context_parts.append(
-        f"[System] You have access to the Eva Kusto database at {cluster}. "
-        f"Database: {db}. Tables: Conversations, Knowledge, MemorySummaries, "
-        f"HeuristicsIndex, SelfState, Reflections, EmotionState, EmotionBaseline. "
-        f"You can query and write to these tables to remember information about users and conversations.")
+        f"[System] Your persistent memory is stored in the Eva Kusto database "
+        f"(cluster: {cluster}, database: {db}). "
+        f"Tables: Conversations, Knowledge, MemorySummaries, HeuristicsIndex, "
+        f"SelfState, Reflections, EmotionState, EmotionBaseline. "
+        f"The knowledge facts shown above in [Memory] tags come from this database. "
+        f"When using Copilot ACP mode, you can query these tables directly via MCP tools. "
+        f"In other modes, your memory is automatically provided in your context — "
+        f"you know things about the user but cannot run live queries yourself.")
 
     if context_parts:
         return "\n".join(context_parts) + "\n\n"
