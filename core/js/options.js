@@ -458,6 +458,34 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
+  // Eva sidebar nav buttons — open settings with correct tab
+  // Must stopPropagation so the document click-outside handler doesn't immediately close settings
+  function evaOpenSettings(e, tabName) {
+    e.stopPropagation();
+    var overlay = document.getElementById('settingsOverlay');
+    if (!settingsMenu.classList.contains('open')) {
+      settingsMenu.classList.add('open');
+      if (overlay) overlay.classList.add('open');
+      populateAuthFields();
+    }
+    if (tabName) {
+      setTimeout(function() {
+        var tab = document.querySelector('[data-stab=' + tabName + ']');
+        if (tab) tab.click();
+      }, 50);
+    }
+  }
+  var evaPromptsBtn = document.getElementById('evaPromptsBtn');
+  if (evaPromptsBtn) evaPromptsBtn.addEventListener('click', function(e) { evaOpenSettings(e, 'prompts'); });
+  var evaModelsBtn = document.getElementById('evaModelsBtn');
+  if (evaModelsBtn) evaModelsBtn.addEventListener('click', function(e) { evaOpenSettings(e, 'models'); });
+  var evaSettingsBtn = document.getElementById('evaSettingsBtn');
+  if (evaSettingsBtn) evaSettingsBtn.addEventListener('click', function(e) { evaOpenSettings(e, null); });
+  var evaAboutBtn = document.getElementById('evaAboutBtn');
+  if (evaAboutBtn) evaAboutBtn.addEventListener('click', function(e) { evaOpenSettings(e, 'general'); });
+  var evaUserBtn = document.getElementById('evaUserBtn');
+  if (evaUserBtn) evaUserBtn.addEventListener('click', function(e) { evaOpenSettings(e, 'auth'); });
+
   // Monitors: tab switching
   if (monitorTabs && monitorPanels) {
     monitorTabs.addEventListener('click', function(e){
