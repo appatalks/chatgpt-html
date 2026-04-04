@@ -335,8 +335,8 @@ body.theme-eva .lcars-monitors {
 
 /* ── Chat Input — buttons inside the pill ───────────────────── */
 body.theme-eva .chat-input-container {
-  width: 100%;
-  margin-top: 0;
+  width: auto;
+  margin: 8px 16px 4px;
   flex: 0 0 auto;
   max-width: none;
   min-height: 56px;
@@ -347,7 +347,6 @@ body.theme-eva .chat-input-container {
   border: 1px solid rgba(255,255,255,0.1);
   border-radius: 20px;
   padding: 0;
-  margin: 8px 16px 4px;
   background: var(--eva-chat-bg);
   box-sizing: border-box;
   overflow: hidden;
@@ -361,6 +360,7 @@ body.theme-eva #txtMsg {
   flex: 1;
   max-height: 200px;
   min-height: 60px;
+  width: 100%;
   height: auto;
   border: none;
   border-radius: 0;
@@ -373,6 +373,8 @@ body.theme-eva #txtMsg {
   outline: none;
   order: 1;
   transition: none;
+  text-align: left !important;
+  box-sizing: border-box;
 }
 body.theme-eva #txtMsg:focus {
   border-color: transparent;
@@ -382,12 +384,14 @@ body.theme-eva #txtMsg[placeholder]::before {
   content: attr(placeholder);
   color: var(--eva-text-muted);
   pointer-events: none;
+  display: block;
+  text-align: left;
 }
 body.theme-eva #txtMsg:not(:empty)::before { content: none; }
 body.theme-eva #txtMsg br:first-child:last-child::before { content: attr(placeholder); }
 body.theme-eva #txtMsg img { width: 48px; height: 48px; border-radius: 6px; }
 
-/* Controls bar — row of icons at the bottom of the pill */
+/* Controls bar — row at bottom: icons left, send right */
 body.theme-eva .input-controls-window {
   background: transparent;
   border: none;
@@ -396,6 +400,7 @@ body.theme-eva .input-controls-window {
   display: block;
   box-sizing: border-box;
   order: 2;
+  width: 100%;
 }
 body.theme-eva .input-controls-window .input-controls {
   border: none;
@@ -408,20 +413,21 @@ body.theme-eva .input-controls-window .input-controls {
   display: flex;
   flex-direction: row;
   align-items: center;
-  gap: 4px;
+  justify-content: flex-start;
+  gap: 2px;
 }
 body.theme-eva .input-controls .controls-top {
   display: flex;
-  gap: 4px;
+  gap: 2px;
   align-items: center;
   order: 1;
-  margin-right: auto; /* push send to the right */
+  margin-right: auto; /* push send to far right */
 }
 body.theme-eva .input-controls .controls-bottom {
   display: flex;
   align-items: center;
   order: 2;
-  margin-left: 0;
+  margin-left: auto;
   min-height: 0;
 }
 
