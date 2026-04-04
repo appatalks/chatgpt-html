@@ -449,6 +449,16 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
+  // Eva New Chat button
+  var evaNewChat = document.getElementById('evaNewChatBtn');
+  if (evaNewChat) {
+    evaNewChat.addEventListener('click', function() {
+      if (typeof clearMessages === 'function') clearMessages();
+      var w = document.getElementById('evaWelcome');
+      if (w) w.style.display = '';
+    });
+  }
+
   // Monitors: tab switching
   if (monitorTabs && monitorPanels) {
     monitorTabs.addEventListener('click', function(e){
@@ -555,6 +565,50 @@ function OnLoad() {
     }
 }
 
+// ── Eva Theme helpers ──────────────────────────────────────
+// Click a suggestion bubble → populate input and send
+function evaSuggestionClick(btn) {
+  var prompt = btn.getAttribute('data-prompt');
+  var input = document.getElementById('txtMsg');
+  if (input && prompt) {
+    input.textContent = prompt;
+    sendData();
+  }
+}
+
+// Hide the Eva welcome MOTD when user sends first message
+function hideEvaWelcome() {
+  var w = document.getElementById('evaWelcome');
+  if (w) w.style.display = 'none';
+}
+
+// Populate Eva sidebar's recent sessions (Today section)
+function populateEvaSidebarSessions() {
+  var ul = document.getElementById('evaSidebarSessionList');
+  if (!ul) return;
+  ul.innerHTML = '';
+  if (typeof getAllSessions !== 'function') return;
+  getAllSessions().then(function(sessions) {
+    var today = new Date().toDateString();
+    var recent = (sessions || [])
+      .filter(function(s) { return new Date(s.updatedAt || s.createdAt).toDateString() === today; })
+      .sort(function(a, b) { return (b.updatedAt || b.createdAt) - (a.updatedAt || a.createdAt); })
+      .slice(0, 5);
+    if (!recent.length) {
+      ul.innerHTML = '<li class="eva-session-empty">No chats yet today</li>';
+      return;
+    }
+    recent.forEach(function(s) {
+      var li = document.createElement('li');
+      li.className = 'eva-session-item';
+      li.textContent = s.title || 'Untitled';
+      li.title = s.title || 'Untitled';
+      li.onclick = function() { if (typeof loadSession === 'function') loadSession(s.id); };
+      ul.appendChild(li);
+    });
+  }).catch(function() {});
+}
+
 // Apply UI theme (default | lcars)
 function applyTheme(theme) {
   const body = document.body;
@@ -628,6 +682,17 @@ function applyTheme(theme) {
   // Ensure monitors dock is visible on LCARS and Eva themes
   var mon = document.getElementById('lcarsMonitorsDock');
   if (mon) mon.style.display = (theme === 'lcars' || theme === 'eva') ? 'block' : 'none';
+
+  // Toggle Eva sidebar visibility
+  var evaSidebar = document.getElementById('evaSidebar');
+  if (evaSidebar) evaSidebar.style.display = (theme === 'eva') ? 'flex' : 'none';
+
+  // Toggle Eva disclaimer
+  var evaDisclaimer = document.getElementById('evaDisclaimer');
+  if (evaDisclaimer) evaDisclaimer.style.display = (theme === 'eva') ? 'block' : 'none';
+
+  // Populate Eva sidebar sessions
+  if (theme === 'eva') populateEvaSidebarSessions();
 }
 
 // Modular theme stylesheet loader (extensible for future themes)
@@ -729,6 +794,9 @@ function updateButton() {
 }
 
 function sendData() {
+    // Hide Eva welcome MOTD on first send
+    hideEvaWelcome();
+
     // Logic required for initial message
     var selModel = document.getElementById("selModel");
 
