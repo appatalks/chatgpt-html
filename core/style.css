@@ -1147,7 +1147,7 @@ body.theme-lcars #txtMsg { max-height: none; height: 100%; }
 /* LCARS input controls column */
 body.theme-lcars .input-controls {
   display: grid;
-  grid-template-rows: 1fr 1fr 2.5fr; /* Upload | Mic | Send — Send gets more space */
+  grid-template-rows: 1fr 1fr 1fr; /* Upload | Mic | Send — equal height */
   gap: 4px;
   height: 100%;
   padding: 0;
