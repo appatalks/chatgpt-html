@@ -1061,11 +1061,25 @@ class BridgeHandler(BaseHTTPRequestHandler):
             eva_system += "Use the data above to answer the user's question accurately. Present it clearly.\n"
 
         # Step 4: Pick the best PAT model for response generation
-        # Priority: GPT-4.1 (best all-rounder for persona), fallback to GPT-4o
-        # Try to get PAT from request body first, then environment
+        # Priority: request body PAT > env var > Copilot CLI OAuth token > ACP fallback
         github_pat = data.get("github_pat", "") or os.environ.get("GITHUB_PAT", "")
 
+        # Fallback: read Copilot CLI's OAuth token (works with GitHub Models API)
+        if not github_pat:
+            try:
+                oauth_path = os.path.expanduser("~/.config/github-copilot/oauth.json")
+                if os.path.isfile(oauth_path):
+                    with open(oauth_path) as _f:
+                        _oauth = json.load(_f)
+                    entries = _oauth.get("https://github.com/login/oauth", [])
+                    if entries and isinstance(entries, list) and entries[0].get("accessToken"):
+                        github_pat = entries[0]["accessToken"]
+                        print("[AIG] Using Copilot CLI OAuth token for GitHub Models API")
+            except Exception as _e:
+                print(f"[AIG] Could not read Copilot OAuth: {_e}")
+
         model_for_response = data.get("model", "gpt-4.1")  # frontend-selectable, default gpt-4.1
+        print(f"[AIG] Model requested: {model_for_response}, PAT present: {bool(github_pat)} ({len(github_pat)} chars)")
         response_text = ""
         model_used = "aig"
 
