@@ -143,7 +143,10 @@ function newSession() {
   if (typeof lastResponse !== 'undefined') lastResponse = '';
 
   var txtOutput = document.getElementById('txtOutput');
-  if (txtOutput) txtOutput.innerHTML = '';
+  if (txtOutput) {
+    if (typeof showWelcome === 'function') showWelcome();
+    else txtOutput.innerHTML = '';
+  }
 
   renderSessionList();
 }

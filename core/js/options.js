@@ -517,21 +517,32 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 
 // Welcome Text
+/** Welcome message shown on new/empty sessions */
+function showWelcome() {
+  var txtOutput = document.getElementById('txtOutput');
+  if (!txtOutput) return;
+  txtOutput.innerHTML =
+    '<div class="chat-bubble eva-bubble">' +
+    '<span class="eva">Eva:</span> ' +
+    'Welcome back. Here\'s what I can do:<br><br>' +
+    '&bull; <b>Persistent Memory</b> &mdash; I remember your preferences, facts, and past conversations across sessions.<br>' +
+    '&bull; <b>Voice Activation</b> &mdash; Click <b>Mic</b> and say <b>"Eva"</b> followed by your question. I\'ll listen quietly until you call.<br>' +
+    '&bull; <b>Sessions</b> &mdash; Your conversations auto-save. Use <b>Sessions</b> to switch or start fresh.<br>' +
+    '&bull; <b>Live Data</b> &mdash; Ask about weather, news, stocks, or space weather for real-time info.<br>' +
+    '&bull; <b>Image Search &amp; Generation</b> &mdash; Ask me to show or generate an image of anything.<br>' +
+    '&bull; <b>Multiple Models</b> &mdash; Switch providers in Settings &rarr; Models (OpenAI, Gemini, Copilot, local LLMs).<br><br>' +
+    'Just type or speak &mdash; I\'m ready.' +
+    '</div>';
+}
+
 function OnLoad() {
     // Initialize session manager (restores active session if any)
     if (typeof initSessions === 'function') initSessions();
 
-    // Only show the welcome prompt if no session was restored
+    // Only show the welcome message if no session was restored
     var txtOutput = document.getElementById("txtOutput");
     if (!txtOutput.innerHTML.trim()) {
-      txtOutput.innerHTML = "\n" +
-      "           Here are some general prompt tips to help me understand:\n\n" +
-      "   #1 Be specific: The more specific your prompt, the more targeted the response will be.\n" +
-      "   #2 Start with a question: Starting your prompt will help me feel more natural.\n" +
-      "   #3 Provide context: Often good context goes a long way for me.\n" +
-      "   #4 Use punctuation, periods and question marks.\n" +
-      "   #5 Keep it short: Occam's razor.\n" +
-      "      ";
+      showWelcome();
     }
 }
 
