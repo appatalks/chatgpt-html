@@ -22,9 +22,9 @@ Detailed architecture, dependencies, and implementation notes for Eva AI Assista
         │          │         │              │
         ▼          ▼         ▼              ▼
    api.openai  models.     google     ┌────────────┐
-     .com    inference   generative   │ ACP Bridge │
-             .ai.azure     .google    │ (Python)   │
-               .com        apis.com   │ port 8888  │
+     .com     github.ai  generative   │ ACP Bridge │
+                          .google    │ (Python)   │
+                          apis.com   │ port 8888  │
                                       └─────┬──────┘
                                             │ stdio (NDJSON)
                                             ▼
@@ -100,6 +100,8 @@ core/
                            - Hardcoded model name (granite-3.1-8b-instruct)
     copilot.js             GitHub Copilot integration (copilotSend)
                            - Dual mode: GitHub Models API (PAT) + ACP Bridge
+                           - GitHub Models endpoint: models.github.ai/inference
+                           - Model name mapping (publisher/model format)
                            - Auto-detects bridge URL (same-host, localhost, configured)
                            - MCP configuration (applyMCPConfig, refreshMCPStatus)
     aig.js                 Eva AIG orchestration (aigSend)
@@ -108,9 +110,14 @@ core/
                            - localStorage-based message history (aigMessages)
     dalle3.js              DALL-E 3 image generation (dalle3Send)
                            - Standalone mode (model selector = dall-e-3)
+    idb-store.js           IndexedDB storage backend (idbSaveSession, idbLoadSession)
+                           - Replaces localStorage for session snapshots
+                           - Binary blob store for images/audio per session
+                           - Auto-migration from localStorage on first load
+                           - Requests navigator.storage.persist() to prevent eviction
     sessions.js            Session persistence (initSessions, saveCurrentSession)
                            - Auto-save/restore across page refresh
-                           - Session list in localStorage
+                           - Session index in localStorage, snapshots in IndexedDB
     voice.js               Voice activation (startVoiceListener)
                            - Wake-word "Eva" via Web Speech API
                            - Continuous listening with status indicators
@@ -442,13 +449,18 @@ The bridge uses `.ingest inline into table <T> <|` with strict CSV:
 
 ## Session Explorer
 
-`core/js/sessions.js` provides persistent session management:
+`core/js/sessions.js` + `core/js/idb-store.js` provide persistent session management:
 
-- **Auto-save** — after every response via `saveCurrentSession()`
-- **Auto-restore** — on page load (`initSessions()`)
-- **Session list** — stored in `localStorage` key `eva_sessions`
-- **Per-session data** — stored as `session_<id>` with full DOM snapshot
-- **UI** — expandable panel in footer, chip in LCARS sidebar
+- **Storage backend** — IndexedDB (`eva_sessions_db`) with two object stores:
+  - `sessions` — full DOM snapshots keyed by session ID
+  - `blobs` — binary attachments (images, audio) indexed by `sessionId`
+- **Auto-save** — after every response via `saveCurrentSession()` → `idbSaveSession()`
+- **Auto-restore** — on page load (`initSessions()` → `idbLoadSession()`)
+- **Session index** — lightweight list in `localStorage` key `eva_sessions` (id, title, timestamp)
+- **Migration** — `idbMigrateFromLocalStorage()` runs once on first load, moves existing `session_<id>` entries from localStorage to IndexedDB, then cleans up
+- **Persistent storage** — requests `navigator.storage.persist()` so the browser won't evict session data under storage pressure
+- **Blob helpers** — `idbSaveBlob()`, `idbGetBlob()`, `dataUrlToBlob()`, `blobToDataUrl()` for handling inline images and audio
+- **UI** — expandable panel in footer, chip in LCARS sidebar, session list in Eva sidebar
 
 ## Voice Activation
 
