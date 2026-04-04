@@ -29,6 +29,24 @@ function lmsSend() {
         return;
     }
 
+    // --- Cognition: Fetch memory context from bridge ---
+    var _lmsMemoryPromise = Promise.resolve('');
+    try {
+      var _bridgeUrl = (typeof getACPBridgeUrl === 'function') ? getACPBridgeUrl() : 'http://localhost:8888';
+      _lmsMemoryPromise = fetch(_bridgeUrl.replace(/\/+$/, '') + '/v1/memory/context?message=' + encodeURIComponent(sQuestion), {
+        signal: AbortSignal.timeout(3000)
+      }).then(function(r) { return r.ok ? r.json() : { context: '' }; })
+        .then(function(d) { return (d.context && d.cognition_enabled) ? d.context : ''; })
+        .catch(function() { return ''; });
+    } catch (e) {}
+
+    _lmsMemoryPromise.then(function(_memCtx) {
+      // Build ephemeral messages for this request (don't mutate persistent openLLMessages)
+      var _lmsRequestMsgs = openLLMessages.slice();
+      if (_memCtx && _lmsRequestMsgs.length > 0 && _lmsRequestMsgs[0].role === 'system') {
+        _lmsRequestMsgs[0] = { role: 'system', content: _memCtx + '\n\n' + _lmsRequestMsgs[0].content };
+      }
+
                 // Document the user's message (match chat-bubble UI and sanitize)
                 document.getElementById("txtMsg").innerHTML = "";
                 (function appendUserBubble(raw){
@@ -47,8 +65,6 @@ function lmsSend() {
                 })(sQuestion);
 
     const openAIUrl = `http://localhost:1234/v1/chat/completions`;
-    // const openAIUrl = `http://192.168.86.69:1234/v1/chat/completions`;
-    // const openAIUrl = "https://api.openai.com/v1/chat/completions" ;
     const requestOptions = {
         method: "POST",
         headers: { 
@@ -57,7 +73,7 @@ function lmsSend() {
         body: JSON.stringify({
             model: "granite-3.1-8b-instruct",
 
-            messages: openLLMessages.concat([
+            messages: _lmsRequestMsgs.concat([
                 { role: "user", content: sQuestion }
             ]),
             temperature: 0.7, // Adjust as needed
@@ -85,9 +101,25 @@ function lmsSend() {
                             const audio = document.getElementById("audioPlayback");
                             if (audio) audio.setAttribute("autoplay", true);
                         }
+
+                        // --- Cognition: Post-response reflection ---
+                        try {
+                          var _brUrl = (typeof getACPBridgeUrl === 'function') ? getACPBridgeUrl() : 'http://localhost:8888';
+                          fetch(_brUrl.replace(/\/+$/, '') + '/v1/memory/reflect', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({
+                              user_message: sQuestion.substring(0, 500),
+                              assistant_message: candidate.substring(0, 500),
+                              model: 'lm-studio'
+                            }),
+                            signal: AbortSignal.timeout(5000)
+                          }).catch(function() {});
+                        } catch (e) {}
                 })
         .catch(error => {
             console.error("Error:", error);
             document.getElementById("txtOutput").innerHTML += '<span class="error">Error: </span>' + error.message + "<br>\n";
         });
+    }); // end _lmsMemoryPromise.then
 }

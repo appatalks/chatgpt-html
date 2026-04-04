@@ -9,6 +9,9 @@
 
 // --- Helpers ---
 
+// Track last user message for post-response reflection (cognition layer)
+var _copilotLastUserMsg = '';
+
 function getCopilotMode(modelValue) {
   if (modelValue === 'copilot-acp') return 'acp';
   if (modelValue.indexOf('copilot-') === 0) return 'models-api';
@@ -145,6 +148,9 @@ async function copilotSend() {
   existingMessages = existingMessages.concat(newMessages);
   localStorage.setItem(storageKey, JSON.stringify(existingMessages));
 
+  // Track for post-response reflection
+  _copilotLastUserMsg = sQuestion;
+
   // Route to the appropriate backend
   if (mode === 'acp') {
     await _copilotSendACP(existingMessages, sQuestion, txtOutput, storageKey);
@@ -159,6 +165,37 @@ async function _copilotSendModelsAPI(messages, modelValue, txtOutput, storageKey
   var githubToken = getAuthKey('GITHUB_PAT');
   var model = modelValue.replace(/^copilot-/, '');
 
+  // --- Cognition: Fetch memory context from bridge and inject into system message ---
+  var lastUserMsg = '';
+  for (var i = messages.length - 1; i >= 0; i--) {
+    if (messages[i].role === 'user') { lastUserMsg = messages[i].content || ''; break; }
+  }
+  try {
+    var bridgeUrl = (typeof getACPBridgeUrl === 'function') ? getACPBridgeUrl() : 'http://localhost:8888';
+    var ctxResp = await fetch(bridgeUrl.replace(/\/+$/, '') + '/v1/memory/context?message=' + encodeURIComponent(lastUserMsg), {
+      signal: AbortSignal.timeout(3000)
+    });
+    if (ctxResp.ok) {
+      var ctxData = await ctxResp.json();
+      if (ctxData.context && ctxData.cognition_enabled) {
+        // Prepend memory context to the first system message, or insert one
+        var injected = false;
+        for (var j = 0; j < messages.length; j++) {
+          if (messages[j].role === 'system' || messages[j].role === 'developer') {
+            messages[j].content = ctxData.context + '\n\n' + messages[j].content;
+            injected = true;
+            break;
+          }
+        }
+        if (!injected) {
+          messages.unshift({ role: 'system', content: ctxData.context });
+        }
+      }
+    }
+  } catch (e) {
+    // Bridge not available — continue without memory
+  }
+
   var temp = (typeof getModelTemperature === 'function') ? getModelTemperature() : 0.7;
   var maxTok = (typeof getModelMaxTokens === 'function') ? getModelMaxTokens() : 4096;
   var payload = {
@@ -168,10 +205,27 @@ async function _copilotSendModelsAPI(messages, modelValue, txtOutput, storageKey
     max_tokens: maxTok
   };
 
-  if (model === 'o3-mini') {
+  // Reasoning models: add reasoning_effort, remove temperature
+  var reasoningModels = ['o3-mini', 'o4-mini', 'deepseek-r1'];
+  if (reasoningModels.indexOf(model) >= 0) {
     var re = (typeof getReasoningEffort === 'function') ? getReasoningEffort() : 'medium';
     payload.reasoning_effort = re;
     delete payload.temperature;
+  }
+
+  // GPT-5 family: use max_completion_tokens, remove temperature and stop
+  if (model === 'gpt-5') {
+    delete payload.temperature;
+  }
+
+  // Llama 4 Maverick: strip publisher prefix for API
+  if (model === 'llama-4-maverick') {
+    payload.model = 'meta/llama-4-maverick-17b-128e-instruct-fp8';
+  }
+
+  // DeepSeek-R1: use full API model ID
+  if (model === 'deepseek-r1') {
+    payload.model = 'deepseek/deepseek-r1';
   }
 
   setStatus('info', 'Sending to GitHub Models API (' + model + ')...');
@@ -261,6 +315,24 @@ async function _copilotRenderResponse(data, txtOutput, modelLabel) {
   }
 
   setStatus('info', 'Response received from ' + modelLabel);
+
+  // --- Cognition: Trigger post-response reflection via bridge ---
+  if (content && typeof _copilotLastUserMsg !== 'undefined' && _copilotLastUserMsg) {
+    try {
+      var bridgeUrl = (typeof getACPBridgeUrl === 'function') ? getACPBridgeUrl() : 'http://localhost:8888';
+      fetch(bridgeUrl.replace(/\/+$/, '') + '/v1/memory/reflect', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          user_message: _copilotLastUserMsg,
+          assistant_message: content.substring(0, 500),
+          model: modelLabel
+        }),
+        signal: AbortSignal.timeout(5000)
+      }).catch(function() {}); // fire-and-forget
+    } catch (e) {}
+    _copilotLastUserMsg = '';
+  }
 
   // Auto-speak
   var checkbox = document.getElementById('autoSpeak');

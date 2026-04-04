@@ -2,7 +2,7 @@
 // For OpenAI API
 
 // API Call for latest gpt classes
-function trboSend() {
+async function trboSend() {
 
   // Remove occurrences of the specific syntax from the txtMsg element
 	txtMsg.innerHTML = txtMsg.innerHTML.replace(/<img\b[^>]*>/g, '');
@@ -105,6 +105,21 @@ function trboSend() {
 	    // Set lastResponse
 	    lastResponse = s.content + "\n";
             // console.log("gpt-core.js Line 152" + lastResponse);
+
+            // --- Cognition: Post-response reflection ---
+            try {
+              var _brUrl = (typeof getACPBridgeUrl === 'function') ? getACPBridgeUrl() : 'http://localhost:8888';
+              fetch(_brUrl.replace(/\/+$/, '') + '/v1/memory/reflect', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  user_message: sQuestion.substring(0, 500),
+                  assistant_message: s.content.substring(0, 500),
+                  model: sModel
+                }),
+                signal: AbortSignal.timeout(5000)
+              }).catch(function() {});
+            } catch (e) {}
             }            
         }
 
@@ -142,6 +157,21 @@ function trboSend() {
       // Store the initial messages in localStorage
       localStorage.setItem("messages", JSON.stringify(iMessages));
     }
+
+    // --- Cognition: Fetch memory context from bridge (ephemeral — not persisted) ---
+    var _gptMemoryContext = '';
+    try {
+      var _bridgeUrl = (typeof getACPBridgeUrl === 'function') ? getACPBridgeUrl() : 'http://localhost:8888';
+      var _ctxResp = await fetch(_bridgeUrl.replace(/\/+$/, '') + '/v1/memory/context?message=' + encodeURIComponent(sQuestion), {
+        signal: AbortSignal.timeout(3000)
+      });
+      if (_ctxResp.ok) {
+        var _ctxData = await _ctxResp.json();
+        if (_ctxData.context && _ctxData.cognition_enabled) {
+          _gptMemoryContext = _ctxData.context;
+        }
+      }
+    } catch (e) {}
 
     // Create a new array to store the messages
     let newMessages = [];
@@ -191,6 +221,11 @@ function trboSend() {
     // Retrieve messages from local storage
     var cStoredMessages = localStorage.getItem("messages");
     var kMessages = cStoredMessages ? JSON.parse(cStoredMessages) : [];
+
+        // Inject memory context into request payload only (not persisted)
+        if (_gptMemoryContext && kMessages.length > 0 && (kMessages[0].role === 'developer' || kMessages[0].role === 'system')) {
+          kMessages[0].content = _gptMemoryContext + '\n\n' + kMessages[0].content.replace(/^\[Morning Reflection[\s\S]*?\n\n/m, '');
+        }
 
         // Exclude messages with the "developer" role see 
         // https://github.com/appatalks/chatgpt-html/issues/63#issuecomment-2492821202 

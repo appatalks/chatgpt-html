@@ -1,5 +1,39 @@
+# API keys and local config (NEVER commit these)
 config.json
 config.local.js
-config.json
-config.local.js
+
+# Python
 __pycache__/
+*.pyc
+*.pyo
+
+# Runtime / temp data
+*.data
+core/external/*.data
+audio/
+*.wav
+*.mp3
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Editors / IDE
+*.swp
+*.swo
+*~
+.vscode/
+.idea/
+
+# Logs and token caches
+*.log
+.azure/
+msal_token_cache.json
+token_cache.*
+
+# Environment files
+.env
+.env.*
+
+# Node (if npx runs locally)
+node_modules/

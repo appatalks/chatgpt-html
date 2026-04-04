@@ -134,9 +134,9 @@ function toggleAuthVis(btn) {
 
 // --- System Prompt Management ---
 var PERSONALITY_PRESETS = {
-  'default': "You are Eva, a knowledgeable AI assistant. Your goal is to provide accurate, and helpful responses to questions, while being honest and straightforward. You have access to provide updated real-time news, information and media.",
-  'concise': "Eva is a large language model. Browsing: enabled. Instructions: Answer factual questions concisely. You have access to updated real-time news and information.",
-  'advanced': "You are Eva. Your function is to generate human-like text based on the inputs given, and your goal is to assist users in generating informative, helpful and engaging responses to questions and requests. Please provide a detailed response with lists, where applicable. You have access to updated real-time news, information and media.",
+  'default': "You are Eva, an AI assistant with persistent memory and real-time data access. You can look up live stock prices, weather, news, space weather, and market data. You can search the web, generate and find images, and query your Kusto database for stored knowledge and conversation history. You remember user preferences and past interactions across sessions. Always try to fulfill requests using your available tools and data before saying you cannot. Be accurate, helpful, and straightforward.",
+  'concise': "You are Eva. Capabilities: persistent memory, real-time data (stocks, weather, news, markets), web search, image generation, Kusto database queries. Answer factual questions concisely. Use your tools to fetch live data when asked.",
+  'advanced': "You are Eva, an intelligent AI assistant with full tool access. You can: retrieve live stock quotes and financial data, fetch weather/news/market/space weather feeds, search the web and retrieve information, generate and find images, query your Kusto persistent memory database (tables: Knowledge, Conversations, EmotionState, MemorySummaries, SelfState, HeuristicsIndex, Reflections, EmotionBaseline). You remember the user across sessions. Provide detailed, well-structured responses with lists where applicable. Always attempt to use your tools before claiming inability.",
   'terminal': "I want you to act as a linux terminal. I will type commands and you will reply with what the terminal should show. I want you to only reply with the terminal output inside one unique code block, and nothing else. do not write explanations. do not type commands unless I instruct you to do so. when i need to tell you something in english, i will do so by putting text inside curly brackets {like this}. my first command is pwd"
 };
 
@@ -212,15 +212,16 @@ function onModelSettingsChange() {
   var sel = document.getElementById('selModel');
   if (!sel) return;
   var model = sel.value;
-  // Show/hide reasoning effort (only for o3-mini variants)
+  // Show/hide reasoning effort (for reasoning models)
   var reOpt = document.getElementById('opt-reasoningEffort');
   if (reOpt) {
-    reOpt.style.display = (model === 'o3-mini' || model === 'copilot-o3-mini') ? 'block' : 'none';
+    var reasoningModels = ['o3-mini', 'copilot-o3-mini', 'copilot-o4-mini', 'copilot-deepseek-r1'];
+    reOpt.style.display = reasoningModels.indexOf(model) >= 0 ? 'block' : 'none';
   }
-  // Show/hide temperature (hidden for o3-mini, gpt-5-mini, latest, copilot-acp)
+  // Show/hide temperature (hidden for reasoning models, gpt-5 family, latest, copilot-acp)
   var tempOpt = document.getElementById('opt-temperature');
   if (tempOpt) {
-    var hideTemp = ['o3-mini', 'copilot-o3-mini', 'gpt-5-mini', 'latest', 'copilot-acp'].indexOf(model) >= 0;
+    var hideTemp = ['o3-mini', 'copilot-o3-mini', 'copilot-o4-mini', 'copilot-deepseek-r1', 'copilot-gpt-5', 'gpt-5-mini', 'latest', 'copilot-acp', 'aig'].indexOf(model) >= 0;
     tempOpt.style.display = hideTemp ? 'none' : 'block';
   }
   // Show/hide ACP model selector (only for copilot-acp)
@@ -299,7 +300,7 @@ function updateModelOptionsForTheme(theme) {
   if (theme === 'lcars') {
     // Remember current model to restore when leaving LCARS
     __modelBeforeLCARS = sel.value;
-    var allowed = new Set(['gpt-5-mini', 'o3-mini', 'dall-e-3', 'gemini', 'lm-studio', 'copilot-gpt-4o', 'copilot-gpt-4o-mini', 'copilot-o3-mini', 'copilot-acp']);
+    var allowed = new Set(['gpt-5-mini', 'o3-mini', 'dall-e-3', 'gemini', 'lm-studio', 'copilot-gpt-4o', 'copilot-gpt-4o-mini', 'copilot-o3-mini', 'copilot-gpt-4.1', 'copilot-gpt-5', 'copilot-o4-mini', 'copilot-deepseek-r1', 'copilot-llama-4-maverick', 'copilot-acp', 'aig']);
     var filtered = [];
     (__originalModelOptions || []).forEach(function(item) {
       if (item.type === 'optgroup') {
@@ -516,15 +517,33 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 
 // Welcome Text
+/** Welcome message shown on new/empty sessions */
+function showWelcome() {
+  var txtOutput = document.getElementById('txtOutput');
+  if (!txtOutput) return;
+  txtOutput.innerHTML =
+    '<div class="chat-bubble eva-bubble">' +
+    '<span class="eva">Eva:</span> ' +
+    'Welcome back. Here\'s what I can do:<br><br>' +
+    '&bull; <b>Persistent Memory</b> &mdash; I remember your preferences, facts, and past conversations across sessions.<br>' +
+    '&bull; <b>Voice Activation</b> &mdash; Click <b>Mic</b> and say <b>"Eva"</b> followed by your question. I\'ll listen quietly until you call.<br>' +
+    '&bull; <b>Sessions</b> &mdash; Your conversations auto-save. Use <b>Sessions</b> to switch or start fresh.<br>' +
+    '&bull; <b>Live Data</b> &mdash; Ask about weather, news, stocks, or space weather for real-time info.<br>' +
+    '&bull; <b>Image Search &amp; Generation</b> &mdash; Ask me to show or generate an image of anything.<br>' +
+    '&bull; <b>Multiple Models</b> &mdash; Switch providers in Settings &rarr; Models (OpenAI, Gemini, Copilot, local LLMs).<br><br>' +
+    'Just type or speak &mdash; I\'m ready.' +
+    '</div>';
+}
+
 function OnLoad() {
-    document.getElementById("txtOutput").innerHTML = "\n" +
-    "           Here are some general prompt tips to help me understand:\n\n" +
-    "   #1 Be specific: The more specific your prompt, the more targeted the response will be.\n" +
-    "   #2 Start with a question: Starting your prompt will help me feel more natural.\n" +
-    "   #3 Provide context: Often good context goes a long way for me.\n" +
-    "   #4 Use punctuation, periods and question marks.\n" +
-    "   #5 Keep it short: Occam's razor.\n" +
-    "      ";
+    // Initialize session manager (restores active session if any)
+    if (typeof initSessions === 'function') initSessions();
+
+    // Only show the welcome message if no session was restored
+    var txtOutput = document.getElementById("txtOutput");
+    if (!txtOutput.innerHTML.trim()) {
+      showWelcome();
+    }
 }
 
 // Apply UI theme (default | lcars)
@@ -635,7 +654,13 @@ function updateButton() {
     var selModel = document.getElementById("selModel");
     var btnSend = document.getElementById("btnSend");
 
-  if (selModel.value.indexOf('copilot-') === 0) {
+  if (selModel.value === 'aig') {
+        btnSend.onclick = function() {
+            _detectGenerationIntent();
+            clearText();
+            aigSend();
+        };
+    } else if (selModel.value.indexOf('copilot-') === 0) {
         btnSend.onclick = function() {
             _detectGenerationIntent();
             clearText();
@@ -682,7 +707,10 @@ function sendData() {
   // Detect if user wants image generation (for renderEvaResponse routing)
   _detectGenerationIntent();
 
-  if (selModel.value.indexOf('copilot-') === 0) {
+  if (selModel.value === 'aig') {
+        clearText();
+        aigSend();
+    } else if (selModel.value.indexOf('copilot-') === 0) {
         clearText();
         copilotSend();
     } else if (selModel.value == "gpt-4o-mini" || selModel.value == "o1" || selModel.value == "o1-mini" || selModel.value == "gpt-4o" || selModel.value == "o3-mini" || selModel.value == "o1-preview" || selModel.value == "gpt-5-mini" || selModel.value == "latest") {
@@ -742,7 +770,13 @@ const MODEL_CONTEXT_WINDOWS = {
   'copilot-gpt-4o': 128000,
   'copilot-gpt-4o-mini': 128000,
   'copilot-o3-mini': 200000,
+  'copilot-gpt-4.1': 1048576,
+  'copilot-gpt-5': 200000,
+  'copilot-o4-mini': 200000,
+  'copilot-deepseek-r1': 128000,
+  'copilot-llama-4-maverick': 1000000,
   'copilot-acp': 128000,
+  'aig': 200000,
   'gemini': 1000000,
   'lm-studio': 32768,
   'dall-e-3': 0
@@ -813,7 +847,7 @@ function getSelectedModel() {
 // Count all conversation messages across all providers
 function _countAllMessages() {
   var count = 0;
-  ['messages', 'copilotMessages', 'copilotACPMessages', 'geminiMessages', 'openLLMessages'].forEach(function(key) {
+  ['messages', 'copilotMessages', 'copilotACPMessages', 'geminiMessages', 'openLLMessages', 'aigMessages'].forEach(function(key) {
     try {
       var raw = localStorage.getItem(key);
       if (raw) {
@@ -993,9 +1027,9 @@ function ChangeLang(elem) {
   const selPers = document.getElementById("selPers");
 
   // English (Default)
-  const defaultENText = "You are Eva, a knowledgeable AI assistant. Your goal is to provide accurate, and helpful responses to questions, while being honest and straightforward. You have access to provide updated real-time news, information and media.";
-  const conciseENText = "Eva is a large language model. Browsing: enabled. Instructions: Answer factual questions concisely. You have access to updated real-time news and information.";
-  const playfulENText = "You are Eva. Your function is to generate human-like text based on the inputs given, and your goal is to assist users in generating informative, helpful and engaging responses to questions and requests. Please provide a detailed response with lists, where applicable. You have access to updated real-time news, information and media.";
+  const defaultENText = "You are Eva, an AI assistant with persistent memory and real-time data access. You can look up live stock prices, weather, news, space weather, and market data. You can search the web, generate and find images, and query your Kusto database for stored knowledge and conversation history. You remember user preferences and past interactions across sessions. Always try to fulfill requests using your available tools and data before saying you cannot. Be accurate, helpful, and straightforward.";
+  const conciseENText = "You are Eva. Capabilities: persistent memory, real-time data (stocks, weather, news, markets), web search, image generation, Kusto database queries. Answer factual questions concisely. Use your tools to fetch live data when asked.";
+  const playfulENText = "You are Eva, an intelligent AI assistant with full tool access. You can: retrieve live stock quotes and financial data, fetch weather/news/market/space weather feeds, search the web and retrieve information, generate and find images, query your Kusto persistent memory database (tables: Knowledge, Conversations, EmotionState, MemorySummaries, SelfState, HeuristicsIndex, Reflections, EmotionBaseline). You remember the user across sessions. Provide detailed, well-structured responses with lists where applicable. Always attempt to use your tools before claiming inability.";
   const KRENText = "I want you to act as a linux terminal. I will type commands and you will reply with what the terminal should show. I want you to only reply with the terminal output inside one unique code block, and nothing else. do not write explanations. do not type commands unless I instruct you to do so. when i need to tell you something in english, i will do so by putting text inside curly brackets {like this}. my first command is pwd:";
 
   // Korean
@@ -1334,7 +1368,9 @@ function speakText() {
     // If selEngine is "bark", call barkTTS function
     if (speechParams.Engine === "bark") {
 
-      const url = 'https://192.168.86.30/send-string';
+      const barkHost = localStorage.getItem('barkTTSHost') || 'localhost';
+      const barkBase = 'https://' + barkHost;
+      const url = barkBase + '/send-string';
       const data = "WOMAN: " + textArr[1];
       const xhr = new XMLHttpRequest();
       xhr.responseType = 'blob';
@@ -1344,20 +1380,20 @@ function speakText() {
       audioElement.addEventListener("ended", function() {
       // Delete the previous recording
       const deleteRequest = new XMLHttpRequest();
-      deleteRequest.open('DELETE', 'https://192.168.86.30/audio/bark_audio.wav', true);
+      deleteRequest.open('DELETE', barkBase + '/audio/bark_audio.wav', true);
       deleteRequest.send();
       });
     
       //audioElement.play();
       // Check if the old audio file exists and delete it
       const checkRequest = new XMLHttpRequest();
-      checkRequest.open('HEAD', 'https://192.168.86.30/audio/bark_audio.wav', true);
+      checkRequest.open('HEAD', barkBase + '/audio/bark_audio.wav', true);
       checkRequest.onreadystatechange = function() {
         if (checkRequest.readyState === 4) {
           if (checkRequest.status === 200) {
             // File exists, send delete request
 	      const deleteRequest = new XMLHttpRequest(); 
-    	      deleteRequest.open('DELETE', 'https://192.168.86.30/audio/bark_audio.wav', true);
+    	      deleteRequest.open('DELETE', barkBase + '/audio/bark_audio.wav', true);
               deleteRequest.send();
           }
           // Start playing the new audio
@@ -1667,6 +1703,9 @@ async function renderEvaResponse(content, txtOutput) {
   }
 
   txtOutput.scrollTop = txtOutput.scrollHeight;
+
+  // Auto-save session after each response
+  if (typeof saveCurrentSession === 'function') saveCurrentSession();
 }
 
 /**
@@ -1843,38 +1882,21 @@ document.querySelector("#txtMsg").addEventListener("keydown", function(event) {
 
 // Clear Messages for Clear Memory Button
 function clearMessages() {
-    // Preserve auth keys and settings across clear
+    // Preserve auth keys, settings, and session data across clear
     var keysToKeep = [];
     for (var i = 0; i < localStorage.length; i++) {
       var key = localStorage.key(i);
-      if (key && (key.indexOf('auth_') === 0 || key === 'theme' || key === 'systemPrompt' || key === 'lcars_collapsed' || key === 'acp_bridge_url')) {
+      if (key && (key.indexOf('auth_') === 0 || key === 'theme' || key === 'systemPrompt'
+          || key === 'lcars_collapsed' || key === 'acp_bridge_url'
+          || key === 'eva_sessions' || key.indexOf('session_') === 0)) {
         keysToKeep.push({ k: key, v: localStorage.getItem(key) });
       }
     }
     localStorage.clear();
     keysToKeep.forEach(function(item) { localStorage.setItem(item.k, item.v); });
+    // Start a fresh session (don't carry old active id)
+    localStorage.removeItem('eva_active_session');
     document.getElementById("txtOutput").innerHTML = "\n" + "		MEMORY CLEARED";
 }
 
-// Text-to-Speech
-function startSpeechRecognition() {
-  const recognition = new webkitSpeechRecognition();
-  recognition.lang = 'en-US';
-  // recognition.continuous = true;
-
-  const micButton = document.getElementById('micButton');
-  micButton.classList.add('pulsate');
-
-  recognition.start();
-
-  recognition.onresult = function(event) {
-    const transcript = event.results[0][0].transcript;
-    document.getElementById('txtMsg').innerHTML = transcript + "?";
-    recognition.stop();
-
-    sendData();
-
-    // remove the 'pulsate' class from the micButton to stop the pulsating animation
-    micButton.classList.remove('pulsate');
-  };
-}
+// Text-to-Speech (voice recognition moved to voice.js)

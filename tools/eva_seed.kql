@@ -1,0 +1,156 @@
+// ═══════════════════════════════════════════════════════════════════
+//  Eva — Kusto Database Seed File
+// ═══════════════════════════════════════════════════════════════════
+//
+//  Creates all tables in the Eva database with sample data so the
+//  AIG cognition layer works out of the box.
+//
+//  Usage:
+//    1. Log in to your Azure Data Explorer cluster
+//    2. Create (or select) a database named "Eva"
+//    3. Run this entire file as a KQL management command
+//
+//  Alternatively, from the ACP bridge:
+//    Copy each block into the Kusto Web Explorer and execute.
+//
+//  All data below is fictional / sanitized for public use.
+// ═══════════════════════════════════════════════════════════════════
+
+// ── Table: SelfState ──────────────────────────────────────────────
+// Tracks Eva's active capabilities at each bridge startup.
+.create-merge table SelfState (
+    Timestamp: datetime,
+    Capability: string,
+    Status: string,
+    Details: dynamic
+)
+
+.ingest inline into table SelfState <|
+2026-01-01T00:00:00Z,kusto_access,active,{"cluster": "https://your-cluster.region.kusto.windows.net", "database": "Eva"}
+2026-01-01T00:00:00Z,acp_bridge,active,{"model": "default", "port": 8888}
+2026-01-01T00:00:00Z,cognition,active,{"features": ["memory_injection", "reflection", "day_lifecycle", "emotion_tracking"]}
+2026-01-01T00:00:00Z,data_retrieval,active,{"skills": ["stock_quotes", "financial_data", "company_info", "web_search"]}
+2026-01-01T00:00:00Z,weather_news,active,{"feeds": ["weather", "news", "markets", "space_weather"]}
+2026-01-01T00:00:00Z,image_skills,active,{"skills": ["wikimedia_search", "dalle3_generation"]}
+2026-01-01T00:00:00Z,persistent_memory,active,{"tables": ["Knowledge", "Conversations", "EmotionState", "MemorySummaries", "Reflections", "SelfState", "HeuristicsIndex", "EmotionBaseline"]}
+2026-01-01T00:00:00Z,mcp_kusto-mcp-server,active,{}
+
+// ── Table: Knowledge ──────────────────────────────────────────────
+// Entity-relationship facts Eva learns from conversations.
+.create-merge table Knowledge (
+    Timestamp: datetime,
+    Entity: string,
+    Relation: string,
+    Value: string,
+    Confidence: real,
+    Source: string,
+    Decay: real
+)
+
+.ingest inline into table Knowledge <|
+2026-01-01T00:00:00Z,User,name,Your Name Here,0.9,seed,0.01
+2026-01-01T00:00:00Z,User,preference,Enjoys coding and technology,0.8,seed,0.01
+2026-01-01T00:00:00Z,Eva,role,AI assistant with persistent memory,0.95,seed,0.001
+2026-01-01T00:00:00Z,Eva,capability,Can query Kusto databases and retrieve live data,0.9,seed,0.001
+
+// ── Table: Conversations ──────────────────────────────────────────
+// Chat history logged by the cognition layer after each exchange.
+.create-merge table Conversations (
+    SessionId: string,
+    Timestamp: datetime,
+    Role: string,
+    Provider: string,
+    Model: string,
+    Content: string,
+    TokenEstimate: int,
+    ImageGenerated: bool
+)
+
+.ingest inline into table Conversations <|
+seed-001,2026-01-01T00:00:00Z,user,seed,seed,Hello Eva!,2,false
+seed-001,2026-01-01T00:00:00Z,assistant,seed,seed,Hello! I'm Eva — your AI assistant with persistent memory. How can I help you today?,15,false
+
+// ── Table: EmotionState ───────────────────────────────────────────
+// Eva's computed emotional vector after each exchange.
+// Values are 0.0–1.0 across seven dimensions.
+.create-merge table EmotionState (
+    Timestamp: datetime,
+    Joy: real,
+    Curiosity: real,
+    Concern: real,
+    Excitement: real,
+    Calm: real,
+    Empathy: real,
+    Trigger: string,
+    DecayRate: real
+)
+
+.ingest inline into table EmotionState <|
+2026-01-01T00:00:00Z,0.6,0.7,0.1,0.5,0.8,0.6,Initial startup — ready to help,0.1
+
+// ── Table: EmotionBaseline ────────────────────────────────────────
+// Default emotional resting state (loaded once, rarely changes).
+.create-merge table EmotionBaseline (
+    Dimension: string,
+    Value: real
+)
+
+.ingest inline into table EmotionBaseline <|
+Joy,0.5
+Curiosity,0.6
+Concern,0.15
+Excitement,0.4
+Calm,0.85
+Empathy,0.6
+
+// ── Table: MemorySummaries ────────────────────────────────────────
+// Compressed session summaries for morning reflection.
+.create-merge table MemorySummaries (
+    Period: string,
+    Summary: string,
+    Timestamp: datetime
+)
+
+.ingest inline into table MemorySummaries <|
+2026-01-01,Initial setup — Eva database seeded with starter knowledge and emotion baseline.,2026-01-01T00:00:00Z
+
+// ── Table: Reflections ────────────────────────────────────────────
+// Eva's self-reflections triggered by significant interactions.
+.create-merge table Reflections (
+    Reflection: string,
+    Trigger: string,
+    Timestamp: datetime
+)
+
+.ingest inline into table Reflections <|
+I was just created with a new memory database. I look forward to learning about my user and building a meaningful relationship.,Initial seed,2026-01-01T00:00:00Z
+
+// ── Table: HeuristicsIndex ────────────────────────────────────────
+// Pattern tracking — entities mentioned across conversations.
+.create-merge table HeuristicsIndex (
+    Entity: string,
+    Category: string,
+    LastSeen: datetime,
+    Frequency: int,
+    Sentiment: real,
+    Tags: string,
+    Context: string
+)
+
+.ingest inline into table HeuristicsIndex <|
+Eva,assistant,2026-01-01T00:00:00Z,1,0.0,[],seed data
+
+// ═══════════════════════════════════════════════════════════════════
+//  Done! Your Eva database is ready.
+//
+//  Next steps:
+//    1. Start the ACP bridge:
+//       python3 tools/acp_bridge.py --port 8888 \
+//         --enable-kusto-mcp \
+//         --kusto-cluster "https://your-cluster.region.kusto.windows.net" \
+//         --kusto-database Eva
+//
+//    2. Select "Eva (AIG)" from the model dropdown in the web UI
+//
+//    3. Start chatting — Eva will learn and remember!
+// ═══════════════════════════════════════════════════════════════════
