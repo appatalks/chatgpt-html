@@ -1,37 +1,35 @@
 /* ── Eva Theme ──────────────────────────────────────────────
- *  Modern dark UI inspired by the Eva splash design.
- *  Same sidebar + monitors layout as LCARS, re-skinned with
- *  deep navy background, electric blue/purple accents,
- *  glass-morphism, rounded corners, Inter font.
+ *  Modern dark UI matching the Eva-splash design.
+ *  Dark navy sidebar with clean nav items (not colored bands),
+ *  lighter chat area, purple/blue neon glow, Inter font,
+ *  Eva face avatar, rounded glassmorphism.
  * ─────────────────────────────────────────────────────────── */
 
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
 
 /* ── CSS Variables ─────────────────────────────────────────── */
 body.theme-eva {
-  --eva-bg:          #0b0e14;
-  --eva-surface:     #151822;
-  --eva-surface-2:   #1c2030;
-  --eva-border:      rgba(255,255,255,0.08);
-  --eva-border-hl:   rgba(79,140,255,0.3);
+  --eva-bg:          #0d1017;
+  --eva-sidebar:     #151929;
+  --eva-sidebar-item:#1c2240;
+  --eva-surface:     #1a1e2e;
+  --eva-surface-2:   #222840;
+  --eva-chat-bg:     #13161f;
+  --eva-border:      rgba(255,255,255,0.07);
+  --eva-border-hl:   rgba(139,92,246,0.35);
   --eva-text:        #e8ecf4;
-  --eva-text-muted:  #8892a8;
-  --eva-accent:      #4f8cff;
-  --eva-accent-hover:#6ba1ff;
-  --eva-purple:      #a855f7;
-  --eva-purple-glow: rgba(168,85,247,0.15);
-  --eva-blue-glow:   rgba(79,140,255,0.12);
+  --eva-text-muted:  #7b84a0;
+  --eva-accent:      #3b82f6;
+  --eva-accent-hover:#5b9aff;
+  --eva-purple:      #8b5cf6;
+  --eva-purple-light:#a78bfa;
+  --eva-purple-glow: rgba(139,92,246,0.25);
+  --eva-blue-glow:   rgba(59,130,246,0.15);
   --eva-danger:      #ef4444;
   --eva-success:     #22c55e;
   --eva-warning:     #f59e0b;
-  --eva-chip-1:      #4f8cff;
-  --eva-chip-2:      #a855f7;
-  --eva-chip-3:      #ef4444;
-  --eva-chip-4:      #22c55e;
-  --eva-chip-5:      #f59e0b;
-  --eva-chip-6:      #6ba1ff;
-  --eva-radius:      12px;
-  --eva-radius-sm:   8px;
+  --eva-radius:      16px;
+  --eva-radius-sm:   10px;
   --eva-font:        "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
 }
 
@@ -42,113 +40,136 @@ body.theme-eva {
   color: var(--eva-text);
   font-family: var(--eva-font);
   display: grid;
-  grid-template-columns: 200px 1fr;
+  grid-template-columns: 220px 1fr;
   grid-template-rows: 1fr;
   gap: 0;
   align-items: stretch;
   justify-content: stretch;
   height: 100vh;
-  padding: 16px;
+  padding: 12px;
   box-sizing: border-box;
   overflow: hidden;
 }
 
-/* ── Sidebar ───────────────────────────────────────────────── */
+/* ── Sidebar — dark navy nav panel ─────────────────────────── */
 body.theme-eva #lcarsSidebar {
   display: flex;
   align-self: stretch;
   flex-direction: column;
-  gap: 4px;
-  background: transparent;
+  gap: 2px;
+  background: var(--eva-sidebar);
   border: none;
-  border-radius: 0;
+  border-radius: var(--eva-radius) 0 0 var(--eva-radius);
   padding: 0;
   position: relative;
   top: auto;
   height: auto;
+  box-shadow: inset -1px 0 0 var(--eva-border);
 }
-/* Top elbow — rounded modern connector */
+
+/* Top section — Eva branding with avatar */
 body.theme-eva #lcarsSidebar::before {
   content: '';
   display: block;
-  height: 80px;
-  background: var(--eva-accent);
-  border-top-left-radius: 40px;
-  border-bottom: 4px solid var(--eva-bg);
+  height: 52px;
+  background: linear-gradient(135deg, var(--eva-purple) 0%, var(--eva-accent) 100%);
+  border-radius: var(--eva-radius) 0 0 0;
+  border-bottom: none;
   flex-shrink: 0;
+  mask-image: url('img/Eva-images.png');
+  -webkit-mask-image: none;
+  background-size: 100% 100%;
 }
-/* Bottom elbow */
+/* Bottom section */
 body.theme-eva #lcarsSidebar::after {
   content: '';
   display: block;
-  height: 40px;
-  background: var(--eva-purple);
-  border-bottom-left-radius: 24px;
-  border-top: 4px solid var(--eva-bg);
+  height: 4px;
+  background: linear-gradient(90deg, var(--eva-purple), var(--eva-accent));
+  border-radius: 0 0 0 var(--eva-radius);
+  border-top: none;
   flex-shrink: 0;
   margin-top: auto;
 }
 body.theme-eva #lcarsChipTop { cursor: pointer; }
 body.theme-eva #lcarsSidebar .lcars-rail { display: none; }
 
-/* Chip bands — colored sidebar buttons */
+/* ── Sidebar chips — dark nav items (NOT colored bands) ────── */
 body.theme-eva #lcarsSidebar .lcars-chip {
   height: auto;
   flex: 1 1 auto;
-  border-radius: 8px 0 0 8px;
-  background: var(--eva-chip-1);
-  border-bottom: 4px solid var(--eva-bg);
+  border-radius: 0;
+  background: var(--eva-sidebar);
+  border-bottom: 1px solid rgba(255,255,255,0.04);
+  transition: background 0.15s;
 }
+body.theme-eva #lcarsSidebar .lcars-chip:hover {
+  background: var(--eva-sidebar-item);
+}
+/* ALL chip types — uniform dark look, no colored bands */
 body.theme-eva #lcarsSidebar .lcars-chip.peach {
-  background: var(--eva-purple);
-  flex: 0 0 48px;
+  background: var(--eva-sidebar);
+  flex: 0 0 44px;
+  border-radius: 0;
 }
+body.theme-eva #lcarsSidebar .lcars-chip.peach:hover { background: var(--eva-sidebar-item); }
 body.theme-eva #lcarsSidebar .lcars-chip.red {
-  background: var(--eva-danger);
-  flex: 0 0 48px;
+  background: var(--eva-sidebar);
+  flex: 0 0 44px;
+  border-radius: 0;
 }
+body.theme-eva #lcarsSidebar .lcars-chip.red:hover { background: rgba(239,68,68,0.12); }
 body.theme-eva #lcarsSidebar .lcars-chip.sand {
-  background: var(--eva-warning);
-  flex: 0 0 48px;
+  background: var(--eva-sidebar);
+  flex: 0 0 44px;
+  border-radius: 0;
 }
+body.theme-eva #lcarsSidebar .lcars-chip.sand:hover { background: var(--eva-sidebar-item); }
 body.theme-eva #lcarsSidebar .lcars-chip.print {
-  background: var(--eva-success);
-  flex: 0 0 48px;
+  background: var(--eva-sidebar);
+  flex: 0 0 44px;
+  border-radius: 0;
 }
+body.theme-eva #lcarsSidebar .lcars-chip.print:hover { background: var(--eva-sidebar-item); }
 body.theme-eva #lcarsSidebar .lcars-chip.sessions {
-  background: var(--eva-chip-6);
-  flex: 0 0 48px;
+  background: var(--eva-sidebar);
+  flex: 0 0 44px;
+  border-radius: 0;
 }
+body.theme-eva #lcarsSidebar .lcars-chip.sessions:hover { background: var(--eva-sidebar-item); }
 
-/* Sidebar button styling */
+/* Sidebar button text — light colored, clean font */
 body.theme-eva #lcarsSidebar .lcars-chip > button,
 body.theme-eva #lcarsSidebar .lcars-chip > .speakSend {
   display: inline-flex;
   align-items: center;
-  gap: 8px;
+  gap: 10px;
   width: 100%;
   height: 100%;
   min-height: 32px;
-  border-radius: 8px;
-  border: 2px none rgba(255,255,255,0.9);
+  border-radius: 0;
+  border: none;
   background: transparent;
-  color: #0b0e14;
+  color: var(--eva-text-muted);
   cursor: pointer;
-  font: 600 14px var(--eva-font);
-  letter-spacing: .02em;
-  text-transform: uppercase;
+  font: 500 13px var(--eva-font);
+  letter-spacing: .01em;
+  text-transform: none;
+  padding: 0 16px;
+  transition: color 0.15s;
 }
 body.theme-eva #lcarsSidebar .lcars-chip > button:hover,
 body.theme-eva #lcarsSidebar .lcars-chip > .speakSend:hover {
-  border-color: #fff;
+  color: var(--eva-text);
+  border: none;
 }
 body.theme-eva #lcarsSidebar .lcars-label {
-  padding: 4px 8px;
-  font: 600 11px var(--eva-font);
-  letter-spacing: .06em;
+  padding: 8px 16px;
+  font: 500 10px var(--eva-font);
+  letter-spacing: .08em;
   text-transform: uppercase;
-  color: var(--eva-text-muted);
-  text-align: center;
+  color: rgba(255,255,255,0.2);
+  text-align: left;
   flex-shrink: 0;
 }
 
@@ -158,12 +179,13 @@ body.theme-eva #sidebarClearBtn::before,
 body.theme-eva #lcarsChipPrint #printButton::before {
   display: inline-block;
   margin-right: 6px;
-  width: 18px;
-  height: 18px;
+  width: 16px;
+  height: 16px;
   background-size: contain;
   background-repeat: no-repeat;
   background-position: center;
   vertical-align: middle;
+  opacity: 0.6;
 }
 body.theme-eva #sidebarSettingsBtn::before {
   content: '';
@@ -180,37 +202,38 @@ body.theme-eva #lcarsChipPrint #printButton::before {
 
 /* ── Collapsed Sidebar ─────────────────────────────────────── */
 body.theme-eva.lcars-collapsed {
-  grid-template-columns: 48px 1fr;
+  grid-template-columns: 52px 1fr;
 }
 body.theme-eva.lcars-collapsed #lcarsSidebar {
   padding: 0;
-  gap: 2px;
+  gap: 1px;
 }
-body.theme-eva.lcars-collapsed #lcarsSidebar::before { height: 40px; border-top-left-radius: 24px; }
-body.theme-eva.lcars-collapsed #lcarsSidebar::after { height: 20px; border-bottom-left-radius: 16px; }
+body.theme-eva.lcars-collapsed #lcarsSidebar::before { height: 36px; }
+body.theme-eva.lcars-collapsed #lcarsSidebar::after { height: 3px; }
 body.theme-eva.lcars-collapsed #lcarsSidebar .lcars-label { display: none; }
 body.theme-eva.lcars-collapsed #lcarsSidebar .lcars-chip {
   display: block;
-  height: 48px;
+  height: 44px;
   padding: 0;
 }
 body.theme-eva.lcars-collapsed #lcarsSidebar #lcarsChipTop {
-  height: 120px;
+  height: 80px;
 }
 body.theme-eva.lcars-collapsed #lcarsSidebar .lcars-chip > button,
 body.theme-eva.lcars-collapsed #lcarsSidebar .lcars-chip > .speakSend {
   justify-content: center;
   padding: 0;
-  min-height: 48px;
-  height: 48px;
+  min-height: 44px;
+  height: 44px;
   font-size: 0;
 }
 body.theme-eva.lcars-collapsed #sidebarSettingsBtn::before,
 body.theme-eva.lcars-collapsed #sidebarClearBtn::before,
 body.theme-eva.lcars-collapsed #lcarsChipPrint #printButton::before {
-  width: 22px;
-  height: 22px;
+  width: 20px;
+  height: 20px;
   margin: 0;
+  opacity: 0.7;
 }
 
 /* ── Hide footer controls — they live in sidebar ───────────── */
@@ -230,13 +253,15 @@ body.theme-eva #idContainer {
   align-self: stretch;
   height: auto;
   margin: 0;
-  padding: 0 12px;
-  border: none;
-  border-radius: 0;
-  background: transparent;
+  padding: 0;
+  border: 1px solid var(--eva-border);
+  border-left: none;
+  border-radius: 0 var(--eva-radius) var(--eva-radius) 0;
+  background: var(--eva-surface);
   display: flex;
   flex-direction: column;
   overflow: hidden;
+  box-shadow: 0 0 60px var(--eva-purple-glow), 0 0 120px rgba(139,92,246,0.08);
 }
 body.theme-eva #idContainer,
 body.theme-eva .chat-input-container,
@@ -251,21 +276,21 @@ body.theme-eva #txtOutput {
   min-height: 0;
   height: auto;
   overflow-y: auto;
-  border: 1px solid var(--eva-border);
-  border-radius: var(--eva-radius);
-  padding: 16px 20px;
-  background: rgba(0,0,0,0.5);
-  backdrop-filter: blur(8px);
+  border: none;
+  border-bottom: 1px solid var(--eva-border);
+  border-radius: 0 var(--eva-radius) 0 0;
+  padding: 20px 24px;
+  background: var(--eva-chat-bg);
   font-size: 15px;
   line-height: 1.65;
   box-sizing: border-box;
 }
 
 /* Scrollbar */
-body.theme-eva #txtOutput::-webkit-scrollbar { width: 6px; }
+body.theme-eva #txtOutput::-webkit-scrollbar { width: 5px; }
 body.theme-eva #txtOutput::-webkit-scrollbar-track { background: transparent; }
-body.theme-eva #txtOutput::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.12); border-radius: 3px; }
-body.theme-eva #txtOutput::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.2); }
+body.theme-eva #txtOutput::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.1); border-radius: 3px; }
+body.theme-eva #txtOutput::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.18); }
 
 /* Inner flex wrapper */
 body.theme-eva #textToSynth {
@@ -279,35 +304,40 @@ body.theme-eva #textToSynth {
 /* ── Chat Bubbles ───────────────────────────────────────────── */
 body.theme-eva #txtOutput .chat-bubble {
   margin: 6px 0;
-  padding: 10px 14px;
-  border-radius: 4px 16px 16px 4px;
-  background: rgba(255,255,255,0.03);
+  padding: 12px 16px;
+  border-radius: 12px;
+  background: transparent;
   border: none;
-  border-left: 3px solid rgba(255,255,255,0.1);
+  border-left: none;
   box-shadow: none;
   color: var(--eva-text);
-  line-height: 1.6;
+  line-height: 1.7;
 }
 body.theme-eva #txtOutput .chat-bubble .eva,
-body.theme-eva #txtOutput .chat-bubble .user { font-weight: 700; margin-right: 6px; }
-body.theme-eva #txtOutput .eva-bubble { border-left-color: var(--eva-accent); }
+body.theme-eva #txtOutput .chat-bubble .user { font-weight: 600; margin-right: 6px; }
+body.theme-eva #txtOutput .eva-bubble {
+  background: var(--eva-surface-2);
+  border: 1px solid var(--eva-border);
+  border-radius: 4px 14px 14px 14px;
+}
 body.theme-eva #txtOutput .user-bubble {
-  border-left-color: transparent;
-  border-right: 3px solid var(--eva-purple);
-  border-radius: 16px 4px 4px 16px;
-  border-left: none;
+  background: rgba(59,130,246,0.1);
+  border: 1px solid rgba(59,130,246,0.15);
+  border-radius: 14px 14px 4px 14px;
+  margin-left: 10%;
 }
 body.theme-eva #txtOutput .chat-bubble .eva {
-  color: var(--eva-accent);
+  color: var(--eva-purple-light);
 }
 body.theme-eva #txtOutput .chat-bubble .user {
-  color: var(--eva-purple);
+  color: var(--eva-accent);
 }
 body.theme-eva #txtOutput .chat-bubble .eva-thoughts {
   color: var(--eva-purple);
   font-style: italic;
+  opacity: 0.8;
 }
-body.theme-eva .bubble-time { color: var(--eva-text-muted); }
+body.theme-eva .bubble-time { color: var(--eva-text-muted); font-size: 11px; }
 
 /* ── Monitors Dock ──────────────────────────────────────────── */
 body.theme-eva .input-monitors-row {
@@ -321,10 +351,9 @@ body.theme-eva .input-monitors-row {
   max-height: 200px;
 }
 body.theme-eva .lcars-monitors {
-  background: rgba(0,0,0,0.35);
-  backdrop-filter: blur(4px);
+  background: var(--eva-surface);
   border: 1px solid var(--eva-border);
-  border-radius: var(--eva-radius);
+  border-radius: var(--eva-radius-sm);
   padding: 8px;
   width: 240px;
   flex: 0 0 240px;
@@ -337,47 +366,47 @@ body.theme-eva .lcars-monitors {
 body.theme-eva #lcarsMonitorTabs {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 4px;
+  gap: 3px;
   margin-bottom: 8px;
   width: 100%;
   box-sizing: border-box;
   overflow: hidden;
 }
 body.theme-eva .monitor-tab {
-  background: var(--eva-surface-2);
+  background: var(--eva-sidebar);
   color: var(--eva-text-muted);
   border: 1px solid var(--eva-border);
   border-radius: 999px;
-  padding: 5px 6px;
-  font: 600 12px var(--eva-font);
-  letter-spacing: .02em;
+  padding: 4px 6px;
+  font: 500 11px var(--eva-font);
+  letter-spacing: .01em;
   cursor: pointer;
   min-width: 0;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  transition: background 0.2s, color 0.2s;
+  transition: all 0.2s;
 }
-body.theme-eva .monitor-tab.active { background: var(--eva-accent); color: #fff; border-color: var(--eva-accent); }
-body.theme-eva .monitor-tab:hover { background: var(--eva-surface-2); color: var(--eva-text); border-color: var(--eva-accent); }
+body.theme-eva .monitor-tab.active { background: var(--eva-purple); color: #fff; border-color: var(--eva-purple); }
+body.theme-eva .monitor-tab:hover { border-color: var(--eva-purple); color: var(--eva-text); }
 body.theme-eva #lcarsMonitorPanels { background: transparent; border: none; border-radius: 0; padding: 4px; overflow: hidden; flex: 1 1 auto; min-height: 0; }
 body.theme-eva .monitor-panel { height: 100%; display: none; }
 body.theme-eva .monitor-panel.active { display: block; }
-body.theme-eva .monitor-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; height: 100%; align-content: start; }
+body.theme-eva .monitor-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 6px; height: 100%; align-content: start; }
 body.theme-eva .monitor-grid.one-col { grid-template-columns: 1fr; }
 body.theme-eva .monitor-card {
-  background: rgba(255,255,255,0.04);
+  background: var(--eva-chat-bg);
   border: 1px solid var(--eva-border);
-  border-radius: var(--eva-radius-sm);
+  border-radius: 8px;
   padding: 6px 8px;
-  min-height: 56px;
+  min-height: 50px;
   color: var(--eva-text);
 }
-body.theme-eva .monitor-card.monitor-terminal { min-height: 120px; height: 100%; background: rgba(0,0,0,0.4); }
-body.theme-eva .monitor-title { font: 600 10px var(--eva-font); letter-spacing: .06em; text-transform: uppercase; color: var(--eva-text-muted); margin-bottom: 2px; }
-body.theme-eva .monitor-value { font: 500 13px var(--eva-font); letter-spacing: .02em; }
-body.theme-eva .progress { height: 10px; background: rgba(255,255,255,0.1); border-radius: 6px; overflow: hidden; border: 1px solid var(--eva-border); }
-body.theme-eva .progress .bar { height: 100%; background: linear-gradient(90deg, var(--eva-accent), var(--eva-purple)); width: 0%; transition: width .3s ease; }
+body.theme-eva .monitor-card.monitor-terminal { min-height: 120px; height: 100%; background: rgba(0,0,0,0.35); }
+body.theme-eva .monitor-title { font: 500 10px var(--eva-font); letter-spacing: .06em; text-transform: uppercase; color: var(--eva-text-muted); margin-bottom: 2px; }
+body.theme-eva .monitor-value { font: 500 13px var(--eva-font); }
+body.theme-eva .progress { height: 8px; background: rgba(255,255,255,0.08); border-radius: 4px; overflow: hidden; border: 1px solid var(--eva-border); }
+body.theme-eva .progress .bar { height: 100%; background: linear-gradient(90deg, var(--eva-accent), var(--eva-purple)); width: 0%; transition: width .3s ease; border-radius: 4px; }
 
 /* ── Chat Input ─────────────────────────────────────────────── */
 body.theme-eva .chat-input-container {
@@ -389,35 +418,37 @@ body.theme-eva .chat-input-container {
   max-height: none;
   align-items: stretch;
   display: grid;
-  grid-template-columns: 1fr 140px;
-  gap: 6px;
-  border: 1px solid var(--eva-border);
-  border-radius: var(--eva-radius);
-  padding: 6px;
-  background: rgba(0,0,0,0.35);
-  backdrop-filter: blur(4px);
+  grid-template-columns: 1fr 120px;
+  gap: 8px;
+  border: none;
+  border-top: 1px solid var(--eva-border);
+  border-radius: 0 0 var(--eva-radius) 0;
+  padding: 10px 16px;
+  background: var(--eva-surface);
   box-sizing: border-box;
 }
 body.theme-eva #txtMsg {
   max-height: none;
   height: 100%;
-  border: 1px solid var(--eva-border);
+  border: 1px solid rgba(255,255,255,0.1);
   border-radius: var(--eva-radius-sm);
-  background: var(--eva-bg);
+  background: var(--eva-chat-bg);
   color: var(--eva-text);
   padding: 12px 14px;
-  font-size: 14px;
+  font: 400 14px var(--eva-font);
   line-height: 1.5;
   margin-left: 0;
   outline: none;
-  transition: border-color 0.2s;
+  transition: border-color 0.2s, box-shadow 0.2s;
 }
 body.theme-eva #txtMsg:focus {
-  border-color: var(--eva-accent);
-  box-shadow: 0 0 0 3px var(--eva-blue-glow);
+  border-color: var(--eva-purple);
+  box-shadow: 0 0 0 3px var(--eva-purple-glow);
+}
+body.theme-eva #txtMsg::placeholder {
+  color: var(--eva-text-muted);
 }
 body.theme-eva #txtMsg img { width: 48px; height: 48px; border-radius: 6px; }
-body.theme-eva .chat-input-container { border-color: var(--eva-border); }
 
 /* Input controls column */
 body.theme-eva .input-controls-window {
@@ -461,44 +492,62 @@ body.theme-eva .input-controls .controls-bottom #btnSend {
 body.theme-eva button,
 body.theme-eva select,
 body.theme-eva input[type="checkbox"] {
-  background: var(--eva-accent);
-  color: #fff;
-  border: none;
+  background: var(--eva-surface-2);
+  color: var(--eva-text);
+  border: 1px solid var(--eva-border);
   border-radius: var(--eva-radius-sm);
   padding: 8px 12px;
   font-family: var(--eva-font);
+  transition: all 0.15s;
 }
-/* All input control buttons get uniform style */
+/* Input control buttons */
 body.theme-eva .input-controls .lcars-btn,
 body.theme-eva .input-controls #btnSend {
-  font: 600 14px var(--eva-font);
-  letter-spacing: .02em;
+  font: 600 13px var(--eva-font);
+  letter-spacing: .01em;
   text-transform: uppercase;
   padding: 0;
   margin: 0;
   width: 100%;
   height: 100%;
   min-height: 0;
+  border: none;
 }
-body.theme-eva #uploadButton { background: var(--eva-accent); color: #fff; }
-body.theme-eva #uploadButton:hover { background: var(--eva-accent-hover); }
+body.theme-eva #uploadButton {
+  background: var(--eva-surface-2);
+  color: var(--eva-text-muted);
+  border: 1px solid var(--eva-border);
+}
+body.theme-eva #uploadButton:hover { background: var(--eva-purple); color: #fff; border-color: var(--eva-purple); }
 body.theme-eva #micButton,
-body.theme-eva button#micButton { background: var(--eva-purple); color: #fff; }
-body.theme-eva #micButton:hover { background: #b96dff; }
+body.theme-eva button#micButton {
+  background: var(--eva-surface-2);
+  color: var(--eva-text-muted);
+  border: 1px solid var(--eva-border);
+}
+body.theme-eva #micButton:hover { background: var(--eva-purple); color: #fff; border-color: var(--eva-purple); }
+/* Send button — round blue like the splash */
 body.theme-eva #btnSend,
-body.theme-eva button#btnSend { background: var(--eva-accent); color: #fff; font-size: 18px; letter-spacing: .04em; border-radius: var(--eva-radius-sm); }
-body.theme-eva #btnSend:hover { background: var(--eva-accent-hover); }
-body.theme-eva #clearMessagesBtn { background: var(--eva-danger); }
-body.theme-eva #clearMessagesBtn:hover { background: #dc2626; }
-
-body.theme-eva .lcars-btn {
+body.theme-eva button#btnSend {
   background: var(--eva-accent);
   color: #fff;
+  font-size: 16px;
+  letter-spacing: .02em;
+  border-radius: var(--eva-radius-sm);
   border: none;
+}
+body.theme-eva #btnSend:hover { background: var(--eva-accent-hover); }
+body.theme-eva #clearMessagesBtn { background: rgba(239,68,68,0.15); color: #ef4444; border: 1px solid rgba(239,68,68,0.2); }
+body.theme-eva #clearMessagesBtn:hover { background: var(--eva-danger); color: #fff; }
+
+body.theme-eva .lcars-btn {
+  background: var(--eva-surface-2);
+  color: var(--eva-text);
+  border: 1px solid var(--eva-border);
   border-radius: var(--eva-radius-sm);
   padding: 8px 10px;
-  font: 600 13px var(--eva-font);
-  letter-spacing: .02em;
+  font: 500 12px var(--eva-font);
+  letter-spacing: .01em;
   text-transform: uppercase;
   cursor: pointer;
   width: 100%;
@@ -507,9 +556,9 @@ body.theme-eva .lcars-btn {
   align-items: center;
   justify-content: center;
   line-height: 1.2;
-  transition: background 0.15s, color 0.15s;
+  transition: all 0.15s;
 }
-body.theme-eva .lcars-btn:hover { background: var(--eva-accent-hover); }
+body.theme-eva .lcars-btn:hover { background: var(--eva-purple); color: #fff; border-color: var(--eva-purple); }
 
 /* Mic button sizing */
 body.theme-eva .mic-button {
@@ -524,11 +573,12 @@ body.theme-eva .mic-button {
 /* ── Status Bar ─────────────────────────────────────────────── */
 body.theme-eva #idText {
   border: 1px solid var(--eva-border);
-  background: rgba(0,0,0,0.5);
+  background: var(--eva-sidebar);
   color: var(--eva-text-muted);
-  min-height: 28px;
-  font: 500 12px var(--eva-font);
-  letter-spacing: .02em;
+  min-height: 26px;
+  font: 400 12px var(--eva-font);
+  letter-spacing: .01em;
+  border-radius: 6px;
 }
 body.theme-eva #idText.status-info { border-color: var(--eva-accent); background: var(--eva-blue-glow); }
 body.theme-eva #idText.status-warn { border-color: var(--eva-warning); background: rgba(245,158,11,0.08); }
@@ -538,7 +588,7 @@ body.theme-eva #idText::after {
   content: '▍';
   display: inline-block;
   margin-left: 8px;
-  color: var(--eva-accent);
+  color: var(--eva-purple);
   animation: eva-caret-blink 1s step-start infinite;
 }
 @keyframes eva-caret-blink { 50% { opacity: 0; } }
@@ -546,97 +596,98 @@ body.theme-eva #idText.status-warn::before { background: var(--eva-warning); }
 body.theme-eva #idText.status-error::before { background: var(--eva-danger); }
 
 /* ── Settings Panel ─────────────────────────────────────────── */
-body.theme-eva .settings-overlay { background: rgba(0,0,0,0.6); backdrop-filter: blur(4px); }
+body.theme-eva .settings-overlay { background: rgba(0,0,0,0.6); backdrop-filter: blur(6px); }
 body.theme-eva #settingsMenu {
   background: var(--eva-surface);
   color: var(--eva-text);
-  border: 1px solid var(--eva-border);
-  border-radius: 16px;
-  box-shadow: 0 8px 40px rgba(0,0,0,0.5), 0 0 60px var(--eva-purple-glow);
+  border: 1px solid rgba(139,92,246,0.2);
+  border-radius: var(--eva-radius);
+  box-shadow: 0 12px 48px rgba(0,0,0,0.5), 0 0 80px var(--eva-purple-glow);
 }
 body.theme-eva .settings-header { border-color: var(--eva-border); }
-body.theme-eva .settings-header h3 { color: var(--eva-text); }
+body.theme-eva .settings-header h3 { color: var(--eva-text); font-family: var(--eva-font); }
 body.theme-eva .settings-close { color: var(--eva-text-muted); }
-body.theme-eva .settings-close:hover { color: #fff; background: rgba(255,255,255,0.08); }
+body.theme-eva .settings-close:hover { color: #fff; background: rgba(255,255,255,0.06); border-radius: 8px; }
 
 body.theme-eva .settings-tabs {
   border-color: var(--eva-border);
-  background: var(--eva-bg);
-  padding: 4px 16px;
-  gap: 4px;
+  background: var(--eva-sidebar);
+  padding: 4px 14px;
+  gap: 2px;
 }
 body.theme-eva .settings-tab {
   color: var(--eva-text-muted);
   background: transparent;
-  border-radius: var(--eva-radius-sm) var(--eva-radius-sm) 0 0;
+  border-radius: 8px 8px 0 0;
   border-bottom: 2px solid transparent;
-  font-weight: 500;
+  font: 500 13px var(--eva-font);
 }
 body.theme-eva .settings-tab:hover { color: var(--eva-text); background: rgba(255,255,255,0.04); }
 body.theme-eva .settings-tab.active {
   color: #fff;
   background: var(--eva-surface);
-  border-bottom-color: var(--eva-accent);
+  border-bottom-color: var(--eva-purple);
 }
 
-body.theme-eva .settings-panel label { color: var(--eva-text-muted); font-weight: 500; }
+body.theme-eva .settings-panel label { color: var(--eva-text-muted); font: 500 13px var(--eva-font); }
 body.theme-eva .settings-panel select,
 body.theme-eva .settings-panel input[type="number"],
 body.theme-eva .settings-panel input[type="text"],
 body.theme-eva .settings-panel input[type="password"],
 body.theme-eva .settings-panel textarea {
-  background: var(--eva-bg);
+  background: var(--eva-chat-bg);
   color: var(--eva-text);
   border: 1px solid var(--eva-border);
-  border-radius: var(--eva-radius-sm);
+  border-radius: 8px;
+  font-family: var(--eva-font);
 }
 body.theme-eva .settings-panel select:focus,
 body.theme-eva .settings-panel input:focus,
 body.theme-eva .settings-panel textarea:focus {
-  border-color: var(--eva-accent);
+  border-color: var(--eva-purple);
   outline: none;
-  box-shadow: 0 0 0 2px var(--eva-blue-glow);
+  box-shadow: 0 0 0 2px var(--eva-purple-glow);
 }
-body.theme-eva .settings-panel select optgroup { background: var(--eva-bg); color: var(--eva-text); }
+body.theme-eva .settings-panel select optgroup { background: var(--eva-chat-bg); color: var(--eva-text); }
 
 body.theme-eva .auth-note { color: var(--eva-text-muted); }
 body.theme-eva .auth-toggle {
-  background: var(--eva-surface-2);
+  background: var(--eva-sidebar);
   color: var(--eva-text);
-  border-color: var(--eva-border);
+  border: 1px solid var(--eva-border);
 }
-body.theme-eva .auth-toggle:hover { background: var(--eva-accent); color: #fff; }
-body.theme-eva .auth-save { background: var(--eva-accent); }
+body.theme-eva .auth-toggle:hover { background: var(--eva-purple); color: #fff; }
+body.theme-eva .auth-save { background: var(--eva-accent); color: #fff; border: none; }
 body.theme-eva .auth-save:hover { background: var(--eva-accent-hover); }
 body.theme-eva .prompt-hint { color: var(--eva-text-muted); }
 
 /* MCP overrides */
-body.theme-eva .mcp-preset { background: var(--eva-surface-2); border-color: var(--eva-border); }
-body.theme-eva .mcp-status { background: var(--eva-bg); color: var(--eva-text-muted); }
-body.theme-eva .mcp-badge { background: var(--eva-accent); }
+body.theme-eva .mcp-preset { background: var(--eva-sidebar); border: 1px solid var(--eva-border); border-radius: 8px; }
+body.theme-eva .mcp-status { background: var(--eva-chat-bg); color: var(--eva-text-muted); }
+body.theme-eva .mcp-badge { background: var(--eva-purple); }
 
 /* ── Markdown ───────────────────────────────────────────────── */
-body.theme-eva #txtOutput .md { line-height: 1.6; }
+body.theme-eva #txtOutput .md { line-height: 1.7; }
 body.theme-eva #txtOutput .md h1,
 body.theme-eva #txtOutput .md h2,
 body.theme-eva #txtOutput .md h3 {
   border-bottom: 1px solid var(--eva-border);
-  padding-bottom: 4px;
+  padding-bottom: 6px;
   color: var(--eva-text);
 }
 body.theme-eva #txtOutput .md code {
-  background: rgba(255,255,255,0.08);
-  color: #e2e8f0;
+  background: rgba(139,92,246,0.1);
+  color: var(--eva-purple-light);
   padding: 2px 6px;
   border-radius: 4px;
-  font-size: 0.9em;
+  font-size: 0.88em;
 }
 body.theme-eva #txtOutput .md pre code {
   display: block;
-  background: #0d1117;
+  background: #0d1017;
   border: 1px solid var(--eva-border);
-  border-radius: var(--eva-radius-sm);
-  padding: 14px 16px;
+  border-radius: 10px;
+  padding: 16px 18px;
   overflow-x: auto;
   color: #e2e8f0;
   white-space: pre-wrap;
@@ -644,23 +695,23 @@ body.theme-eva #txtOutput .md pre code {
 }
 body.theme-eva #txtOutput .md blockquote {
   margin: 0.6em 0;
-  padding: 8px 14px;
-  border-left: 3px solid var(--eva-accent);
-  background: rgba(79,140,255,0.06);
-  border-radius: 0 var(--eva-radius-sm) var(--eva-radius-sm) 0;
+  padding: 10px 16px;
+  border-left: 3px solid var(--eva-purple);
+  background: rgba(139,92,246,0.06);
+  border-radius: 0 8px 8px 0;
   color: var(--eva-text);
 }
-body.theme-eva #txtOutput .md a { color: var(--eva-accent); }
-body.theme-eva #txtOutput .md a:hover { color: var(--eva-accent-hover); }
+body.theme-eva #txtOutput .md a { color: var(--eva-accent); text-decoration: none; }
+body.theme-eva #txtOutput .md a:hover { color: var(--eva-accent-hover); text-decoration: underline; }
 body.theme-eva #txtOutput .md table { width: 100%; border-collapse: collapse; margin: 0.6em 0; }
 body.theme-eva #txtOutput .md th,
 body.theme-eva #txtOutput .md td {
   border: 1px solid var(--eva-border);
-  padding: 6px 8px;
+  padding: 8px 10px;
 }
-body.theme-eva #txtOutput .md th { background: var(--eva-surface-2); font-weight: 600; }
+body.theme-eva #txtOutput .md th { background: var(--eva-sidebar); font-weight: 600; }
 body.theme-eva #txtOutput .md tr:nth-child(even) { background: rgba(255,255,255,0.02); }
-body.theme-eva #txtOutput .chat-bubble .md code { background: rgba(255,255,255,0.1); color: #e6e6e6; }
+body.theme-eva #txtOutput .chat-bubble .md code { background: rgba(139,92,246,0.12); color: var(--eva-purple-light); }
 
 /* ── Inline Images ──────────────────────────────────────────── */
 body.theme-eva .eva-inline-img {
@@ -670,39 +721,43 @@ body.theme-eva .eva-inline-img {
 
 /* ── Session Panel ──────────────────────────────────────────── */
 body.theme-eva .session-panel {
-  background: var(--eva-surface);
+  background: var(--eva-sidebar);
   font-family: var(--eva-font);
   border-right: 1px solid var(--eva-border);
 }
-body.theme-eva .session-panel-header { border-color: var(--eva-border); }
+body.theme-eva .session-panel-header { border-color: var(--eva-border); color: var(--eva-text); }
 body.theme-eva .session-item.active {
-  border-left-color: var(--eva-accent);
-  background: var(--eva-blue-glow);
+  border-left-color: var(--eva-purple);
+  background: rgba(139,92,246,0.1);
 }
-body.theme-eva .session-panel-actions button { border-color: var(--eva-border); }
-body.theme-eva .session-panel-actions button:hover { background: rgba(255,255,255,0.08); }
+body.theme-eva .session-panel-actions button {
+  border-color: var(--eva-border);
+  background: var(--eva-surface-2);
+  color: var(--eva-text);
+}
+body.theme-eva .session-panel-actions button:hover { background: var(--eva-purple); color: #fff; }
 body.theme-eva .session-time { color: var(--eva-text-muted); }
 
 /* ── Voice Indicators ───────────────────────────────────────── */
-body.theme-eva .mic-listening { background-color: var(--eva-success) !important; }
-body.theme-eva .mic-awake { background-color: var(--eva-warning) !important; }
-body.theme-eva .mic-sending { background-color: var(--eva-accent) !important; }
+body.theme-eva .mic-listening { background-color: var(--eva-success) !important; box-shadow: 0 0 12px rgba(34,197,94,0.4); }
+body.theme-eva .mic-awake { background-color: var(--eva-warning) !important; box-shadow: 0 0 12px rgba(245,158,11,0.4); }
+body.theme-eva .mic-sending { background-color: var(--eva-accent) !important; box-shadow: 0 0 12px rgba(59,130,246,0.4); }
 
 /* ── Responsive ─────────────────────────────────────────────── */
 @media (max-width: 599px) {
-  body.theme-eva #idContainer { width: 95%; padding: 12px; }
-  body.theme-eva #txtOutput { min-height: 40vh; max-height: 62vh; font-size: 15px; }
-  body.theme-eva #btnSend { padding: 6px 10px; }
-  body.theme-eva .mic-button { width: 28px; height: 28px; }
-  body.theme-eva #settingsMenu { left: 10px; top: 60px; width: 85vw; }
+  body.theme-eva { grid-template-columns: 1fr; padding: 0; }
+  body.theme-eva #lcarsSidebar { display: none; }
+  body.theme-eva #idContainer { grid-column: 1; border-radius: 0; border: none; height: 100vh; }
+  body.theme-eva #txtOutput { padding: 12px; font-size: 14px; border-radius: 0; }
+  body.theme-eva .chat-input-container { padding: 8px 12px; border-radius: 0; }
+  body.theme-eva #settingsMenu { width: 94vw; border-radius: 12px; }
 }
 
 @media (min-width: 600px) and (max-width: 1023px) {
-  body.theme-eva #idContainer { width: 92%; }
-  body.theme-eva #txtOutput { min-height: 45vh; max-height: 65vh; }
+  body.theme-eva { grid-template-columns: 180px 1fr; }
+  body.theme-eva #idContainer { width: 100%; }
 }
 
 @media (min-width: 1024px) {
-  body.theme-eva #idContainer { max-width: 1200px; }
-  body.theme-eva #txtOutput { min-height: 50vh; max-height: 68vh; }
+  body.theme-eva #idContainer { max-width: none; }
 }

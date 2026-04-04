@@ -1,5 +1,5 @@
 # ChatGPT HTML — Eva AI Assistant
-![screenshot](core/img/Eva-Splash.png)
+![screenshot](core/img/Eva-splash.png)
 
 v.5.1
 
