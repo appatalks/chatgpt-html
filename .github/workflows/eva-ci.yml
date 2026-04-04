@@ -1,0 +1,236 @@
+name: Eva CI
+
+on:
+  pull_request:
+    branches: [main, notAIG]
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  # ── 1. Static / security checks (fast, no runtime needed) ─────────
+  static-checks:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # -- Secret / credential leak detection --
+      - name: Scan for hardcoded secrets
+        run: |
+          echo "=== Scanning for potential secrets ==="
+          FAIL=0
+
+          # API key patterns (OpenAI, GitHub PAT, AWS, Google, generic)
+          if grep -rn --include='*.js' --include='*.py' --include='*.html' --include='*.json' --include='*.md' \
+               -E '(sk-[a-zA-Z0-9]{20,}|ghp_[a-zA-Z0-9]{36}|AKIA[0-9A-Z]{16}|AIza[0-9A-Za-z_-]{35})' \
+               --exclude-dir=node_modules --exclude='*.min.js' . ; then
+            echo "::error::Possible API key found in tracked files"
+            FAIL=1
+          fi
+
+          # Bearer tokens in code (not in template strings)
+          if grep -rn --include='*.js' --include='*.py' \
+               -P 'Bearer\s+(?![\$\{`\047])[a-zA-Z0-9_-]{20,}' . ; then
+            echo "::error::Hardcoded Bearer token found"
+            FAIL=1
+          fi
+
+          # Internal IPs / hostnames (except localhost, 127.0.0.1, example.com, placeholder patterns)
+          if grep -rn --include='*.js' --include='*.py' --include='*.html' \
+               -E '192\.168\.[0-9]+\.[0-9]+|10\.[0-9]+\.[0-9]+\.[0-9]+' \
+               --exclude='test_eva.py' . ; then
+            echo "::error::Internal IP address found in tracked files"
+            FAIL=1
+          fi
+
+          # .env files that shouldn't exist
+          for f in .env .env.local .env.production; do
+            if [ -f "$f" ]; then
+              echo "::error::Sensitive file '$f' exists and should not be committed"
+              FAIL=1
+            fi
+          done
+
+          # config.json must not be committed
+          if [ -f config.json ]; then
+            echo "::error::config.json must not be committed (contains API keys)"
+            FAIL=1
+          fi
+
+          if [ $FAIL -eq 1 ]; then exit 1; fi
+          echo "✓ No secrets detected"
+
+      # -- HTML validation --
+      - name: Validate HTML structure
+        run: |
+          echo "=== Validating index.html ==="
+          FAIL=0
+
+          # Check critical elements exist
+          for id in selModel txtMsg txtOutput btnSend; do
+            if ! grep -q "id=\"$id\"" index.html; then
+              echo "::error::Missing required element id='$id' in index.html"
+              FAIL=1
+            fi
+          done
+
+          # Check all JS files referenced in index.html exist
+          for js in $(grep -oP 'src="core/js/[^"]+' index.html | sed 's/src="//'); do
+            if [ ! -f "$js" ]; then
+              echo "::error::Referenced script '$js' does not exist"
+              FAIL=1
+            fi
+          done
+
+          # Check CSS files exist
+          for css in $(grep -oP 'href="core/[^"]+\.css' index.html | sed 's/href="//'); do
+            if [ ! -f "$css" ]; then
+              echo "::error::Referenced stylesheet '$css' does not exist"
+              FAIL=1
+            fi
+          done
+
+          if [ $FAIL -eq 1 ]; then exit 1; fi
+          echo "✓ HTML structure valid"
+
+      # -- JavaScript sanity checks --
+      - name: Validate JavaScript files
+        run: |
+          echo "=== Checking JavaScript files ==="
+          FAIL=0
+
+          # Check syntax with Node.js (parse only, no execution)
+          for f in core/js/*.js; do
+            if [[ "$f" == *".min.js" ]]; then continue; fi
+            if ! node --check "$f" 2>/dev/null; then
+              echo "::error::Syntax error in $f"
+              FAIL=1
+            fi
+          done
+
+          # Verify model routing functions exist
+          for fn in aigSend trboSend geminiSend lmsSend copilotSend; do
+            found=$(grep -rl "function $fn\b\|async function $fn\b" core/js/*.js || true)
+            if [ -z "$found" ]; then
+              echo "::error::Missing required function $fn()"
+              FAIL=1
+            fi
+          done
+
+          # Check no console.log dumps auth data
+          if grep -rn 'console\.log.*\(.*[Tt]oken\|[Kk]ey\|[Ss]ecret\|[Pp]assword\|Authorization' core/js/*.js; then
+            echo "::warning::console.log may expose sensitive data"
+          fi
+
+          if [ $FAIL -eq 1 ]; then exit 1; fi
+          echo "✓ JavaScript files valid"
+
+      # -- Python syntax check --
+      - name: Validate Python files
+        run: |
+          echo "=== Checking Python syntax ==="
+          FAIL=0
+          for f in tools/*.py; do
+            if ! python3 -m py_compile "$f"; then
+              echo "::error::Syntax error in $f"
+              FAIL=1
+            fi
+          done
+          if [ $FAIL -eq 1 ]; then exit 1; fi
+          echo "✓ Python files valid"
+
+      # -- Model routing consistency --
+      - name: Validate model selector consistency
+        run: |
+          echo "=== Checking model routing ==="
+          FAIL=0
+
+          # Every <option value="X"> in the selector should have routing in options.js
+          VALUES=$(grep -oP 'value="[^"]+"' index.html | grep -oP '"[^"]+"' | tr -d '"' | sort -u)
+          # Filter to model values (skip non-model selects by checking context)
+          MODEL_VALUES=$(sed -n '/<select id="selModel"/,/<\/select>/p' index.html \
+            | grep -oP 'value="[^"]+"' | grep -oP '"[^"]+"' | tr -d '"' | sort -u)
+
+          for val in $MODEL_VALUES; do
+            # Each value should appear somewhere in options.js routing
+            if ! grep -q "$val" core/js/options.js 2>/dev/null; then
+              # Check if it's handled by prefix matching (copilot-*)
+              prefix=$(echo "$val" | cut -d'-' -f1)
+              if ! grep -q "'$prefix'" core/js/options.js 2>/dev/null && \
+                 ! grep -q "\"$prefix\"" core/js/options.js 2>/dev/null && \
+                 ! grep -q "startsWith('$prefix')" core/js/options.js 2>/dev/null; then
+                echo "::warning::Model '$val' may not have routing in options.js"
+              fi
+            fi
+          done
+
+          # AIG model must exist in selector
+          if ! grep -q 'value="aig"' index.html; then
+            echo "::error::Eva (AIG) model missing from selector"
+            FAIL=1
+          fi
+
+          if [ $FAIL -eq 1 ]; then exit 1; fi
+          echo "✓ Model routing consistent"
+
+      # -- Config template validation --
+      - name: Validate config templates
+        run: |
+          echo "=== Checking config templates ==="
+          FAIL=0
+
+          # config.example.json must be valid JSON with empty values
+          if ! python3 -c "import json; d=json.load(open('config.example.json')); assert all(v=='' or v==False for v in d.values()), 'Non-empty values in example config'" 2>&1; then
+            echo "::error::config.example.json has non-empty/non-false values (potential secret leak)"
+            FAIL=1
+          fi
+
+          if [ $FAIL -eq 1 ]; then exit 1; fi
+          echo "✓ Config templates clean"
+
+      # -- Gitignore coverage --
+      - name: Verify gitignore coverage
+        run: |
+          echo "=== Checking .gitignore ==="
+          FAIL=0
+
+          for pattern in config.json config.local.js __pycache__ '*.data' .env .azure/ msal_token_cache.json; do
+            if ! grep -qF "$pattern" .gitignore; then
+              echo "::error::Missing .gitignore entry for '$pattern'"
+              FAIL=1
+            fi
+          done
+
+          if [ $FAIL -eq 1 ]; then exit 1; fi
+          echo "✓ .gitignore covers sensitive files"
+
+  # ── 2. Python unit tests (bridge logic, no network needed) ────────
+  python-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install dependencies
+        run: pip install requests
+
+      - name: Run Python unit tests
+        run: python3 tools/test_static.py
+
+  # ── 3. Accessibility (manual trigger only — kept from existing) ───
+  accessibility:
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - run: npm install -g pa11y
+      - run: pa11y index.html --reporter=cli --threshold 25
