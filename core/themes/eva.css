@@ -1,0 +1,375 @@
+/* ── Eva Theme ──────────────────────────────────────────────
+ *  Modern dark UI inspired by the Eva splash design.
+ *  Deep navy background, electric blue/purple accents,
+ *  glass-morphism cards, rounded chat bubbles.
+ * ─────────────────────────────────────────────────────────── */
+
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+
+/* ── CSS Variables ─────────────────────────────────────────── */
+body.theme-eva {
+  --eva-bg:          #0b0e14;
+  --eva-surface:     #151822;
+  --eva-surface-2:   #1c2030;
+  --eva-border:      rgba(255,255,255,0.08);
+  --eva-border-hl:   rgba(79,140,255,0.3);
+  --eva-text:        #e8ecf4;
+  --eva-text-muted:  #8892a8;
+  --eva-accent:      #4f8cff;
+  --eva-accent-hover:#6ba1ff;
+  --eva-purple:      #a855f7;
+  --eva-purple-glow: rgba(168,85,247,0.15);
+  --eva-blue-glow:   rgba(79,140,255,0.12);
+  --eva-danger:      #ef4444;
+  --eva-success:     #22c55e;
+  --eva-warning:     #f59e0b;
+  --eva-radius:      12px;
+  --eva-radius-sm:   8px;
+  --eva-font:        "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+
+/* ── Base ───────────────────────────────────────────────────── */
+body.theme-eva {
+  background: var(--eva-bg) !important;
+  background-image: none !important;
+  color: var(--eva-text);
+  font-family: var(--eva-font);
+  height: 100vh;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* ── Main Container ─────────────────────────────────────────── */
+body.theme-eva #idContainer {
+  max-width: 860px;
+  width: 95%;
+  margin: 20px auto;
+  padding: 0;
+  border-radius: var(--eva-radius);
+  background: var(--eva-surface);
+  border: 1px solid var(--eva-border);
+  box-shadow: 0 4px 24px rgba(0,0,0,0.4), 0 0 80px var(--eva-purple-glow);
+  display: flex;
+  flex-direction: column;
+  height: calc(100vh - 40px);
+  overflow: hidden;
+}
+
+/* ── Chat Output ────────────────────────────────────────────── */
+body.theme-eva #txtOutput {
+  width: 100%;
+  flex: 1 1 auto;
+  min-height: 0;
+  height: auto;
+  border: none;
+  border-bottom: 1px solid var(--eva-border);
+  border-radius: var(--eva-radius) var(--eva-radius) 0 0;
+  padding: 16px 20px;
+  background: var(--eva-bg);
+  color: var(--eva-text);
+  font-size: 15px;
+  line-height: 1.65;
+  overflow-y: auto;
+  box-sizing: border-box;
+}
+
+/* Scrollbar */
+body.theme-eva #txtOutput::-webkit-scrollbar { width: 6px; }
+body.theme-eva #txtOutput::-webkit-scrollbar-track { background: transparent; }
+body.theme-eva #txtOutput::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.12); border-radius: 3px; }
+body.theme-eva #txtOutput::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.2); }
+
+/* ── Chat Bubbles ───────────────────────────────────────────── */
+body.theme-eva #txtOutput .chat-bubble {
+  margin: 8px 0;
+  padding: 12px 16px;
+  border-radius: 16px;
+  border: none;
+  box-shadow: none;
+  color: var(--eva-text);
+  line-height: 1.6;
+}
+body.theme-eva #txtOutput .eva-bubble {
+  background: var(--eva-surface-2);
+  border: 1px solid var(--eva-border);
+  border-radius: 4px 16px 16px 16px;
+}
+body.theme-eva #txtOutput .user-bubble {
+  background: var(--eva-accent);
+  color: #fff;
+  border-radius: 16px 16px 4px 16px;
+  margin-left: 15%;
+}
+body.theme-eva #txtOutput .chat-bubble .user {
+  color: #fff;
+  font-weight: 600;
+}
+body.theme-eva #txtOutput .chat-bubble .eva {
+  color: var(--eva-accent);
+  font-weight: 600;
+}
+body.theme-eva #txtOutput .chat-bubble .eva-thoughts {
+  color: var(--eva-purple);
+  font-style: italic;
+}
+
+/* ── Chat Input ─────────────────────────────────────────────── */
+body.theme-eva .chat-input-container {
+  width: 100%;
+  max-width: none;
+  margin-top: 0;
+  border: none;
+  border-top: 1px solid var(--eva-border);
+  border-radius: 0 0 var(--eva-radius) var(--eva-radius);
+  background: var(--eva-surface);
+  padding: 12px 16px;
+  box-sizing: border-box;
+  gap: 10px;
+}
+
+body.theme-eva #txtMsg {
+  flex: 1;
+  min-height: 48px;
+  max-height: 120px;
+  border: 1px solid var(--eva-border);
+  border-radius: var(--eva-radius-sm);
+  background: var(--eva-bg);
+  color: var(--eva-text);
+  padding: 12px 14px;
+  font-size: 14px;
+  line-height: 1.5;
+  margin-left: 0;
+  outline: none;
+  transition: border-color 0.2s;
+}
+body.theme-eva #txtMsg:focus {
+  border-color: var(--eva-accent);
+  box-shadow: 0 0 0 3px var(--eva-blue-glow);
+}
+body.theme-eva #txtMsg img { width: 48px; height: 48px; border-radius: 6px; }
+
+/* ── Buttons ────────────────────────────────────────────────── */
+body.theme-eva #btnSend {
+  background: var(--eva-accent);
+  color: #fff;
+  border: none;
+  border-radius: 50%;
+  width: 44px;
+  height: 44px;
+  min-width: 44px;
+  padding: 0;
+  font-size: 18px;
+  font-weight: 700;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.2s, transform 0.1s;
+}
+body.theme-eva #btnSend:hover {
+  background: var(--eva-accent-hover);
+  transform: scale(1.05);
+}
+
+body.theme-eva button,
+body.theme-eva select {
+  border-radius: var(--eva-radius-sm);
+  font-family: var(--eva-font);
+}
+
+body.theme-eva .mic-button {
+  background-color: var(--eva-surface-2);
+  border: 1px solid var(--eva-border);
+  border-radius: 50%;
+  width: 36px;
+  height: 36px;
+}
+body.theme-eva .mic-button:hover { background-color: var(--eva-accent); }
+
+body.theme-eva #clearMessagesBtn {
+  background: var(--eva-danger);
+  border-radius: var(--eva-radius-sm);
+}
+body.theme-eva #clearMessagesBtn:hover { background: #dc2626; }
+
+/* ── Footer / Status ────────────────────────────────────────── */
+body.theme-eva footer {
+  background: transparent;
+  color: var(--eva-text-muted);
+  padding: 4px 16px;
+}
+body.theme-eva #idText {
+  background: var(--eva-surface);
+  border: 1px solid var(--eva-border);
+  border-radius: var(--eva-radius-sm);
+  color: var(--eva-text-muted);
+  font: 500 13px var(--eva-font);
+}
+body.theme-eva #idText::before { background: var(--eva-accent); }
+body.theme-eva #idText.status-info { border-color: var(--eva-accent); background: var(--eva-blue-glow); }
+body.theme-eva #idText.status-warn { border-color: var(--eva-warning); background: rgba(245,158,11,0.08); }
+body.theme-eva #idText.status-error { border-color: var(--eva-danger); background: rgba(239,68,68,0.08); }
+body.theme-eva #idText.status-warn::before { background: var(--eva-warning); }
+body.theme-eva #idText.status-error::before { background: var(--eva-danger); }
+
+/* ── Settings Panel ─────────────────────────────────────────── */
+body.theme-eva .settings-overlay { background: rgba(0,0,0,0.6); backdrop-filter: blur(4px); }
+body.theme-eva #settingsMenu {
+  background: var(--eva-surface);
+  color: var(--eva-text);
+  border: 1px solid var(--eva-border);
+  border-radius: 16px;
+  box-shadow: 0 8px 40px rgba(0,0,0,0.5), 0 0 60px var(--eva-purple-glow);
+}
+body.theme-eva .settings-header { border-color: var(--eva-border); }
+body.theme-eva .settings-header h3 { color: var(--eva-text); }
+body.theme-eva .settings-close { color: var(--eva-text-muted); }
+body.theme-eva .settings-close:hover { color: #fff; background: rgba(255,255,255,0.08); }
+
+body.theme-eva .settings-tabs {
+  border-color: var(--eva-border);
+  background: var(--eva-bg);
+  padding: 4px 16px;
+  gap: 4px;
+}
+body.theme-eva .settings-tab {
+  color: var(--eva-text-muted);
+  background: transparent;
+  border-radius: var(--eva-radius-sm) var(--eva-radius-sm) 0 0;
+  border-bottom: 2px solid transparent;
+  font-weight: 500;
+}
+body.theme-eva .settings-tab:hover { color: var(--eva-text); background: rgba(255,255,255,0.04); }
+body.theme-eva .settings-tab.active {
+  color: #fff;
+  background: var(--eva-surface);
+  border-bottom-color: var(--eva-accent);
+}
+
+body.theme-eva .settings-panel label { color: var(--eva-text-muted); font-weight: 500; }
+body.theme-eva .settings-panel select,
+body.theme-eva .settings-panel input[type="number"],
+body.theme-eva .settings-panel input[type="text"],
+body.theme-eva .settings-panel input[type="password"],
+body.theme-eva .settings-panel textarea {
+  background: var(--eva-bg);
+  color: var(--eva-text);
+  border: 1px solid var(--eva-border);
+  border-radius: var(--eva-radius-sm);
+}
+body.theme-eva .settings-panel select:focus,
+body.theme-eva .settings-panel input:focus,
+body.theme-eva .settings-panel textarea:focus {
+  border-color: var(--eva-accent);
+  outline: none;
+  box-shadow: 0 0 0 2px var(--eva-blue-glow);
+}
+body.theme-eva .settings-panel select optgroup { background: var(--eva-bg); color: var(--eva-text); }
+
+body.theme-eva .auth-note { color: var(--eva-text-muted); }
+body.theme-eva .auth-toggle {
+  background: var(--eva-surface-2);
+  color: var(--eva-text);
+  border-color: var(--eva-border);
+}
+body.theme-eva .auth-toggle:hover { background: var(--eva-accent); color: #fff; }
+body.theme-eva .auth-save { background: var(--eva-accent); }
+body.theme-eva .auth-save:hover { background: var(--eva-accent-hover); }
+body.theme-eva .prompt-hint { color: var(--eva-text-muted); }
+
+/* MCP overrides */
+body.theme-eva .mcp-preset { background: var(--eva-surface-2); border-color: var(--eva-border); }
+body.theme-eva .mcp-status { background: var(--eva-bg); color: var(--eva-text-muted); }
+body.theme-eva .mcp-badge { background: var(--eva-accent); }
+
+/* ── Markdown ───────────────────────────────────────────────── */
+body.theme-eva #txtOutput .md h1,
+body.theme-eva #txtOutput .md h2,
+body.theme-eva #txtOutput .md h3 {
+  border-bottom: 1px solid var(--eva-border);
+  padding-bottom: 6px;
+  color: var(--eva-text);
+}
+body.theme-eva #txtOutput .md code {
+  background: rgba(255,255,255,0.08);
+  color: #e2e8f0;
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-size: 0.9em;
+}
+body.theme-eva #txtOutput .md pre code {
+  display: block;
+  background: #0d1117;
+  border: 1px solid var(--eva-border);
+  border-radius: var(--eva-radius-sm);
+  padding: 14px 16px;
+  overflow-x: auto;
+  color: #e2e8f0;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+body.theme-eva #txtOutput .md blockquote {
+  margin: 0.6em 0;
+  padding: 8px 14px;
+  border-left: 3px solid var(--eva-accent);
+  background: rgba(79,140,255,0.06);
+  border-radius: 0 var(--eva-radius-sm) var(--eva-radius-sm) 0;
+}
+body.theme-eva #txtOutput .md a { color: var(--eva-accent); }
+body.theme-eva #txtOutput .md a:hover { color: var(--eva-accent-hover); }
+body.theme-eva #txtOutput .md table { width: 100%; border-collapse: collapse; margin: 0.8em 0; }
+body.theme-eva #txtOutput .md th,
+body.theme-eva #txtOutput .md td {
+  border: 1px solid var(--eva-border);
+  padding: 8px 10px;
+  text-align: left;
+}
+body.theme-eva #txtOutput .md th { background: var(--eva-surface-2); font-weight: 600; }
+body.theme-eva #txtOutput .md tr:nth-child(even) { background: rgba(255,255,255,0.02); }
+
+/* ── Inline Images ──────────────────────────────────────────── */
+body.theme-eva .eva-inline-img {
+  border-color: var(--eva-border);
+  border-radius: var(--eva-radius-sm);
+}
+
+/* ── Session Panel ──────────────────────────────────────────── */
+body.theme-eva .session-panel {
+  background: var(--eva-surface);
+  font-family: var(--eva-font);
+  border-right: 1px solid var(--eva-border);
+}
+body.theme-eva .session-panel-header { border-color: var(--eva-border); }
+body.theme-eva .session-item.active {
+  border-left-color: var(--eva-accent);
+  background: var(--eva-blue-glow);
+}
+body.theme-eva .session-panel-actions button { border-color: var(--eva-border); }
+body.theme-eva .session-panel-actions button:hover { background: rgba(255,255,255,0.08); }
+body.theme-eva .session-time { color: var(--eva-text-muted); }
+
+/* ── Voice Indicators ───────────────────────────────────────── */
+body.theme-eva .mic-listening { background-color: var(--eva-success) !important; }
+body.theme-eva .mic-awake { background-color: var(--eva-warning) !important; }
+body.theme-eva .mic-sending { background-color: var(--eva-accent) !important; }
+
+/* ── Responsive ─────────────────────────────────────────────── */
+@media (max-width: 599px) {
+  body.theme-eva #idContainer {
+    width: 100%;
+    height: 100vh;
+    margin: 0;
+    border-radius: 0;
+    border: none;
+  }
+  body.theme-eva #txtOutput { padding: 12px; font-size: 14px; }
+  body.theme-eva .chat-input-container { padding: 10px 12px; }
+  body.theme-eva #txtMsg { min-height: 40px; }
+  body.theme-eva #settingsMenu { width: 94vw; border-radius: 12px; }
+}
+
+@media (min-width: 600px) and (max-width: 1023px) {
+  body.theme-eva #idContainer { width: 92%; }
+}

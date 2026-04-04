@@ -386,7 +386,11 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // Initialize theme from localStorage
   try {
-    const savedTheme = localStorage.getItem('theme') || 'lcars';
+    const savedTheme = (function() {
+      var t = localStorage.getItem('theme') || 'eva';
+      if (t === 'default') t = 'legacy'; // migrate old "default" theme name
+      return t;
+    })();
   const savedCollapsed = localStorage.getItem('lcars_collapsed') === '1';
     if (themeSelect) {
       themeSelect.value = savedTheme;
@@ -557,12 +561,16 @@ function applyTheme(theme) {
   if (!body) return;
 
   // Remove known theme classes first
-  body.classList.remove('theme-lcars');
+  body.classList.remove('theme-lcars', 'theme-eva');
   // Unload any theme stylesheets we previously loaded
   unloadThemeStylesheet('lcars');
+  unloadThemeStylesheet('eva');
 
   // Add selected theme class
-  if (theme === 'lcars') {
+  if (theme === 'eva') {
+    body.classList.add('theme-eva');
+    ensureThemeStylesheet('eva', 'core/themes/eva.css');
+  } else if (theme === 'lcars') {
     body.classList.add('theme-lcars');
   // Ensure LCARS stylesheet is present (modular theme loader)
   ensureThemeStylesheet('lcars', 'core/themes/lcars.css');
