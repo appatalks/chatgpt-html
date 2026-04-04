@@ -125,7 +125,15 @@ function saveCurrentSession() {
     }
   }
 
-  localStorage.setItem('session_' + id, JSON.stringify(snapshot));
+  try {
+    localStorage.setItem('session_' + id, JSON.stringify(snapshot));
+  } catch (e) {
+    // localStorage quota exceeded — drop HTML snapshot and retry
+    if (snapshot._htmlSnapshot) {
+      delete snapshot._htmlSnapshot;
+      try { localStorage.setItem('session_' + id, JSON.stringify(snapshot)); } catch (e2) { /* give up silently */ }
+    }
+  }
   _saveSessionIndex(index);
   renderSessionList();
 }
