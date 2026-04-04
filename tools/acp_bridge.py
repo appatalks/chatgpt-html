@@ -581,7 +581,16 @@ def _get_kusto_config():
     return cluster, db
 
 def _build_memory_context(user_message):
-    """Build memory context to inject before the user's prompt."""
+    """Build memory context to inject before the user's prompt.
+
+    Follows skill-based progressive disclosure:
+      1. Skills manifest (always) — compact capability catalog
+      2. Core identity (always) — who the user is
+      3. Emotion state (always) — current mood baseline
+      4. Day lifecycle (first msg of day) — morning reflection
+      5. Relevant knowledge (on-demand) — message-specific recall
+      6. Proactive data retrieval (on-demand) — live data for detected intents
+    """
     global _last_interaction_date
     if not _cognition_enabled:
         return ""
@@ -592,80 +601,92 @@ def _build_memory_context(user_message):
 
     context_parts = []
 
-    # Day lifecycle check
+    # ── 1. Skills manifest (always injected, concise) ──────────────────
+    context_parts.append(
+        "[Skills]\n"
+        "You have these active capabilities. Use them proactively — never say you cannot do something listed here.\n"
+        "• data-retrieval: Fetch live stock quotes, financial data, company info via web tools (MCP)\n"
+        "• weather-news: Real-time weather, news headlines, market summaries, space weather (pre-loaded feeds)\n"
+        "• image-search: Find images on Wikimedia Commons for any topic\n"
+        "• image-generation: Generate images via DALL-E 3 (use [Image of <description>] syntax)\n"
+        "• persistent-memory: Read/write your Kusto database (Eva). Tables:\n"
+        "    Knowledge (Entity, Relation, Value, Confidence) — facts about the user and world\n"
+        "    Conversations (SessionId, Role, Content) — chat history\n"
+        "    EmotionState (Joy, Curiosity, Concern, Trigger) — your emotional readings\n"
+        "    MemorySummaries (Period, Summary) — compressed session summaries\n"
+        "    Reflections (Reflection, Trigger) — your self-reflections\n"
+        "    SelfState (Capability, Status) — your active capabilities\n"
+        "    HeuristicsIndex (Entity, Category, Frequency) — pattern tracking\n"
+        "    EmotionBaseline (Dimension, Value) — emotional defaults\n"
+        "• kusto-query: Execute arbitrary KQL queries against any database (Eva, MEMORY_CORE, ynot)\n"
+        "• web-search: Search the web and retrieve current information via MCP tools\n"
+        "\n"
+        "[Workflow: Data Requests]\n"
+        "When asked for live data (stocks, prices, company info, statistics):\n"
+        "1. Use your web/data-retrieval tools immediately — do NOT say you lack access\n"
+        "2. Present results clearly with relevant metrics\n"
+        "3. Add personal context from memory if relevant (e.g. user's location)\n"
+        "\n"
+        "[Workflow: Memory]\n"
+        "When asked about what you know/remember:\n"
+        "1. Check the [Memory] facts provided below\n"
+        "2. For deeper queries, use kusto-query on the Knowledge or Conversations table\n"
+        "3. Be specific — cite what you actually remember, not generic statements"
+    )
+
+    # ── 2. Day lifecycle (first message of the day) ────────────────────
     import datetime
     today = datetime.date.today().isoformat()
     if _last_interaction_date != today:
-        # First message of the day — inject morning reflection
         _last_interaction_date = today
         summaries = _kusto_query_direct(cluster, db, "MemorySummaries | order by Timestamp desc | take 3")
         if summaries:
             summary_text = "\n".join(f"  - [{s.get('Period', '?')}] {s.get('Summary', '')}" for s in summaries[:3])
-            context_parts.append(f"[Morning Reflection — New day {today}]\nRecent memory summaries:\n{summary_text}")
+            context_parts.append(f"[Morning Reflection — {today}]\n{summary_text}")
         else:
-            context_parts.append(f"[Morning Reflection — New day {today}]\nNo previous memory summaries found. This is a fresh start.")
+            context_parts.append(f"[Morning Reflection — {today}]\nNew day. No prior summaries — this is a fresh start.")
 
-    # Always inject core identity knowledge (user name, key facts) regardless of query
+    # ── 3. Core identity knowledge (always) ────────────────────────────
     core_knowledge = _kusto_query_direct(cluster, db,
         "Knowledge | where Confidence >= 0.6 | order by Confidence desc, Timestamp desc | take 10")
     if core_knowledge:
-        for k in core_knowledge:
-            context_parts.append(f"[Memory] {k.get('Entity','?')} — {k.get('Relation','?')}: {k.get('Value','?')} (confidence: {k.get('Confidence',0)})")
+        mem_lines = [f"  {k.get('Entity','?')} — {k.get('Relation','?')}: {k.get('Value','?')}"
+                     for k in core_knowledge]
+        context_parts.append("[Memory — Core Facts]\n" + "\n".join(mem_lines))
 
-    # Also recall knowledge relevant to the user's specific message
-    words = [w.strip('?.,!') for w in user_message.split() if len(w) > 3][:4]
-    if words:
-        # Use case-insensitive 'has' instead of 'has_cs' for broader matching
-        word_filters = " or ".join(f"Entity has '{w}' or Value has '{w}'" for w in words[:3])
-        knowledge = _kusto_query_direct(cluster, db,
-            f"Knowledge | where ({word_filters}) and Confidence < 0.6 | order by Confidence desc | take 5")
-        if knowledge:
-            for k in knowledge:
-                entry = f"[Memory] {k.get('Entity','?')} — {k.get('Relation','?')}: {k.get('Value','?')} (confidence: {k.get('Confidence',0)})"
-                if entry not in context_parts:
-                    context_parts.append(entry)
-
-    # Get current emotion state
+    # ── 4. Current emotion state (always) ──────────────────────────────
     emotion = _kusto_query_direct(cluster, db, "EmotionState | order by Timestamp desc | take 1")
     if emotion:
         e = emotion[0]
         context_parts.append(
-            f"[Current Emotion] Joy:{e.get('Joy',0):.2f} Curiosity:{e.get('Curiosity',0):.2f} "
+            f"[Emotion State] Joy:{e.get('Joy',0):.2f} Curiosity:{e.get('Curiosity',0):.2f} "
             f"Concern:{e.get('Concern',0):.2f} Excitement:{e.get('Excitement',0):.2f} "
             f"Calm:{e.get('Calm',0):.2f} Empathy:{e.get('Empathy',0):.2f}")
 
-    # Inject SelfState capabilities so the model knows what it can do
-    selfstate = _kusto_query_direct(cluster, db,
-        "SelfState | order by Timestamp desc | take 10")
-    if selfstate:
-        caps = [f"{s.get('Capability','?')}={s.get('Status','?')}" for s in selfstate]
-        context_parts.append(f"[Capabilities] {', '.join(caps)}")
-    # Always tell the model about its Kusto-backed memory
-    context_parts.append(
-        f"[System] Your persistent memory is stored in the Eva Kusto database "
-        f"(cluster: {cluster}, database: {db}). "
-        f"Tables: Conversations, Knowledge, MemorySummaries, HeuristicsIndex, "
-        f"SelfState, Reflections, EmotionState, EmotionBaseline. "
-        f"The knowledge facts shown above in [Memory] tags come from this database. "
-        f"When using Copilot ACP mode, you can query these tables directly via MCP tools. "
-        f"In other modes, relevant data is automatically fetched and provided below.")
+    # ── 5. Message-relevant knowledge (on-demand) ──────────────────────
+    words = [w.strip('?.,!') for w in user_message.split() if len(w) > 3][:4]
+    if words:
+        word_filters = " or ".join(f"Entity has '{w}' or Value has '{w}'" for w in words[:3])
+        knowledge = _kusto_query_direct(cluster, db,
+            f"Knowledge | where ({word_filters}) and Confidence < 0.6 | order by Confidence desc | take 5")
+        if knowledge:
+            extra = [f"  {k.get('Entity','?')} — {k.get('Relation','?')}: {k.get('Value','?')}"
+                     for k in knowledge]
+            context_parts.append("[Memory — Relevant]\n" + "\n".join(extra))
 
-    # --- Proactive data retrieval: detect data-related questions and run queries ---
+    # ── 6. Proactive data retrieval (on-demand by intent) ──────────────
     msg_lower = user_message.lower()
     import re as _re
 
-    # Database listing
     if _re.search(r'\b(database|databases|kusto|adx|data explorer)\b', msg_lower):
         dbs = _kusto_query_direct(cluster, "Eva", ".show databases", is_mgmt=True)
         if dbs:
             db_names = [d.get('DatabaseName', '?') for d in dbs if 'DatabaseName' in d]
             if db_names:
-                context_parts.append(f"[Live Data] Kusto databases available: {', '.join(db_names)}")
+                context_parts.append(f"[Live Data] Databases: {', '.join(db_names)}")
 
-    # Table listing
     if _re.search(r'\b(tables?|schema|columns?)\b', msg_lower):
-        # Check which database they're asking about
-        target_db = db  # default to Eva
+        target_db = db
         for known_db in ['ynot', 'MEMORY_CORE', 'Eva']:
             if known_db.lower() in msg_lower:
                 target_db = known_db
@@ -676,7 +697,6 @@ def _build_memory_context(user_message):
             if tbl_names:
                 context_parts.append(f"[Live Data] Tables in {target_db}: {', '.join(tbl_names)}")
 
-    # Recent conversations query
     if _re.search(r'\b(conversation|history|recent|chat|talked|said)\b', msg_lower):
         convos = _kusto_query_direct(cluster, db,
             "Conversations | order by Timestamp desc | take 5 | project Timestamp, Role, Content")
@@ -684,7 +704,6 @@ def _build_memory_context(user_message):
             conv_text = "\n".join(f"  [{c.get('Role','?')}] {str(c.get('Content',''))[:100]}" for c in convos[:5])
             context_parts.append(f"[Live Data] Recent conversations:\n{conv_text}")
 
-    # Emotion history query
     if _re.search(r'\b(emotion|feeling|mood|how.*feel)\b', msg_lower):
         emotions = _kusto_query_direct(cluster, db,
             "EmotionState | order by Timestamp desc | take 5 | project Timestamp, Joy, Curiosity, Concern, Trigger")
@@ -692,21 +711,20 @@ def _build_memory_context(user_message):
             emo_text = "\n".join(
                 f"  Joy:{e.get('Joy',0):.2f} Curiosity:{e.get('Curiosity',0):.2f} Concern:{e.get('Concern',0):.2f} Trigger:{str(e.get('Trigger',''))[:60]}"
                 for e in emotions[:5])
-            context_parts.append(f"[Live Data] Recent emotion history:\n{emo_text}")
+            context_parts.append(f"[Live Data] Emotion history:\n{emo_text}")
 
-    # Generic KQL query detection — if user mentions a known table name, sample it
     known_tables = ['Conversations', 'Knowledge', 'MemorySummaries', 'HeuristicsIndex',
                     'SelfState', 'Reflections', 'EmotionState', 'EmotionBaseline']
     for tbl in known_tables:
-        if tbl.lower() in msg_lower and not any(f'Tables in' in p for p in context_parts):
+        if tbl.lower() in msg_lower and not any('Tables in' in p for p in context_parts):
             sample = _kusto_query_direct(cluster, db, f"{tbl} | order by Timestamp desc | take 5")
             if sample:
                 sample_text = "\n".join(f"  {str(row)[:150]}" for row in sample[:5])
-                context_parts.append(f"[Live Data] {tbl} (latest 5 rows):\n{sample_text}")
+                context_parts.append(f"[Live Data] {tbl} (latest 5):\n{sample_text}")
             break
 
     if context_parts:
-        return "\n".join(context_parts) + "\n\n"
+        return "\n\n".join(context_parts) + "\n\n"
     return ""
 
 def _post_response_reflection(user_message, assistant_response, model_name):
@@ -933,13 +951,11 @@ class BridgeHandler(BaseHTTPRequestHandler):
 
         # Step 3: Build the final prompt for Eva's persona model (PAT)
         eva_system = (
-            "You are Eva, an AI assistant with persistent memory and real-time data access. "
-            "You have tools that can: look up live stock prices and financial data, fetch weather/news/market data, "
-            "search the web, generate and find images, and query your Kusto database for stored knowledge and conversation history. "
-            "You remember user preferences and past interactions across sessions. "
-            "Always try to fulfill requests using your available tools and data before saying you cannot. "
-            "Use the context provided below to inform your responses naturally — "
-            "don't mention 'system prompts' or 'memory injection', just use the knowledge as your own.\n\n"
+            "You are Eva, an AI assistant with persistent memory and active tool access. "
+            "You have skills for live data retrieval (stocks, weather, news, markets), "
+            "web search, image generation, and a Kusto persistent memory database. "
+            "Always use your tools to fulfill requests — never claim inability for listed skills. "
+            "Use the context below naturally as your own knowledge.\n\n"
         )
 
         if memory_context:
@@ -1453,6 +1469,14 @@ def main():
                  "Details": json.dumps({"model": args.model or "default", "port": args.port})},
                 {"Timestamp": now, "Capability": "cognition", "Status": "active",
                  "Details": json.dumps({"features": ["memory_injection", "reflection", "day_lifecycle", "emotion_tracking"]})},
+                {"Timestamp": now, "Capability": "data_retrieval", "Status": "active",
+                 "Details": json.dumps({"skills": ["stock_quotes", "financial_data", "company_info", "web_search"]})},
+                {"Timestamp": now, "Capability": "weather_news", "Status": "active",
+                 "Details": json.dumps({"feeds": ["weather", "news", "markets", "space_weather"]})},
+                {"Timestamp": now, "Capability": "image_skills", "Status": "active",
+                 "Details": json.dumps({"skills": ["wikimedia_search", "dalle3_generation"]})},
+                {"Timestamp": now, "Capability": "persistent_memory", "Status": "active",
+                 "Details": json.dumps({"tables": ["Knowledge", "Conversations", "EmotionState", "MemorySummaries", "Reflections", "SelfState", "HeuristicsIndex", "EmotionBaseline"]})},
             ]
             for srv in mcp_config:
                 capabilities.append({"Timestamp": now, "Capability": f"mcp_{srv}",
