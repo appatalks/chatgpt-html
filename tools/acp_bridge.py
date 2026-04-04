@@ -557,9 +557,8 @@ def _kusto_ingest_direct(cluster_url, database, table, columns, rows_data):
         rows_csv.append(",".join(vals))
 
     cmd = f".ingest inline into table {table} <|\n" + "\n".join(rows_csv)
-    # Debug: log first row for troubleshooting
     if rows_csv:
-        print(f"[Cognition] Ingest {table}: {len(rows_csv)} rows, first: {rows_csv[0][:200]}")
+        print(f"[Cognition] Ingest {table}: {len(rows_csv)} rows")
     url = f"{cluster_url}/v1/rest/mgmt"
     headers = {"Authorization": f"Bearer {_kusto_token_cache}", "Content-Type": "application/json"}
 
@@ -997,9 +996,6 @@ class BridgeHandler(BaseHTTPRequestHandler):
 
         # Step 4: Pick the best PAT model for response generation
         # Priority: GPT-4.1 (best all-rounder for persona), fallback to GPT-4o
-        github_pat = ""
-        if hasattr(__builtins__, '__dict__'):
-            pass
         # Try to get PAT from environment or config
         github_pat = os.environ.get("GITHUB_PAT", "")
 

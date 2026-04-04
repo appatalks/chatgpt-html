@@ -41,9 +41,10 @@ function lmsSend() {
     } catch (e) {}
 
     _lmsMemoryPromise.then(function(_memCtx) {
-      // Inject memory context into system message if available
-      if (_memCtx && openLLMessages.length > 0 && openLLMessages[0].role === 'system') {
-        openLLMessages[0].content = _memCtx + '\n\n' + openLLMessages[0].content;
+      // Build ephemeral messages for this request (don't mutate persistent openLLMessages)
+      var _lmsRequestMsgs = openLLMessages.slice();
+      if (_memCtx && _lmsRequestMsgs.length > 0 && _lmsRequestMsgs[0].role === 'system') {
+        _lmsRequestMsgs[0] = { role: 'system', content: _memCtx + '\n\n' + _lmsRequestMsgs[0].content };
       }
 
                 // Document the user's message (match chat-bubble UI and sanitize)
@@ -74,7 +75,7 @@ function lmsSend() {
         body: JSON.stringify({
             model: "granite-3.1-8b-instruct",
 
-            messages: openLLMessages.concat([
+            messages: _lmsRequestMsgs.concat([
                 { role: "user", content: sQuestion }
             ]),
             temperature: 0.7, // Adjust as needed

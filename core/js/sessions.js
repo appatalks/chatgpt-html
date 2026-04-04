@@ -79,7 +79,7 @@ function _sessionTitle(data) {
           if (!txt && Array.isArray(msgs[j].content)) {
             msgs[j].content.forEach(function(p) { if (p.text) txt += p.text; });
           }
-          txt = txt.replace(/<[^>]+>/g, '').trim();
+          txt = txt.replace(/<[^>]+>/g, '').replace(/[<>]/g, '').trim();
           if (txt) return txt.length > 50 ? txt.substring(0, 47) + '...' : txt;
         }
       }

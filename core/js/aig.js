@@ -62,7 +62,7 @@ async function aigSend() {
   var bridgeUrl = (typeof getACPBridgeUrl === 'function') ? getACPBridgeUrl() : 'http://localhost:8888';
 
   setStatus('info', 'Eva (AIG) processing...');
-  _copilotLastUserMsg = sQuestion;
+  if (typeof _copilotLastUserMsg !== 'undefined') { _copilotLastUserMsg = sQuestion; }
 
   try {
     var url = bridgeUrl.replace(/\/+$/, '') + '/v1/aig/chat';

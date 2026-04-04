@@ -158,7 +158,7 @@ async function trboSend() {
       localStorage.setItem("messages", JSON.stringify(iMessages));
     }
 
-    // --- Cognition: Fetch memory context from bridge ---
+    // --- Cognition: Fetch memory context from bridge (ephemeral — not persisted) ---
     var _gptMemoryContext = '';
     try {
       var _bridgeUrl = (typeof getACPBridgeUrl === 'function') ? getACPBridgeUrl() : 'http://localhost:8888';
@@ -169,12 +169,6 @@ async function trboSend() {
         var _ctxData = await _ctxResp.json();
         if (_ctxData.context && _ctxData.cognition_enabled) {
           _gptMemoryContext = _ctxData.context;
-          // Inject into the first developer/system message in localStorage
-          var _storedMsgs = JSON.parse(localStorage.getItem('messages')) || [];
-          if (_storedMsgs.length > 0 && (_storedMsgs[0].role === 'developer' || _storedMsgs[0].role === 'system')) {
-            _storedMsgs[0].content = _gptMemoryContext + '\n\n' + _storedMsgs[0].content.replace(/^\[Morning Reflection[\s\S]*?\n\n/m, '');
-            localStorage.setItem('messages', JSON.stringify(_storedMsgs));
-          }
         }
       }
     } catch (e) {}
@@ -227,6 +221,11 @@ async function trboSend() {
     // Retrieve messages from local storage
     var cStoredMessages = localStorage.getItem("messages");
     var kMessages = cStoredMessages ? JSON.parse(cStoredMessages) : [];
+
+        // Inject memory context into request payload only (not persisted)
+        if (_gptMemoryContext && kMessages.length > 0 && (kMessages[0].role === 'developer' || kMessages[0].role === 'system')) {
+          kMessages[0].content = _gptMemoryContext + '\n\n' + kMessages[0].content.replace(/^\[Morning Reflection[\s\S]*?\n\n/m, '');
+        }
 
         // Exclude messages with the "developer" role see 
         // https://github.com/appatalks/chatgpt-html/issues/63#issuecomment-2492821202 

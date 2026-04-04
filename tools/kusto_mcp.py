@@ -511,11 +511,8 @@ class KustoMCPServer:
             return f"Error: Table '{table}' is not in the allowed write list: {', '.join(sorted(allowed_tables))}"
 
         # Get table schema to determine column order
-        schema_result = self._kusto_query(cluster_url, database, f".show table {table} schema as json", is_mgmt=True)
         try:
-            # Parse schema to get column names in order
-            schema_lines = schema_result.split('\n')
-            # Try to extract column names from the schema JSON
+            # Extract column names from the schema JSON
             token = self._get_token()
             resp = _requests.post(f"{cluster_url}/v1/rest/mgmt",
                 json={"csl": f".show table {table} schema as json", "db": database},
@@ -580,8 +577,12 @@ class KustoMCPServer:
         entity = args.get("entity", "")
         if not entity:
             return "Error: 'entity' parameter is required."
-        limit = args.get("limit", 20)
-        query = f"Knowledge | where Entity has_cs '{entity}' or Value has_cs '{entity}' | order by Confidence desc, Timestamp desc | take {limit}"
+        safe_entity = str(entity).replace("'", "''")
+        try:
+            limit = int(args.get("limit", 20))
+        except (TypeError, ValueError):
+            limit = 20
+        query = f"Knowledge | where Entity has_cs '{safe_entity}' or Value has_cs '{safe_entity}' | order by Confidence desc, Timestamp desc | take {limit}"
         return self._kusto_query(cluster_url, database, query)
 
     def _tool_eva_get_emotion_state(self, args):
@@ -602,7 +603,10 @@ class KustoMCPServer:
         if err:
             return err
         database = self._resolve_database(args) or "Eva"
-        limit = args.get("limit", 5)
+        try:
+            limit = int(args.get("limit", 5))
+        except (TypeError, ValueError):
+            limit = 5
         return self._kusto_query(cluster_url, database, f"Reflections | order by Timestamp desc | take {limit}")
 
     def _tool_eva_get_memory_summary(self, args):
@@ -611,11 +615,15 @@ class KustoMCPServer:
         if err:
             return err
         database = self._resolve_database(args) or "Eva"
-        limit = args.get("limit", 5)
+        try:
+            limit = int(args.get("limit", 5))
+        except (TypeError, ValueError):
+            limit = 5
         period = args.get("period", "")
         query = "MemorySummaries"
         if period:
-            query += f" | where Period == '{period}'"
+            safe_period = str(period).replace("'", "''")
+            query += f" | where Period == '{safe_period}'"
         query += f" | order by Timestamp desc | take {limit}"
         return self._kusto_query(cluster_url, database, query)
 

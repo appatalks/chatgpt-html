@@ -135,7 +135,7 @@ function _sendVoiceCommand(command) {
 
   var txtMsg = document.getElementById('txtMsg');
   if (txtMsg) {
-    txtMsg.innerHTML = command;
+    txtMsg.textContent = command;
   }
 
   // Use sendData (routes to the selected model)
