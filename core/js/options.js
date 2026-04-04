@@ -449,13 +449,12 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
-  // Eva New Chat button
+  // Eva New Chat button — clear chat and restore welcome MOTD
   var evaNewChat = document.getElementById('evaNewChatBtn');
   if (evaNewChat) {
     evaNewChat.addEventListener('click', function() {
       if (typeof clearMessages === 'function') clearMessages();
-      var w = document.getElementById('evaWelcome');
-      if (w) w.style.display = '';
+      restoreEvaWelcome();
     });
   }
 
@@ -1993,6 +1992,24 @@ function clearMessages() {
     // Start a fresh session (don't carry old active id)
     localStorage.removeItem('eva_active_session');
     document.getElementById("txtOutput").innerHTML = "\n" + "		MEMORY CLEARED";
+}
+
+// Restore the Eva welcome MOTD into #txtOutput after clearing
+function restoreEvaWelcome() {
+  var out = document.getElementById('txtOutput');
+  if (!out) return;
+  var theme = (localStorage.getItem('theme') || 'eva');
+  if (theme !== 'eva') return;
+  out.innerHTML = '<div id="evaWelcome" class="eva-welcome">'
+    + '<img src="core/img/eva-face-lg.png" alt="Eva" class="eva-welcome-avatar">'
+    + '<h2 class="eva-welcome-title">Hello! I\'m <span class="eva-highlight">Eva</span></h2>'
+    + '<p class="eva-welcome-subtitle">Your AI assistant. Ask me anything or choose a suggestion to get started.</p>'
+    + '<div class="eva-suggestions">'
+    + '<button class="eva-suggestion" onclick="evaSuggestionClick(this)" data-prompt="Explain a complex topic in simple terms"><span class="eva-sug-icon">&#x1F9E0;</span><div><strong>Explain a complex topic</strong><br><span class="eva-sug-sub">in simple terms</span></div></button>'
+    + '<button class="eva-suggestion" onclick="evaSuggestionClick(this)" data-prompt="Help me write code in any language"><span class="eva-sug-icon">&lt;/&gt;</span><div><strong>Help me write code</strong><br><span class="eva-sug-sub">in any language</span></div></button>'
+    + '<button class="eva-suggestion" onclick="evaSuggestionClick(this)" data-prompt="Brainstorm ideas for a project"><span class="eva-sug-icon">&#x1F4A1;</span><div><strong>Brainstorm ideas</strong><br><span class="eva-sug-sub">for a project</span></div></button>'
+    + '<button class="eva-suggestion" onclick="evaSuggestionClick(this)" data-prompt="Review my text and improve it"><span class="eva-sug-icon">&#x270F;&#xFE0F;</span><div><strong>Review my text</strong><br><span class="eva-sug-sub">and improve it</span></div></button>'
+    + '</div></div>';
 }
 
 // Text-to-Speech (voice recognition moved to voice.js)
