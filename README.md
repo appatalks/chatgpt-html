@@ -8,6 +8,21 @@ A lightweight web UI for chatting with multiple AI providers. No frameworks, no 
 > **Best experience:** Select **Eva (AIG)** from the model dropdown — persistent memory,
 > emotion tracking, proactive data retrieval, and intelligent cross-model orchestration.
 
+## What is AIG?
+
+**AIG (Artificial Intelligence Gateway)** is Eva's multi-agentic orchestration layer. Rather than calling a single model directly, AIG acts as an intelligent router and coordinator:
+
+- **Model routing** — Selects the best provider for each request: GitHub Models API (GPT-4.1, GPT-5, o4-mini, DeepSeek-R1) via PAT, or Copilot CLI via ACP (Claude, Gemini, GPT-5.x) as fallback.
+- **MCP tool use** — The underlying Copilot agent autonomously invokes [Model Context Protocol](https://modelcontextprotocol.io/) servers to retrieve live data before generating a response:
+  - **Kusto MCP** — Query Azure Data Explorer for Eva's memory tables (conversations, reflections, emotion state, knowledge graph).
+  - **GitHub MCP** — Search repos, issues, and PRs via the GitHub MCP server (Docker).
+  - **Azure MCP** — Access Azure services and resources.
+- **Cognition pipeline** — After each exchange, AIG automatically extracts knowledge entities, updates emotion vectors, logs conversations to Kusto, and triggers periodic self-reflections.
+- **Memory injection** — Before every response, AIG fetches relevant context from Kusto (recent conversations, reflections, emotion baseline, knowledge) and injects it into the system prompt.
+- **Hot-reloadable MCP** — Add or remove MCP servers at runtime via `POST /v1/mcp/configure` without restarting the bridge.
+
+The bridge (`tools/acp_bridge.py`) exposes an OpenAI-compatible API so any client that speaks Chat Completions can use the full AIG stack.
+
 ## Quick Start
 
 1. Copy `config.example.json` → `config.json` and add your API keys.
@@ -37,11 +52,12 @@ A lightweight web UI for chatting with multiple AI providers. No frameworks, no 
 
 ## Highlights
 
-- **Eva (AIG)** — persistent memory, emotion tracking, proactive data retrieval
-- **Cognition layer** — automatic knowledge extraction, morning reflections, emotion vectors
+- **Eva (AIG)** — multi-agentic gateway with persistent memory, emotion tracking, and proactive data retrieval
+- **MCP tool ecosystem** — Kusto (memory/analytics), GitHub (repos/issues), Azure (cloud resources) — hot-reloadable at runtime
+- **Cognition layer** — automatic knowledge extraction, morning reflections, emotion vectors, conversation logging
+- **Cross-model orchestration** — routes OpenAI models via GitHub Models API, Claude/Gemini via Copilot CLI ACP
 - **Session explorer** — auto-save/restore conversations across page refresh
 - **Voice activation** — wake-word "Eva" with continuous listening
-- **MCP tools** — Query Azure Data Explorer (Kusto), GitHub repos, Azure services
 - **Settings panel** with tabbed UI (General, Models, Auth, Prompts, MCP)
 - **Inline images** — Wikimedia search or DALL-E generation
 - **LCARS theme** — Star Trek-inspired interface
