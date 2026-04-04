@@ -1,5 +1,6 @@
 // sessions.js — Session persistence and explorer panel
-// Stores chat sessions in localStorage so conversations survive page refresh.
+// Uses IndexedDB (via idb-store.js) for session snapshots.
+// Active conversation state stays in localStorage for backward compat with provider JS files.
 
 var SESSION_INDEX_KEY = 'eva_sessions';
 var SESSION_ACTIVE_KEY = 'eva_active_session';
@@ -125,15 +126,10 @@ function saveCurrentSession() {
     }
   }
 
-  try {
-    localStorage.setItem('session_' + id, JSON.stringify(snapshot));
-  } catch (e) {
-    // localStorage quota exceeded — drop HTML snapshot and retry
-    if (snapshot._htmlSnapshot) {
-      delete snapshot._htmlSnapshot;
-      try { localStorage.setItem('session_' + id, JSON.stringify(snapshot)); } catch (e2) { /* give up silently */ }
-    }
-  }
+  // Save to IndexedDB (async, non-blocking)
+  idbSaveSession(id, snapshot).catch(function(e) {
+    console.error('[Sessions] IDB save failed:', e);
+  });
   _saveSessionIndex(index);
   renderSessionList();
 }
@@ -164,17 +160,14 @@ function loadSession(id) {
   // Save current first
   saveCurrentSession();
 
-  var raw = localStorage.getItem('session_' + id);
-  if (!raw) return;
-
-  try {
-    var data = JSON.parse(raw);
+  idbLoadSession(id).then(function(data) {
+    if (!data) return;
     _restoreSession(data);
     localStorage.setItem(SESSION_ACTIVE_KEY, id);
     renderSessionList();
-  } catch(e) {
+  }).catch(function(e) {
     console.error('Failed to load session:', e);
-  }
+  });
 }
 
 /** Delete a session */
@@ -182,7 +175,9 @@ function deleteSession(id) {
   var index = _getSessionIndex();
   index = index.filter(function(s) { return s.id !== id; });
   _saveSessionIndex(index);
-  localStorage.removeItem('session_' + id);
+  idbDeleteSession(id).catch(function(e) {
+    console.error('[Sessions] IDB delete failed:', e);
+  });
 
   // If deleting the active session, start fresh
   if (_activeSessionId() === id) {
@@ -259,14 +254,24 @@ function initSessions() {
   var newBtn = document.getElementById('sessionNewBtn');
   if (newBtn) newBtn.addEventListener('click', function() { newSession(); });
 
-  // Restore active session on page load
-  var activeId = _activeSessionId();
-  if (activeId) {
-    var raw = localStorage.getItem('session_' + activeId);
-    if (raw) {
-      try { _restoreSession(JSON.parse(raw)); } catch(e) {}
+  // Migrate localStorage sessions to IndexedDB, then restore active session
+  idbMigrateFromLocalStorage().then(function() {
+    var activeId = _activeSessionId();
+    if (activeId) {
+      idbLoadSession(activeId).then(function(data) {
+        if (data) _restoreSession(data);
+      }).catch(function() {});
     }
-  }
+  }).catch(function() {
+    // Fallback: try restoring from active localStorage state
+    var activeId = _activeSessionId();
+    if (activeId) {
+      var raw = localStorage.getItem('session_' + activeId);
+      if (raw) {
+        try { _restoreSession(JSON.parse(raw)); } catch(e) {}
+      }
+    }
+  });
 
   // Auto-save on unload
   window.addEventListener('beforeunload', function() {

@@ -482,6 +482,8 @@ _kusto_token_cache = None  # Cached Kusto access token (survives model switches)
 _kusto_credential = None   # Cached credential object for token refresh
 _last_interaction_date = None  # Track last interaction date for day lifecycle
 _cognition_enabled = False  # Whether cognitive hooks are active (requires Kusto)
+_session_exchange_count = 0  # Exchange counter for auto-reflection triggers
+_session_conversation_buffer = []  # Buffer of recent (user, assistant) pairs for summarization
 
 
 # ---------------------------------------------------------------------------
@@ -825,6 +827,70 @@ def _post_response_reflection(user_message, assistant_response, model_name):
                  "Empathy": round(0.6, 3), "Trigger": trigger_text, "DecayRate": 0.1}]
     _kusto_ingest_direct(cluster, db, "EmotionState", emo_columns, emo_rows)
     print(f"[Cognition] Updated emotion state: Joy={joy:.2f} Curiosity={curiosity:.2f} Concern={concern:.2f}")
+
+    # 5. Auto-reflection — write a Reflection every 5 exchanges or on significant interactions
+    global _session_exchange_count, _session_conversation_buffer
+    _session_exchange_count += 1
+    _session_conversation_buffer.append((user_message[:200], assistant_response[:200]))
+
+    is_significant = (
+        len(assistant_response) > 800 or  # Long/detailed response
+        len(proper_nouns) >= 2 or  # Multiple entities mentioned
+        abs(joy - 0.5) > 0.2 or concern > 0.5 or  # Emotional shift
+        "?" in user_message and len(user_message) > 50  # Deep question
+    )
+
+    if _session_exchange_count % 5 == 0 or is_significant:
+        # Build a compact reflection from recent exchanges
+        recent = _session_conversation_buffer[-3:]  # Last 3 exchanges
+        topics = set()
+        for u, a in recent:
+            for word in re.findall(r'\b[A-Z][a-z]{2,}\b', u):
+                if word not in ignore:
+                    topics.add(word)
+
+        topic_str = ", ".join(list(topics)[:5]) if topics else "general conversation"
+        reflection_text = (
+            f"Exchange #{_session_exchange_count}: Discussed {topic_str}. "
+            f"Emotional tone — Joy:{joy:.2f}, Concern:{concern:.2f}. "
+            f"{'Significant exchange — ' if is_significant else ''}"
+            f"User asked about: {user_message[:80]}."
+        )
+
+        ref_columns = ["Reflection", "Trigger", "Timestamp"]
+        ref_rows = [{"Reflection": reflection_text, "Trigger": user_message[:100], "Timestamp": now}]
+        _kusto_ingest_direct(cluster, db, "Reflections", ref_columns, ref_rows)
+        print(f"[Cognition] Auto-reflection #{_session_exchange_count}: {reflection_text[:100]}")
+
+    # 6. Auto-summarize — write a MemorySummary every 10 exchanges
+    if _session_exchange_count % 10 == 0 and len(_session_conversation_buffer) >= 5:
+        # Summarize the last 10 exchanges
+        summary_exchanges = _session_conversation_buffer[-10:]
+        all_topics = set()
+        user_intents = []
+        for u, a in summary_exchanges:
+            for word in re.findall(r'\b[A-Z][a-z]{2,}\b', u):
+                if word not in ignore:
+                    all_topics.add(word)
+            # Capture first 40 chars of each user message as intent
+            user_intents.append(u[:40].strip())
+
+        topic_str = ", ".join(list(all_topics)[:8]) if all_topics else "various topics"
+        period = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%d %H:%M")
+        summary_text = (
+            f"Session block ({_session_exchange_count - 9}–{_session_exchange_count}): "
+            f"Topics: {topic_str}. "
+            f"User intents: {'; '.join(user_intents[:5])}. "
+            f"{len(summary_exchanges)} exchanges total."
+        )
+
+        sum_columns = ["Period", "Summary", "Timestamp"]
+        sum_rows = [{"Period": period, "Summary": summary_text[:500], "Timestamp": now}]
+        _kusto_ingest_direct(cluster, db, "MemorySummaries", sum_columns, sum_rows)
+        print(f"[Cognition] Auto-summary: {summary_text[:100]}")
+
+        # Trim buffer to prevent unbounded growth
+        _session_conversation_buffer = _session_conversation_buffer[-10:]
 
 
 class BridgeHandler(BaseHTTPRequestHandler):
