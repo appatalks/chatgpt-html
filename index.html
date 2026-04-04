@@ -44,27 +44,27 @@
   <!-- Eva Theme Sidebar (shown in Eva theme only) -->
   <nav id="evaSidebar" class="eva-sidebar" aria-label="Eva sidebar">
     <div class="eva-sidebar-header">
-      <img src="core/img/Eva-images.png" alt="Eva" class="eva-sidebar-avatar">
+      <img src="core/img/eva-face-sm.png" alt="Eva" class="eva-sidebar-avatar">
       <span class="eva-sidebar-title">Eva</span>
     </div>
     <div class="eva-sidebar-nav">
       <button id="evaNewChatBtn" class="eva-nav-item" type="button" title="New Chat">
-        <span class="eva-nav-icon">⊕</span> New Chat <span class="eva-new-badge">+</span>
+        <span class="eva-nav-icon">+</span> New Chat
       </button>
       <button id="evaChatsBtn" class="eva-nav-item" type="button" title="Chats" onclick="toggleSessionPanel()">
-        <span class="eva-nav-icon">💬</span> Chats
+        <span class="eva-nav-icon">&#x1F4AC;</span> Chats
       </button>
-      <button id="evaPromptsBtn" class="eva-nav-item" type="button" title="Prompts" onclick="document.getElementById('settingsButton').click();setTimeout(function(){document.querySelector('[data-stab=prompts]').click()},100)">
-        <span class="eva-nav-icon">✎</span> Prompts
+      <button id="evaPromptsBtn" class="eva-nav-item" type="button" title="Prompts" onclick="document.getElementById('settingsButton').click();setTimeout(function(){document.querySelector('[data-stab=prompts]').click()},200)">
+        <span class="eva-nav-icon">&#x1F4DD;</span> Prompts
       </button>
-      <button id="evaModelsBtn" class="eva-nav-item" type="button" title="Models" onclick="document.getElementById('settingsButton').click();setTimeout(function(){document.querySelector('[data-stab=models]').click()},100)">
-        <span class="eva-nav-icon">⬡</span> Models
+      <button id="evaModelsBtn" class="eva-nav-item" type="button" title="Models" onclick="document.getElementById('settingsButton').click();setTimeout(function(){document.querySelector('[data-stab=models]').click()},200)">
+        <span class="eva-nav-icon">&#x1F916;</span> Models
       </button>
       <button id="evaSettingsBtn" class="eva-nav-item" type="button" title="Settings" onclick="document.getElementById('settingsButton').click()">
-        <span class="eva-nav-icon">⚙</span> Settings
+        <span class="eva-nav-icon">&#x2699;&#xFE0F;</span> Settings
       </button>
-      <button id="evaAboutBtn" class="eva-nav-item" type="button" title="About" onclick="document.getElementById('settingsButton').click();setTimeout(function(){document.querySelector('[data-stab=general]').click()},100)">
-        <span class="eva-nav-icon">ⓘ</span> About
+      <button id="evaAboutBtn" class="eva-nav-item" type="button" title="About" onclick="document.getElementById('settingsButton').click();setTimeout(function(){document.querySelector('[data-stab=general]').click()},200)">
+        <span class="eva-nav-icon">&#x2139;&#xFE0F;</span> About
       </button>
     </div>
     <div class="eva-sidebar-sessions">
@@ -126,7 +126,7 @@
       <div id="txtOutput" rows="10" wrap="soft" placeholder="Output">
         <!-- Eva Welcome MOTD (shown when chat is empty, Eva theme) -->
         <div id="evaWelcome" class="eva-welcome">
-          <img src="core/img/Eva-images.png" alt="Eva" class="eva-welcome-avatar">
+          <img src="core/img/eva-face-lg.png" alt="Eva" class="eva-welcome-avatar">
           <h2 class="eva-welcome-title">Hello! I'm <span class="eva-highlight">Eva</span></h2>
           <p class="eva-welcome-subtitle">Your AI assistant. Ask me anything or choose a suggestion to get started.</p>
           <div class="eva-suggestions">

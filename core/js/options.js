@@ -681,7 +681,7 @@ function applyTheme(theme) {
 
   // Ensure monitors dock is visible on LCARS and Eva themes
   var mon = document.getElementById('lcarsMonitorsDock');
-  if (mon) mon.style.display = (theme === 'lcars' || theme === 'eva') ? 'block' : 'none';
+  if (mon) mon.style.display = (theme === 'lcars') ? 'block' : 'none';
 
   // Toggle Eva sidebar visibility
   var evaSidebar = document.getElementById('evaSidebar');

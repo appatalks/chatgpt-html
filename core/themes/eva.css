@@ -330,52 +330,8 @@ body.theme-eva .input-monitors-row {
   flex: 0 0 auto;
 }
 body.theme-eva .lcars-monitors {
-  display: none; /* hide monitors in Eva theme — cleaner look */
+  display: none !important; /* hide monitors in Eva theme — cleaner look */
 }
-body.theme-eva #lcarsMonitorTabs {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 3px;
-  margin-bottom: 8px;
-  width: 100%;
-  box-sizing: border-box;
-  overflow: hidden;
-}
-body.theme-eva .monitor-tab {
-  background: var(--eva-sidebar);
-  color: var(--eva-text-muted);
-  border: 1px solid var(--eva-border);
-  border-radius: 999px;
-  padding: 4px 6px;
-  font: 500 11px var(--eva-font);
-  letter-spacing: .01em;
-  cursor: pointer;
-  min-width: 0;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  transition: all 0.2s;
-}
-body.theme-eva .monitor-tab.active { background: var(--eva-purple); color: #fff; border-color: var(--eva-purple); }
-body.theme-eva .monitor-tab:hover { border-color: var(--eva-purple); color: var(--eva-text); }
-body.theme-eva #lcarsMonitorPanels { background: transparent; border: none; border-radius: 0; padding: 4px; overflow: hidden; flex: 1 1 auto; min-height: 0; }
-body.theme-eva .monitor-panel { height: 100%; display: none; }
-body.theme-eva .monitor-panel.active { display: block; }
-body.theme-eva .monitor-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 6px; height: 100%; align-content: start; }
-body.theme-eva .monitor-grid.one-col { grid-template-columns: 1fr; }
-body.theme-eva .monitor-card {
-  background: var(--eva-chat-bg);
-  border: 1px solid var(--eva-border);
-  border-radius: 8px;
-  padding: 6px 8px;
-  min-height: 50px;
-  color: var(--eva-text);
-}
-body.theme-eva .monitor-card.monitor-terminal { min-height: 120px; height: 100%; background: rgba(0,0,0,0.35); }
-body.theme-eva .monitor-title { font: 500 10px var(--eva-font); letter-spacing: .06em; text-transform: uppercase; color: var(--eva-text-muted); margin-bottom: 2px; }
-body.theme-eva .monitor-value { font: 500 13px var(--eva-font); }
-body.theme-eva .progress { height: 8px; background: rgba(255,255,255,0.08); border-radius: 4px; overflow: hidden; border: 1px solid var(--eva-border); }
-body.theme-eva .progress .bar { height: 100%; background: linear-gradient(90deg, var(--eva-accent), var(--eva-purple)); width: 0%; transition: width .3s ease; border-radius: 4px; }
 
 /* ── Chat Input — clean bar matching splash ─────────────────── */
 body.theme-eva .chat-input-container {
