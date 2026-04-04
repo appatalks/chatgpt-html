@@ -1158,8 +1158,7 @@ body.theme-lcars .input-controls .controls-top {
   display: contents; /* dissolve wrapper — children go into parent grid */
 }
 body.theme-lcars .input-controls .controls-bottom {
-  display: flex;
-  min-height: 0;
+  display: contents; /* dissolve wrapper — Send becomes direct grid child like Upload/Mic */
 }
 body.theme-lcars .input-controls .controls-bottom #btnSend {
   flex: 1 1 auto;
