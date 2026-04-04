@@ -1,0 +1,833 @@
+/* ── Eva Theme ──────────────────────────────────────────────
+ *  Modern dark UI matching the Eva-splash design.
+ *  Dark navy sidebar with clean nav items (not colored bands),
+ *  lighter chat area, purple/blue neon glow, Inter font,
+ *  Eva face avatar, rounded glassmorphism.
+ * ─────────────────────────────────────────────────────────── */
+
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+
+/* ── CSS Variables ─────────────────────────────────────────── */
+body.theme-eva {
+  --eva-bg:          #0d1017;
+  --eva-sidebar:     #151929;
+  --eva-sidebar-item:#1c2240;
+  --eva-surface:     #1a1e2e;
+  --eva-surface-2:   #222840;
+  --eva-chat-bg:     #13161f;
+  --eva-border:      rgba(255,255,255,0.07);
+  --eva-border-hl:   rgba(139,92,246,0.35);
+  --eva-text:        #e8ecf4;
+  --eva-text-muted:  #7b84a0;
+  --eva-accent:      #3b82f6;
+  --eva-accent-hover:#5b9aff;
+  --eva-purple:      #8b5cf6;
+  --eva-purple-light:#a78bfa;
+  --eva-purple-glow: rgba(139,92,246,0.25);
+  --eva-blue-glow:   rgba(59,130,246,0.15);
+  --eva-danger:      #ef4444;
+  --eva-success:     #22c55e;
+  --eva-warning:     #f59e0b;
+  --eva-radius:      16px;
+  --eva-radius-sm:   10px;
+  --eva-font:        "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+
+/* ── Base & Grid Layout ────────────────────────────────────── */
+body.theme-eva {
+  background: var(--eva-bg) !important;
+  background-image: none !important;
+  color: var(--eva-text);
+  font-family: var(--eva-font);
+  display: grid;
+  grid-template-columns: 240px 1fr;
+  grid-template-rows: 1fr;
+  gap: 0;
+  align-items: stretch;
+  justify-content: stretch;
+  height: 100vh;
+  padding: 0;
+  box-sizing: border-box;
+  overflow: hidden;
+}
+
+/* ── Hide LCARS sidebar in Eva theme ───────────────────────── */
+body.theme-eva #lcarsSidebar { display: none !important; }
+
+/* ── Eva Sidebar ───────────────────────────────────────────── */
+.eva-sidebar { display: none; } /* hidden by default; shown via JS */
+body.theme-eva .eva-sidebar {
+  display: flex;
+  grid-column: 1;
+  grid-row: 1;
+  flex-direction: column;
+  background: var(--eva-sidebar);
+  border-right: 1px solid var(--eva-border);
+  height: 100vh;
+  overflow: hidden;
+  font-family: var(--eva-font);
+}
+
+/* Sidebar header — avatar + title */
+.eva-sidebar-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 16px 18px 12px;
+  border-bottom: 1px solid var(--eva-border);
+}
+.eva-sidebar-avatar {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  object-fit: cover;
+}
+.eva-sidebar-title {
+  font: 600 16px var(--eva-font);
+  color: var(--eva-text);
+}
+
+/* Sidebar nav items */
+.eva-sidebar-nav {
+  display: flex;
+  flex-direction: column;
+  padding: 8px 10px;
+  gap: 2px;
+}
+.eva-nav-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 10px 12px;
+  background: transparent;
+  border: none;
+  border-radius: 8px;
+  color: var(--eva-text-muted);
+  font: 400 14px var(--eva-font);
+  text-align: left;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.eva-nav-item:hover {
+  background: var(--eva-sidebar-item);
+  color: var(--eva-text);
+}
+.eva-nav-icon {
+  width: 20px;
+  text-align: center;
+  font-size: 15px;
+  flex-shrink: 0;
+}
+.eva-new-badge {
+  margin-left: auto;
+  background: var(--eva-purple);
+  color: #fff;
+  width: 20px;
+  height: 20px;
+  border-radius: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+/* Sidebar sessions section */
+.eva-sidebar-sessions {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  padding: 4px 10px;
+  overflow-y: auto;
+  border-top: 1px solid var(--eva-border);
+}
+.eva-sessions-label {
+  font: 500 11px var(--eva-font);
+  color: var(--eva-text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  padding: 8px 12px 4px;
+}
+.eva-session-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.eva-session-item {
+  padding: 8px 12px;
+  font-size: 13px;
+  color: var(--eva-text-muted);
+  border-radius: 6px;
+  cursor: pointer;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  transition: all 0.15s;
+}
+.eva-session-item:hover {
+  background: var(--eva-sidebar-item);
+  color: var(--eva-text);
+}
+.eva-session-empty {
+  padding: 8px 12px;
+  font-size: 12px;
+  color: rgba(255,255,255,0.2);
+}
+.eva-view-all {
+  padding: 6px 12px;
+  font: 500 12px var(--eva-font);
+  color: var(--eva-accent);
+  background: none;
+  border: none;
+  text-align: left;
+  cursor: pointer;
+}
+.eva-view-all:hover { color: var(--eva-accent-hover); text-decoration: underline; }
+
+/* Sidebar footer — user area */
+.eva-sidebar-footer {
+  margin-top: auto;
+  border-top: 1px solid var(--eva-border);
+  padding: 10px 14px;
+}
+.eva-sidebar-user {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+.eva-sidebar-user:hover { background: var(--eva-sidebar-item); }
+.eva-user-icon {
+  width: 30px;
+  height: 30px;
+  background: var(--eva-surface-2);
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 16px;
+}
+.eva-user-name {
+  font: 500 14px var(--eva-font);
+  color: var(--eva-text);
+  flex: 1;
+}
+.eva-user-arrow {
+  color: var(--eva-text-muted);
+  font-size: 18px;
+}
+
+/* ── Hide footer controls — they live in sidebar ───────────── */
+body.theme-eva .container { display: none; }
+body.theme-eva footer { grid-column: 2; display: none; }
+body.theme-eva footer #settingsButton,
+body.theme-eva footer #clearMessagesBtn,
+body.theme-eva footer #printButton { display: none; }
+
+/* ── Main Container ─────────────────────────────────────────── */
+body.theme-eva #idContainer {
+  grid-column: 2;
+  grid-row: 1;
+  max-width: none;
+  width: 100%;
+  align-self: stretch;
+  height: auto;
+  margin: 0;
+  padding: 0;
+  border: none;
+  border-radius: 0;
+  background: var(--eva-surface);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+body.theme-eva #idContainer,
+body.theme-eva .chat-input-container,
+body.theme-eva #txtOutput {
+  color: var(--eva-text);
+}
+
+/* ── Chat Output ────────────────────────────────────────────── */
+body.theme-eva #txtOutput {
+  width: 100%;
+  flex: 1 1 auto;
+  min-height: 0;
+  height: auto;
+  overflow-y: auto;
+  border: none;
+  border-radius: 0;
+  padding: 20px 24px;
+  background: var(--eva-chat-bg);
+  font-size: 15px;
+  line-height: 1.65;
+  box-sizing: border-box;
+}
+
+/* Scrollbar */
+body.theme-eva #txtOutput::-webkit-scrollbar { width: 5px; }
+body.theme-eva #txtOutput::-webkit-scrollbar-track { background: transparent; }
+body.theme-eva #txtOutput::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.1); border-radius: 3px; }
+body.theme-eva #txtOutput::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.18); }
+
+/* Inner flex wrapper */
+body.theme-eva #textToSynth {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: hidden;
+}
+
+/* ── Chat Bubbles ───────────────────────────────────────────── */
+body.theme-eva #txtOutput .chat-bubble {
+  margin: 6px 0;
+  padding: 12px 16px;
+  border-radius: 12px;
+  background: transparent;
+  border: none;
+  border-left: none;
+  box-shadow: none;
+  color: var(--eva-text);
+  line-height: 1.7;
+}
+body.theme-eva #txtOutput .chat-bubble .eva,
+body.theme-eva #txtOutput .chat-bubble .user { font-weight: 600; margin-right: 6px; }
+body.theme-eva #txtOutput .eva-bubble {
+  background: var(--eva-surface-2);
+  border: 1px solid var(--eva-border);
+  border-radius: 4px 14px 14px 14px;
+}
+body.theme-eva #txtOutput .user-bubble {
+  background: rgba(59,130,246,0.1);
+  border: 1px solid rgba(59,130,246,0.15);
+  border-radius: 14px 14px 4px 14px;
+  margin-left: 10%;
+}
+body.theme-eva #txtOutput .chat-bubble .eva {
+  color: var(--eva-purple-light);
+}
+body.theme-eva #txtOutput .chat-bubble .user {
+  color: var(--eva-accent);
+}
+body.theme-eva #txtOutput .chat-bubble .eva-thoughts {
+  color: var(--eva-purple);
+  font-style: italic;
+  opacity: 0.8;
+}
+body.theme-eva .bubble-time { color: var(--eva-text-muted); font-size: 11px; }
+
+/* ── Monitors Dock — hidden in Eva, clean layout ────────────── */
+body.theme-eva .input-monitors-row {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  margin-top: 0;
+  flex: 0 0 auto;
+}
+body.theme-eva .lcars-monitors {
+  display: none !important; /* hide monitors in Eva theme — cleaner look */
+}
+
+/* ── Chat Input — buttons inside the pill ───────────────────── */
+body.theme-eva .chat-input-container {
+  width: auto;
+  margin: 8px 16px 4px;
+  flex: 0 0 auto;
+  max-width: none;
+  min-height: 56px;
+  max-height: none;
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  border: 1px solid rgba(255,255,255,0.1);
+  border-radius: 20px;
+  padding: 0;
+  background: var(--eva-chat-bg);
+  box-sizing: border-box;
+  overflow: hidden;
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+body.theme-eva .chat-input-container:focus-within {
+  border-color: var(--eva-purple);
+  box-shadow: 0 0 0 3px var(--eva-purple-glow);
+}
+body.theme-eva #txtMsg {
+  flex: 1;
+  max-height: 200px;
+  min-height: 60px;
+  width: 100%;
+  height: auto;
+  border: none;
+  border-radius: 0;
+  background: transparent;
+  color: var(--eva-text);
+  padding: 14px 18px 6px;
+  font: 400 14px var(--eva-font);
+  line-height: 1.6;
+  margin: 0;
+  outline: none;
+  order: 1;
+  transition: none;
+  text-align: left !important;
+  box-sizing: border-box;
+}
+body.theme-eva #txtMsg:focus {
+  border-color: transparent;
+  box-shadow: none;
+}
+body.theme-eva #txtMsg[placeholder]::before {
+  content: attr(placeholder);
+  color: var(--eva-text-muted);
+  pointer-events: none;
+  display: block;
+  text-align: left;
+}
+body.theme-eva #txtMsg:not(:empty)::before { content: none; }
+body.theme-eva #txtMsg br:first-child:last-child::before { content: attr(placeholder); }
+body.theme-eva #txtMsg img { width: 48px; height: 48px; border-radius: 6px; }
+
+/* Controls bar — row at bottom: icons left, send right */
+body.theme-eva .input-controls-window {
+  background: transparent;
+  border: none;
+  border-radius: 0;
+  padding: 0;
+  display: block;
+  box-sizing: border-box;
+  order: 2;
+  width: 100%;
+}
+body.theme-eva .input-controls-window .input-controls {
+  border: none;
+  background: transparent;
+  border-radius: 0;
+  padding: 4px 10px 8px;
+  width: 100%;
+  box-sizing: border-box;
+  overflow: visible;
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 2px;
+}
+body.theme-eva .input-controls .controls-top {
+  display: flex;
+  gap: 2px;
+  align-items: center;
+  order: 1;
+  margin-right: auto; /* push send to far right */
+}
+body.theme-eva .input-controls .controls-bottom {
+  display: flex;
+  align-items: center;
+  order: 2;
+  margin-left: auto;
+  min-height: 0;
+}
+
+/* ── Buttons ────────────────────────────────────────────────── */
+body.theme-eva button,
+body.theme-eva select,
+body.theme-eva input[type="checkbox"] {
+  background: var(--eva-surface-2);
+  color: var(--eva-text);
+  border: 1px solid var(--eva-border);
+  border-radius: var(--eva-radius-sm);
+  padding: 8px 12px;
+  font-family: var(--eva-font);
+  transition: all 0.15s;
+}
+/* Input control buttons — icon-only style */
+body.theme-eva .input-controls .lcars-btn,
+body.theme-eva .input-controls #btnSend {
+  font: 500 0px var(--eva-font); /* hide text, icon-only */
+  letter-spacing: 0;
+  text-transform: none;
+  padding: 0;
+  margin: 0;
+  width: 34px;
+  height: 34px;
+  min-height: 34px;
+  min-width: 34px;
+  border: none;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+body.theme-eva #uploadButton {
+  background: transparent;
+  color: var(--eva-text-muted);
+  border: none;
+  font-size: 0;
+  width: 34px;
+  height: 34px;
+}
+body.theme-eva #uploadButton::after { content: '\1F4CE'; font-size: 16px; }
+body.theme-eva #uploadButton:hover { background: rgba(255,255,255,0.08); color: var(--eva-text); }
+body.theme-eva #micButton,
+body.theme-eva button#micButton {
+  background: transparent;
+  color: var(--eva-text-muted);
+  border: none;
+  font-size: 0;
+  width: 34px;
+  height: 34px;
+}
+body.theme-eva #micButton::after { content: '\1F3A4'; font-size: 15px; }
+body.theme-eva #micButton:hover { background: rgba(255,255,255,0.08); color: var(--eva-text); }
+/* Settings gear in input bar (Eva only) */
+.eva-input-gear { display: none; } /* hidden in non-Eva themes */
+body.theme-eva .eva-input-gear {
+  display: flex !important;
+  background: transparent;
+  color: var(--eva-text-muted);
+  border: none;
+  font-size: 0;
+  width: 34px;
+  height: 34px;
+}
+body.theme-eva .eva-input-gear::after { content: '\2699\FE0F'; font-size: 15px; }
+body.theme-eva .eva-input-gear:hover { background: rgba(255,255,255,0.08); color: var(--eva-text); }
+/* Send button — round blue circle with arrow */
+body.theme-eva #btnSend,
+body.theme-eva button#btnSend {
+  background: var(--eva-accent);
+  color: #fff;
+  font-size: 0;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  border: none;
+  position: relative;
+}
+body.theme-eva #btnSend::after { content: '\27A4'; font-size: 16px; }
+body.theme-eva #btnSend:hover { background: var(--eva-accent-hover); transform: scale(1.05); }
+body.theme-eva #clearMessagesBtn { background: rgba(239,68,68,0.15); color: #ef4444; border: 1px solid rgba(239,68,68,0.2); }
+body.theme-eva #clearMessagesBtn:hover { background: var(--eva-danger); color: #fff; }
+
+body.theme-eva .lcars-btn {
+  background: var(--eva-surface-2);
+  color: var(--eva-text);
+  border: 1px solid var(--eva-border);
+  border-radius: var(--eva-radius-sm);
+  padding: 8px 10px;
+  font: 500 12px var(--eva-font);
+  letter-spacing: .01em;
+  text-transform: uppercase;
+  cursor: pointer;
+  width: 100%;
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 1.2;
+  transition: all 0.15s;
+}
+body.theme-eva .lcars-btn:hover { background: var(--eva-purple); color: #fff; border-color: var(--eva-purple); }
+
+/* Mic button sizing */
+body.theme-eva .mic-button {
+  background-image: none;
+  width: 100%;
+  height: 100%;
+  border-radius: var(--eva-radius-sm);
+  margin-left: 0;
+  margin: 0;
+}
+
+/* ── Status Bar ─────────────────────────────────────────────── */
+body.theme-eva #idText {
+  border: 1px solid var(--eva-border);
+  background: var(--eva-sidebar);
+  color: var(--eva-text-muted);
+  min-height: 26px;
+  font: 400 12px var(--eva-font);
+  letter-spacing: .01em;
+  border-radius: 6px;
+}
+body.theme-eva #idText.status-info { border-color: var(--eva-accent); background: var(--eva-blue-glow); }
+body.theme-eva #idText.status-warn { border-color: var(--eva-warning); background: rgba(245,158,11,0.08); }
+body.theme-eva #idText.status-error { border-color: var(--eva-danger); background: rgba(239,68,68,0.08); }
+body.theme-eva #idText::before { display: none; }
+body.theme-eva #idText::after {
+  content: '▍';
+  display: inline-block;
+  margin-left: 8px;
+  color: var(--eva-purple);
+  animation: eva-caret-blink 1s step-start infinite;
+}
+@keyframes eva-caret-blink { 50% { opacity: 0; } }
+body.theme-eva #idText.status-warn::before { background: var(--eva-warning); }
+body.theme-eva #idText.status-error::before { background: var(--eva-danger); }
+
+/* ── Settings Panel ─────────────────────────────────────────── */
+body.theme-eva .settings-overlay { background: rgba(0,0,0,0.6); backdrop-filter: blur(6px); }
+body.theme-eva #settingsMenu {
+  background: var(--eva-surface);
+  color: var(--eva-text);
+  border: 1px solid rgba(139,92,246,0.2);
+  border-radius: var(--eva-radius);
+  box-shadow: 0 12px 48px rgba(0,0,0,0.5), 0 0 80px var(--eva-purple-glow);
+}
+body.theme-eva .settings-header { border-color: var(--eva-border); }
+body.theme-eva .settings-header h3 { color: var(--eva-text); font-family: var(--eva-font); }
+body.theme-eva .settings-close { color: var(--eva-text-muted); }
+body.theme-eva .settings-close:hover { color: #fff; background: rgba(255,255,255,0.06); border-radius: 8px; }
+
+body.theme-eva .settings-tabs {
+  border-color: var(--eva-border);
+  background: var(--eva-sidebar);
+  padding: 4px 14px;
+  gap: 2px;
+}
+body.theme-eva .settings-tab {
+  color: var(--eva-text-muted);
+  background: transparent;
+  border-radius: 8px 8px 0 0;
+  border-bottom: 2px solid transparent;
+  font: 500 13px var(--eva-font);
+}
+body.theme-eva .settings-tab:hover { color: var(--eva-text); background: rgba(255,255,255,0.04); }
+body.theme-eva .settings-tab.active {
+  color: #fff;
+  background: var(--eva-surface);
+  border-bottom-color: var(--eva-purple);
+}
+
+body.theme-eva .settings-panel label { color: var(--eva-text-muted); font: 500 13px var(--eva-font); }
+body.theme-eva .settings-panel select,
+body.theme-eva .settings-panel input[type="number"],
+body.theme-eva .settings-panel input[type="text"],
+body.theme-eva .settings-panel input[type="password"],
+body.theme-eva .settings-panel textarea {
+  background: var(--eva-chat-bg);
+  color: var(--eva-text);
+  border: 1px solid var(--eva-border);
+  border-radius: 8px;
+  font-family: var(--eva-font);
+}
+body.theme-eva .settings-panel select:focus,
+body.theme-eva .settings-panel input:focus,
+body.theme-eva .settings-panel textarea:focus {
+  border-color: var(--eva-purple);
+  outline: none;
+  box-shadow: 0 0 0 2px var(--eva-purple-glow);
+}
+body.theme-eva .settings-panel select optgroup { background: var(--eva-chat-bg); color: var(--eva-text); }
+
+body.theme-eva .auth-note { color: var(--eva-text-muted); }
+body.theme-eva .auth-toggle {
+  background: var(--eva-sidebar);
+  color: var(--eva-text);
+  border: 1px solid var(--eva-border);
+}
+body.theme-eva .auth-toggle:hover { background: var(--eva-purple); color: #fff; }
+body.theme-eva .auth-save { background: var(--eva-accent); color: #fff; border: none; }
+body.theme-eva .auth-save:hover { background: var(--eva-accent-hover); }
+body.theme-eva .prompt-hint { color: var(--eva-text-muted); }
+
+/* MCP overrides */
+body.theme-eva .mcp-preset { background: var(--eva-sidebar); border: 1px solid var(--eva-border); border-radius: 8px; }
+body.theme-eva .mcp-status { background: var(--eva-chat-bg); color: var(--eva-text-muted); }
+body.theme-eva .mcp-badge { background: var(--eva-purple); }
+
+/* ── Markdown ───────────────────────────────────────────────── */
+body.theme-eva #txtOutput .md { line-height: 1.7; }
+body.theme-eva #txtOutput .md h1,
+body.theme-eva #txtOutput .md h2,
+body.theme-eva #txtOutput .md h3 {
+  border-bottom: 1px solid var(--eva-border);
+  padding-bottom: 6px;
+  color: var(--eva-text);
+}
+body.theme-eva #txtOutput .md code {
+  background: rgba(139,92,246,0.1);
+  color: var(--eva-purple-light);
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-size: 0.88em;
+}
+body.theme-eva #txtOutput .md pre code {
+  display: block;
+  background: #0d1017;
+  border: 1px solid var(--eva-border);
+  border-radius: 10px;
+  padding: 16px 18px;
+  overflow-x: auto;
+  color: #e2e8f0;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+body.theme-eva #txtOutput .md blockquote {
+  margin: 0.6em 0;
+  padding: 10px 16px;
+  border-left: 3px solid var(--eva-purple);
+  background: rgba(139,92,246,0.06);
+  border-radius: 0 8px 8px 0;
+  color: var(--eva-text);
+}
+body.theme-eva #txtOutput .md a { color: var(--eva-accent); text-decoration: none; }
+body.theme-eva #txtOutput .md a:hover { color: var(--eva-accent-hover); text-decoration: underline; }
+body.theme-eva #txtOutput .md table { width: 100%; border-collapse: collapse; margin: 0.6em 0; }
+body.theme-eva #txtOutput .md th,
+body.theme-eva #txtOutput .md td {
+  border: 1px solid var(--eva-border);
+  padding: 8px 10px;
+}
+body.theme-eva #txtOutput .md th { background: var(--eva-sidebar); font-weight: 600; }
+body.theme-eva #txtOutput .md tr:nth-child(even) { background: rgba(255,255,255,0.02); }
+body.theme-eva #txtOutput .chat-bubble .md code { background: rgba(139,92,246,0.12); color: var(--eva-purple-light); }
+
+/* ── Inline Images ──────────────────────────────────────────── */
+body.theme-eva .eva-inline-img {
+  border-color: var(--eva-border);
+  border-radius: var(--eva-radius-sm);
+}
+
+/* ── Session Panel ──────────────────────────────────────────── */
+body.theme-eva .session-panel {
+  background: var(--eva-sidebar);
+  font-family: var(--eva-font);
+  border-right: 1px solid var(--eva-border);
+}
+body.theme-eva .session-panel-header { border-color: var(--eva-border); color: var(--eva-text); }
+body.theme-eva .session-item.active {
+  border-left-color: var(--eva-purple);
+  background: rgba(139,92,246,0.1);
+}
+body.theme-eva .session-panel-actions button {
+  border-color: var(--eva-border);
+  background: var(--eva-surface-2);
+  color: var(--eva-text);
+}
+body.theme-eva .session-panel-actions button:hover { background: var(--eva-purple); color: #fff; }
+body.theme-eva .session-time { color: var(--eva-text-muted); }
+
+/* ── Voice Indicators ───────────────────────────────────────── */
+body.theme-eva .mic-listening { background-color: var(--eva-success) !important; box-shadow: 0 0 12px rgba(34,197,94,0.4); }
+body.theme-eva .mic-awake { background-color: var(--eva-warning) !important; box-shadow: 0 0 12px rgba(245,158,11,0.4); }
+body.theme-eva .mic-sending { background-color: var(--eva-accent) !important; box-shadow: 0 0 12px rgba(59,130,246,0.4); }
+
+/* ── Welcome MOTD Screen ───────────────────────────────────── */
+.eva-welcome { display: none; } /* hidden by default for non-Eva themes */
+body.theme-eva .eva-welcome {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  padding: 40px 24px;
+  min-height: 60%;
+  gap: 8px;
+}
+.eva-welcome-avatar {
+  width: 80px;
+  height: 80px;
+  border-radius: 50%;
+  margin-bottom: 12px;
+  object-fit: cover;
+  box-shadow: 0 0 30px var(--eva-purple-glow), 0 0 60px rgba(139,92,246,0.1);
+}
+.eva-welcome-title {
+  font: 700 28px var(--eva-font);
+  color: var(--eva-text);
+  margin: 0;
+}
+.eva-welcome-title .eva-highlight {
+  background: linear-gradient(135deg, var(--eva-purple) 0%, var(--eva-accent) 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+.eva-welcome-subtitle {
+  font: 400 15px var(--eva-font);
+  color: var(--eva-text-muted);
+  max-width: 400px;
+  margin: 0 0 20px;
+  line-height: 1.5;
+}
+.eva-suggestions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  max-width: 520px;
+  width: 100%;
+}
+.eva-suggestion {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 14px 16px;
+  background: var(--eva-surface-2);
+  border: 1px solid var(--eva-border);
+  border-radius: 12px;
+  cursor: pointer;
+  text-align: left;
+  color: var(--eva-text);
+  font-family: var(--eva-font);
+  transition: all 0.2s;
+}
+.eva-suggestion:hover {
+  background: var(--eva-sidebar-item);
+  border-color: var(--eva-purple);
+  transform: translateY(-1px);
+}
+.eva-sug-icon {
+  font-size: 18px;
+  width: 24px;
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+.eva-suggestion strong {
+  font: 600 13px var(--eva-font);
+  color: var(--eva-text);
+  display: block;
+  margin-bottom: 2px;
+}
+.eva-sug-sub {
+  font: 400 12px var(--eva-font);
+  color: var(--eva-text-muted);
+}
+
+/* ── Eva Disclaimer Footer ─────────────────────────────────── */
+.eva-disclaimer { display: none; } /* hidden by default */
+body.theme-eva .eva-disclaimer {
+  display: block;
+  text-align: center;
+  font: 400 11px var(--eva-font);
+  color: var(--eva-text-muted);
+  padding: 6px 16px 8px;
+  background: var(--eva-surface);
+  border-top: 1px solid var(--eva-border);
+  opacity: 0.7;
+}
+
+/* ── Responsive ─────────────────────────────────────────────── */
+@media (max-width: 599px) {
+  body.theme-eva { grid-template-columns: 1fr; padding: 0; }
+  body.theme-eva .eva-sidebar { display: none !important; }
+  body.theme-eva #idContainer { grid-column: 1; border-radius: 0; border: none; height: 100vh; }
+  body.theme-eva #txtOutput { padding: 12px; font-size: 14px; border-radius: 0; }
+  body.theme-eva .chat-input-container { padding: 8px 12px; border-radius: 0; }
+  body.theme-eva #settingsMenu { width: 94vw; border-radius: 12px; }
+  body.theme-eva .eva-suggestions { grid-template-columns: 1fr; }
+  body.theme-eva .eva-welcome-avatar { width: 60px; height: 60px; }
+  body.theme-eva .eva-welcome-title { font-size: 22px; }
+}
+
+@media (min-width: 600px) and (max-width: 1023px) {
+  body.theme-eva { grid-template-columns: 200px 1fr; }
+  body.theme-eva #idContainer { width: 100%; }
+}
+
+@media (min-width: 1024px) {
+  body.theme-eva #idContainer { max-width: none; }
+}

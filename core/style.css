@@ -704,8 +704,8 @@ body.theme-lcars .input-monitors-row {
   width: 100%;
   margin-top: 6px;
   flex: 0 0 auto;
-  min-height: 140px; /* ensure send button is always visible */
-  max-height: 200px;
+  min-height: 160px; /* ensure send button is always visible */
+  max-height: 240px;
 }
 body.theme-lcars .lcars-monitors {
   background: rgba(0,0,0,0.4);
@@ -1146,8 +1146,8 @@ body.theme-lcars .input-controls-window .input-controls {
 body.theme-lcars #txtMsg { max-height: none; height: 100%; }
 /* LCARS input controls column */
 body.theme-lcars .input-controls {
-  display: grid;
-  grid-template-rows: 1fr 1fr 2fr; /* Upload | Mic | Send — proportional */
+  display: flex;
+  flex-direction: column;
   gap: 4px;
   height: 100%;
   padding: 0;
@@ -1155,14 +1155,12 @@ body.theme-lcars .input-controls {
 }
 /* All three buttons: uniform LCARS style */
 body.theme-lcars .input-controls .controls-top {
-  display: contents; /* dissolve wrapper — children go into parent grid */
+  display: contents; /* dissolve wrapper — children go into parent flex */
 }
 body.theme-lcars .input-controls .controls-bottom {
-  display: flex;
-  min-height: 0;
+  display: contents; /* dissolve wrapper — Send becomes direct flex child */
 }
 body.theme-lcars .input-controls .controls-bottom #btnSend {
-  flex: 1 1 auto;
   width: 100%;
 }
 /* Each button gets identical base styling */
@@ -1174,7 +1172,7 @@ body.theme-lcars .input-controls #btnSend {
   padding: 0;
   margin: 0;
   width: 100%;
-  height: 100%;
+  flex: 1 1 0; /* equal height for all */
   min-height: 0;
 }
 /* Individual button colors */
@@ -1182,7 +1180,7 @@ body.theme-lcars #uploadButton { background: var(--ld-arctic-ice); color: #000; 
 body.theme-lcars #uploadButton:hover { background: var(--ld-alpha-blue); color: #fff; }
 body.theme-lcars #micButton { background: var(--ld-beta-blue); color: #000; }
 body.theme-lcars #micButton:hover { background: var(--ld-alpha-blue); color: #fff; }
-body.theme-lcars #btnSend { background: var(--ld-arctic-snow); color: #000; font-size: 18px; letter-spacing: .14em; }
+body.theme-lcars #btnSend { background: var(--ld-arctic-snow); color: #000; font-size: 14px; letter-spacing: .14em; }
 body.theme-lcars #btnSend:hover { background: var(--ld-alpha-blue); color: #fff; }
 
 body.theme-lcars .lcars-btn {

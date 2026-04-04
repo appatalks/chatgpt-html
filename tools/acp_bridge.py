@@ -450,20 +450,27 @@ class ACPClient:
 # Token cache helper
 # ---------------------------------------------------------------------------
 
+def _refresh_kusto_token():
+    """Try to refresh the cached Kusto token using the stored credential. Returns True if refreshed."""
+    global _kusto_token_cache, _kusto_credential
+    if not _kusto_credential:
+        return False
+    try:
+        token = _kusto_credential.get_token("https://kusto.kusto.windows.net/.default")
+        _kusto_token_cache = token.token
+        print(f"[Bridge] Kusto token refreshed (length: {len(token.token)})")
+        return True
+    except Exception as e:
+        print(f"[Bridge] Token refresh failed: {e}")
+        return False
+
 def _inject_kusto_token(mcp_config):
     """Inject cached Kusto token into MCP config if kusto-mcp-server is present."""
-    global _kusto_token_cache, _kusto_credential
+    global _kusto_token_cache
     if not mcp_config or "kusto-mcp-server" not in mcp_config:
         return mcp_config
 
-    # Try to refresh token if we have a cached credential
-    if _kusto_credential:
-        try:
-            token = _kusto_credential.get_token("https://kusto.kusto.windows.net/.default")
-            _kusto_token_cache = token.token
-            print(f"[Bridge] Kusto token refreshed (length: {len(token.token)})")
-        except Exception as e:
-            print(f"[Bridge] Token refresh failed: {e}, using cached token")
+    _refresh_kusto_token()
 
     if _kusto_token_cache:
         if "env" not in mcp_config["kusto-mcp-server"]:
@@ -516,6 +523,10 @@ def _kusto_query_direct(cluster_url, database, query, is_mgmt=False):
                     if rows:
                         return [dict(zip(cols, row)) for row in rows]
                 return []
+            elif resp.status_code == 401 and attempt == 0 and _refresh_kusto_token():
+                print("[Cognition] Kusto query got 401, retrying with refreshed token")
+                headers["Authorization"] = f"Bearer {_kusto_token_cache}"
+                continue
             return None
         except (_requests_mod.exceptions.SSLError, _requests_mod.exceptions.ConnectionError) as e:
             if attempt < 2:
@@ -585,6 +596,10 @@ def _kusto_ingest_direct(cluster_url, database, table, columns, rows_data):
                 except Exception:
                     pass
                 return True
+            elif resp.status_code == 401 and attempt == 0 and _refresh_kusto_token():
+                print("[Cognition] Kusto ingest got 401, retrying with refreshed token")
+                headers["Authorization"] = f"Bearer {_kusto_token_cache}"
+                continue
             else:
                 print(f"[Cognition] Kusto ingest failed ({resp.status_code}): {resp.text[:500]}")
                 return False
@@ -1064,7 +1079,8 @@ class BridgeHandler(BaseHTTPRequestHandler):
         # Priority: request body PAT > env var > Copilot CLI OAuth token > ACP fallback
         github_pat = data.get("github_pat", "") or os.environ.get("GITHUB_PAT", "")
 
-        # Fallback: read Copilot CLI's OAuth token (works with GitHub Models API)
+        # Fallback: read Copilot CLI's OAuth token (works with GitHub Models API — OpenAI models only)
+        _using_oauth_token = False
         if not github_pat:
             try:
                 oauth_path = os.path.expanduser("~/.config/github-copilot/oauth.json")
@@ -1074,12 +1090,38 @@ class BridgeHandler(BaseHTTPRequestHandler):
                     entries = _oauth.get("https://github.com/login/oauth", [])
                     if entries and isinstance(entries, list) and entries[0].get("accessToken"):
                         github_pat = entries[0]["accessToken"]
+                        _using_oauth_token = True
                         print("[AIG] Using Copilot CLI OAuth token for GitHub Models API")
             except Exception as _e:
                 print(f"[AIG] Could not read Copilot OAuth: {_e}")
 
         model_for_response = data.get("model", "gpt-4.1")  # frontend-selectable, default gpt-4.1
-        print(f"[AIG] Model requested: {model_for_response}, PAT present: {bool(github_pat)} ({len(github_pat)} chars)")
+
+        # Models available on GitHub Models API (PAT).
+        # Claude/Gemini are NOT available — they must route through ACP.
+        # See: https://github.com/marketplace/models/catalog
+        # API endpoint: https://models.github.ai/inference/chat/completions
+        # Model names use publisher/model format.
+        _github_model_map = {
+            "gpt-4.1": "openai/gpt-4.1",
+            "gpt-4o": "openai/gpt-4o",
+            "gpt-4o-mini": "openai/gpt-4o-mini",
+            "gpt-5": "openai/gpt-5",
+            "gpt-5-mini": "openai/gpt-5-mini",
+            "gpt-5-nano": "openai/gpt-5-nano",
+            "gpt-5-chat": "openai/gpt-5-chat",
+            "o3-mini": "openai/o3-mini",
+            "o3": "openai/o3",
+            "o4-mini": "openai/o4-mini",
+            "deepseek-r1": "deepseek/DeepSeek-R1",
+            "llama-4-maverick": "meta/llama-4-maverick-17b-128e-instruct-fp8",
+        }
+        # Models that MUST go through ACP (not on GitHub Models API)
+        _acp_only_prefixes = ("claude-", "gemini-")
+
+        api_model = _github_model_map.get(model_for_response, model_for_response)
+
+        print(f"[AIG] Model requested: {model_for_response}, API model: {api_model}, PAT present: {bool(github_pat)} ({len(github_pat)} chars)")
         response_text = ""
         model_used = "aig"
 
@@ -1087,9 +1129,19 @@ class BridgeHandler(BaseHTTPRequestHandler):
             # Explicit ACP routing — skip PAT entirely
             github_pat = ""
 
+        # Claude/Gemini are not on GitHub Models API — must go through ACP
+        if any(model_for_response.startswith(p) for p in _acp_only_prefixes):
+            print(f"[AIG] {model_for_response} not on GitHub Models API, routing to ACP")
+            github_pat = ""
+
+        # OAuth tokens (gho_) only support OpenAI models — route others to ACP
+        elif _using_oauth_token and model_for_response not in _github_model_map:
+            print(f"[AIG] OAuth token can't access {model_for_response}, routing to ACP")
+            github_pat = ""
+
         if github_pat:
             # Use GitHub Models API (PAT) for persona-friendly response
-            print(f"[AIG] Step 3: Generating response via PAT model ({model_for_response})...")
+            print(f"[AIG] Step 3: Generating response via PAT model ({api_model})...")
             try:
                 import requests as _req
                 pat_messages = [{"role": "system", "content": eva_system}]
@@ -1101,13 +1153,13 @@ class BridgeHandler(BaseHTTPRequestHandler):
                 if not pat_messages or pat_messages[-1].get("content") != user_message:
                     pat_messages.append({"role": "user", "content": user_message})
 
-                pat_resp = _req.post("https://models.inference.ai.azure.com/chat/completions",
+                pat_resp = _req.post("https://models.github.ai/inference/chat/completions",
                     headers={
                         "Authorization": f"Bearer {github_pat}",
                         "Content-Type": "application/json"
                     },
                     json={
-                        "model": model_for_response,
+                        "model": api_model,
                         "messages": pat_messages,
                         "max_tokens": 4096
                     },
@@ -1121,7 +1173,9 @@ class BridgeHandler(BaseHTTPRequestHandler):
                         model_used += f"+{acp_model_used}"
                     print(f"[AIG] PAT response: {len(response_text)} chars")
                 else:
-                    print(f"[AIG] PAT model failed ({pat_resp.status_code}), falling back to ACP")
+                    err_body = pat_resp.text[:500] if pat_resp.text else "(empty)"
+                    print(f"[AIG] PAT model failed ({pat_resp.status_code}): {err_body}")
+                    print(f"[AIG] Falling back to ACP")
                     github_pat = ""  # trigger ACP fallback
             except Exception as e:
                 print(f"[AIG] PAT error: {e}, falling back to ACP")

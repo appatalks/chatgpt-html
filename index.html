@@ -1,6 +1,7 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
+  <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, minimum-scale=1.0, maximum-scale=1.0">
   <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
   <meta http-equiv="Pragma" content="no-cache" />
@@ -41,6 +42,46 @@
 
   
   
+  <!-- Eva Theme Sidebar (shown in Eva theme only) -->
+  <nav id="evaSidebar" class="eva-sidebar" aria-label="Eva sidebar">
+    <div class="eva-sidebar-header">
+      <img src="core/img/eva-face-sm.png" alt="Eva" class="eva-sidebar-avatar">
+      <span class="eva-sidebar-title">Eva</span>
+    </div>
+    <div class="eva-sidebar-nav">
+      <button id="evaNewChatBtn" class="eva-nav-item" type="button" title="New Chat">
+        <span class="eva-nav-icon">+</span> New Chat
+      </button>
+      <button id="evaChatsBtn" class="eva-nav-item" type="button" title="Chats" onclick="toggleSessionPanel()">
+        <span class="eva-nav-icon">&#x1F4AC;</span> Chats
+      </button>
+      <button id="evaPromptsBtn" class="eva-nav-item" type="button" title="Prompts">
+        <span class="eva-nav-icon">&#x1F4DD;</span> Prompts
+      </button>
+      <button id="evaModelsBtn" class="eva-nav-item" type="button" title="Models">
+        <span class="eva-nav-icon">&#x1F916;</span> Models
+      </button>
+      <button id="evaSettingsBtn" class="eva-nav-item" type="button" title="Settings">
+        <span class="eva-nav-icon">&#x2699;&#xFE0F;</span> Settings
+      </button>
+      <button id="evaAboutBtn" class="eva-nav-item" type="button" title="About">
+        <span class="eva-nav-icon">&#x2139;&#xFE0F;</span> About
+      </button>
+    </div>
+    <div class="eva-sidebar-sessions">
+      <div class="eva-sessions-label">Today</div>
+      <ul id="evaSidebarSessionList" class="eva-session-list"></ul>
+      <button class="eva-view-all" type="button" onclick="toggleSessionPanel()">View all</button>
+    </div>
+    <div class="eva-sidebar-footer">
+      <div class="eva-sidebar-user" id="evaUserBtn">
+        <span class="eva-user-icon">&#x1F464;</span>
+        <span class="eva-user-name">You</span>
+        <span class="eva-user-arrow">&#x203A;</span>
+      </div>
+    </div>
+  </nav>
+
   <!-- LCARS Left Sidebar (shown in LCARS theme) -->
   <nav id="lcarsSidebar" aria-label="LCARS sidebar">
     <div class="lcars-rail" aria-hidden="true"></div>
@@ -84,6 +125,30 @@
     <div id="textToSynth">
       <!-- Chat Output Area -->
       <div id="txtOutput" rows="10" wrap="soft" placeholder="Output">
+        <!-- Eva Welcome MOTD (shown when chat is empty, Eva theme) -->
+        <div id="evaWelcome" class="eva-welcome">
+          <img src="core/img/eva-face-lg.png" alt="Eva" class="eva-welcome-avatar">
+          <h2 class="eva-welcome-title">Hello! I'm <span class="eva-highlight">Eva</span></h2>
+          <p class="eva-welcome-subtitle">Your AI assistant. Ask me anything or choose a suggestion to get started.</p>
+          <div class="eva-suggestions">
+            <button class="eva-suggestion" onclick="evaSuggestionClick(this)" data-prompt="Explain a complex topic in simple terms">
+              <span class="eva-sug-icon">&#x1F9E0;</span>
+              <div><strong>Explain a complex topic</strong><br><span class="eva-sug-sub">in simple terms</span></div>
+            </button>
+            <button class="eva-suggestion" onclick="evaSuggestionClick(this)" data-prompt="Help me write code in any language">
+              <span class="eva-sug-icon">&lt;/&gt;</span>
+              <div><strong>Help me write code</strong><br><span class="eva-sug-sub">in any language</span></div>
+            </button>
+            <button class="eva-suggestion" onclick="evaSuggestionClick(this)" data-prompt="Brainstorm ideas for a project">
+              <span class="eva-sug-icon">&#x1F4A1;</span>
+              <div><strong>Brainstorm ideas</strong><br><span class="eva-sug-sub">for a project</span></div>
+            </button>
+            <button class="eva-suggestion" onclick="evaSuggestionClick(this)" data-prompt="Review my text and improve it">
+              <span class="eva-sug-icon">&#x270F;&#xFE0F;</span>
+              <div><strong>Review my text</strong><br><span class="eva-sug-sub">and improve it</span></div>
+            </button>
+          </div>
+        </div>
       </div>
 
       <div class="container">
@@ -116,7 +181,8 @@
       <div class="settings-panel active" data-stab="general">
         <label for="selTheme">Theme:</label>
         <select id="selTheme" onchange="applyTheme(this.value)">
-          <option value="default">Default</option>
+          <option value="eva">Eva</option>
+          <option value="legacy">Legacy</option>
           <option value="lcars">LCARS</option>
         </select>
 
@@ -458,12 +524,13 @@
   </aside>
 
   <div class="chat-input-container">
-    <div id="txtMsg" contenteditable="true" rows="2" placeholder="Input Text" aria-label="Input text"></div>
+    <div id="txtMsg" contenteditable="true" rows="2" placeholder="Ask Eva anything..." aria-label="Input text"></div>
     <div class="input-controls-window">
       <div class="input-controls">
         <div class="controls-top">
           <button type="button" id="uploadButton" class="lcars-btn" onclick="document.getElementById('imgInput').click()" aria-label="Upload image">Upload</button>
           <button type="button" onclick="startSpeechRecognition()" id="micButton" class="mic-button lcars-btn" aria-label="Start speech recognition">Mic</button>
+          <button type="button" id="evaInputSettings" class="lcars-btn eva-input-gear" aria-label="Settings">Settings</button>
         </div>
         <div class="controls-bottom">
           <button type="button" onclick="sendData()" id="btnSend" class="lcars-btn" aria-label="Send data">Send</button>
@@ -476,6 +543,8 @@
     </script>
   </div>
 </div>
+    <!-- Eva disclaimer footer (Eva theme only) -->
+    <div id="evaDisclaimer" class="eva-disclaimer">Eva can make mistakes. Consider checking important information.</div>
 
     <script>
       // Capture CTRL + Enter Key

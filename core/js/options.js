@@ -386,7 +386,11 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // Initialize theme from localStorage
   try {
-    const savedTheme = localStorage.getItem('theme') || 'lcars';
+    const savedTheme = (function() {
+      var t = localStorage.getItem('theme') || 'eva';
+      if (t === 'default') t = 'legacy'; // migrate old "default" theme name
+      return t;
+    })();
   const savedCollapsed = localStorage.getItem('lcars_collapsed') === '1';
     if (themeSelect) {
       themeSelect.value = savedTheme;
@@ -396,18 +400,18 @@ document.addEventListener('DOMContentLoaded', () => {
     applyTheme(savedTheme);
   // Ensure model options reflect the saved theme on load
   updateModelOptionsForTheme(savedTheme);
-    // Apply collapsed state if saved
-    if (savedTheme === 'lcars' && savedCollapsed) {
+    // Apply collapsed state if saved (LCARS or Eva use the sidebar)
+    if ((savedTheme === 'lcars' || savedTheme === 'eva') && savedCollapsed) {
       document.body.classList.add('lcars-collapsed');
     }
-    // Move Speak button into LCARS sidebar if active
-    if (savedTheme === 'lcars' && lcarsChipSand && speakBtn && !lcarsChipSand.contains(speakBtn)) {
+    // Move Speak button into sidebar if active (LCARS or Eva)
+    if ((savedTheme === 'lcars' || savedTheme === 'eva') && lcarsChipSand && speakBtn && !lcarsChipSand.contains(speakBtn)) {
       lcarsChipSand.appendChild(speakBtn);
       speakBtn.title = 'Speak';
       speakBtn.textContent = 'Speak';
     }
-    // Move Print button under Speak when LCARS is active
-    if (savedTheme === 'lcars' && lcarsChipPrint && printBtn && !lcarsChipPrint.contains(printBtn)) {
+    // Move Print button under Speak (LCARS or Eva)
+    if ((savedTheme === 'lcars' || savedTheme === 'eva') && lcarsChipPrint && printBtn && !lcarsChipPrint.contains(printBtn)) {
       lcarsChipPrint.appendChild(printBtn);
       printBtn.title = 'Print Output';
     }
@@ -444,6 +448,45 @@ document.addEventListener('DOMContentLoaded', () => {
       }
     });
   }
+
+  // Eva New Chat button — clear chat and restore welcome MOTD
+  var evaNewChat = document.getElementById('evaNewChatBtn');
+  if (evaNewChat) {
+    evaNewChat.addEventListener('click', function() {
+      if (typeof clearMessages === 'function') clearMessages();
+      restoreEvaWelcome();
+    });
+  }
+
+  // Eva sidebar nav buttons — open settings with correct tab
+  // Must stopPropagation so the document click-outside handler doesn't immediately close settings
+  function evaOpenSettings(e, tabName) {
+    e.stopPropagation();
+    var overlay = document.getElementById('settingsOverlay');
+    if (!settingsMenu.classList.contains('open')) {
+      settingsMenu.classList.add('open');
+      if (overlay) overlay.classList.add('open');
+      populateAuthFields();
+    }
+    if (tabName) {
+      setTimeout(function() {
+        var tab = document.querySelector('[data-stab=' + tabName + ']');
+        if (tab) tab.click();
+      }, 50);
+    }
+  }
+  var evaPromptsBtn = document.getElementById('evaPromptsBtn');
+  if (evaPromptsBtn) evaPromptsBtn.addEventListener('click', function(e) { evaOpenSettings(e, 'prompts'); });
+  var evaModelsBtn = document.getElementById('evaModelsBtn');
+  if (evaModelsBtn) evaModelsBtn.addEventListener('click', function(e) { evaOpenSettings(e, 'models'); });
+  var evaSettingsBtn = document.getElementById('evaSettingsBtn');
+  if (evaSettingsBtn) evaSettingsBtn.addEventListener('click', function(e) { evaOpenSettings(e, null); });
+  var evaAboutBtn = document.getElementById('evaAboutBtn');
+  if (evaAboutBtn) evaAboutBtn.addEventListener('click', function(e) { evaOpenSettings(e, 'general'); });
+  var evaUserBtn = document.getElementById('evaUserBtn');
+  if (evaUserBtn) evaUserBtn.addEventListener('click', function(e) { evaOpenSettings(e, 'auth'); });
+  var evaInputGear = document.getElementById('evaInputSettings');
+  if (evaInputGear) evaInputGear.addEventListener('click', function(e) { evaOpenSettings(e, null); });
 
   // Monitors: tab switching
   if (monitorTabs && monitorPanels) {
@@ -551,18 +594,81 @@ function OnLoad() {
     }
 }
 
+// ── Eva Theme helpers ──────────────────────────────────────
+// Click a suggestion bubble → populate input and send
+function evaSuggestionClick(btn) {
+  var prompt = btn.getAttribute('data-prompt');
+  var input = document.getElementById('txtMsg');
+  if (input && prompt) {
+    input.textContent = prompt;
+    sendData();
+  }
+}
+
+// Hide the Eva welcome MOTD when user sends first message
+function hideEvaWelcome() {
+  var w = document.getElementById('evaWelcome');
+  if (w) w.style.display = 'none';
+}
+
+// Populate Eva sidebar's recent sessions (Today section)
+function populateEvaSidebarSessions() {
+  var ul = document.getElementById('evaSidebarSessionList');
+  if (!ul) return;
+  ul.innerHTML = '';
+  if (typeof getAllSessions !== 'function') return;
+  getAllSessions().then(function(sessions) {
+    var today = new Date().toDateString();
+    var recent = (sessions || [])
+      .filter(function(s) { return new Date(s.updatedAt || s.createdAt).toDateString() === today; })
+      .sort(function(a, b) { return (b.updatedAt || b.createdAt) - (a.updatedAt || a.createdAt); })
+      .slice(0, 5);
+    if (!recent.length) {
+      ul.innerHTML = '<li class="eva-session-empty">No chats yet today</li>';
+      return;
+    }
+    recent.forEach(function(s) {
+      var li = document.createElement('li');
+      li.className = 'eva-session-item';
+      li.textContent = s.title || 'Untitled';
+      li.title = s.title || 'Untitled';
+      li.onclick = function() { if (typeof loadSession === 'function') loadSession(s.id); };
+      ul.appendChild(li);
+    });
+  }).catch(function() {});
+}
+
 // Apply UI theme (default | lcars)
 function applyTheme(theme) {
   const body = document.body;
   if (!body) return;
 
   // Remove known theme classes first
-  body.classList.remove('theme-lcars');
+  body.classList.remove('theme-lcars', 'theme-eva');
   // Unload any theme stylesheets we previously loaded
   unloadThemeStylesheet('lcars');
+  unloadThemeStylesheet('eva');
 
   // Add selected theme class
-  if (theme === 'lcars') {
+  if (theme === 'eva') {
+    body.classList.add('theme-eva');
+    ensureThemeStylesheet('eva', 'core/themes/eva.css');
+    // Move speak button into sidebar (same layout as LCARS)
+    const lcarsChipSand = document.getElementById('lcarsChipSand');
+    const speakBtn = document.getElementById('speakSend');
+    if (lcarsChipSand && speakBtn && !lcarsChipSand.contains(speakBtn)) {
+      lcarsChipSand.appendChild(speakBtn);
+      speakBtn.title = 'Speak';
+      speakBtn.textContent = 'Speak';
+    }
+    // Move Print button into sidebar
+    const lcarsChipPrint = document.getElementById('lcarsChipPrint');
+    const printBtn = document.getElementById('printButton');
+    if (lcarsChipPrint && printBtn && !lcarsChipPrint.contains(printBtn)) {
+      lcarsChipPrint.appendChild(printBtn);
+      printBtn.title = 'Print Output';
+    }
+  } else if (theme === 'lcars') {
     body.classList.add('theme-lcars');
   // Ensure LCARS stylesheet is present (modular theme loader)
   ensureThemeStylesheet('lcars', 'core/themes/lcars.css');
@@ -602,9 +708,20 @@ function applyTheme(theme) {
   // Update available model options according to theme
   updateModelOptionsForTheme(theme);
 
-  // Ensure monitors dock is visible only on LCARS
+  // Ensure monitors dock is visible on LCARS and Eva themes
   var mon = document.getElementById('lcarsMonitorsDock');
   if (mon) mon.style.display = (theme === 'lcars') ? 'block' : 'none';
+
+  // Toggle Eva sidebar visibility
+  var evaSidebar = document.getElementById('evaSidebar');
+  if (evaSidebar) evaSidebar.style.display = (theme === 'eva') ? 'flex' : 'none';
+
+  // Toggle Eva disclaimer
+  var evaDisclaimer = document.getElementById('evaDisclaimer');
+  if (evaDisclaimer) evaDisclaimer.style.display = (theme === 'eva') ? 'block' : 'none';
+
+  // Populate Eva sidebar sessions
+  if (theme === 'eva') populateEvaSidebarSessions();
 }
 
 // Modular theme stylesheet loader (extensible for future themes)
@@ -706,6 +823,9 @@ function updateButton() {
 }
 
 function sendData() {
+    // Hide Eva welcome MOTD on first send
+    hideEvaWelcome();
+
     // Logic required for initial message
     var selModel = document.getElementById("selModel");
 
@@ -1902,6 +2022,24 @@ function clearMessages() {
     // Start a fresh session (don't carry old active id)
     localStorage.removeItem('eva_active_session');
     document.getElementById("txtOutput").innerHTML = "\n" + "		MEMORY CLEARED";
+}
+
+// Restore the Eva welcome MOTD into #txtOutput after clearing
+function restoreEvaWelcome() {
+  var out = document.getElementById('txtOutput');
+  if (!out) return;
+  var theme = (localStorage.getItem('theme') || 'eva');
+  if (theme !== 'eva') return;
+  out.innerHTML = '<div id="evaWelcome" class="eva-welcome">'
+    + '<img src="core/img/eva-face-lg.png" alt="Eva" class="eva-welcome-avatar">'
+    + '<h2 class="eva-welcome-title">Hello! I\'m <span class="eva-highlight">Eva</span></h2>'
+    + '<p class="eva-welcome-subtitle">Your AI assistant. Ask me anything or choose a suggestion to get started.</p>'
+    + '<div class="eva-suggestions">'
+    + '<button class="eva-suggestion" onclick="evaSuggestionClick(this)" data-prompt="Explain a complex topic in simple terms"><span class="eva-sug-icon">&#x1F9E0;</span><div><strong>Explain a complex topic</strong><br><span class="eva-sug-sub">in simple terms</span></div></button>'
+    + '<button class="eva-suggestion" onclick="evaSuggestionClick(this)" data-prompt="Help me write code in any language"><span class="eva-sug-icon">&lt;/&gt;</span><div><strong>Help me write code</strong><br><span class="eva-sug-sub">in any language</span></div></button>'
+    + '<button class="eva-suggestion" onclick="evaSuggestionClick(this)" data-prompt="Brainstorm ideas for a project"><span class="eva-sug-icon">&#x1F4A1;</span><div><strong>Brainstorm ideas</strong><br><span class="eva-sug-sub">for a project</span></div></button>'
+    + '<button class="eva-suggestion" onclick="evaSuggestionClick(this)" data-prompt="Review my text and improve it"><span class="eva-sug-icon">&#x270F;&#xFE0F;</span><div><strong>Review my text</strong><br><span class="eva-sug-sub">and improve it</span></div></button>'
+    + '</div></div>';
 }
 
 // Text-to-Speech (voice recognition moved to voice.js)
