@@ -518,14 +518,21 @@ document.addEventListener('DOMContentLoaded', () => {
 
 // Welcome Text
 function OnLoad() {
-    document.getElementById("txtOutput").innerHTML = "\n" +
-    "           Here are some general prompt tips to help me understand:\n\n" +
-    "   #1 Be specific: The more specific your prompt, the more targeted the response will be.\n" +
-    "   #2 Start with a question: Starting your prompt will help me feel more natural.\n" +
-    "   #3 Provide context: Often good context goes a long way for me.\n" +
-    "   #4 Use punctuation, periods and question marks.\n" +
-    "   #5 Keep it short: Occam's razor.\n" +
-    "      ";
+    // Initialize session manager (restores active session if any)
+    if (typeof initSessions === 'function') initSessions();
+
+    // Only show the welcome prompt if no session was restored
+    var txtOutput = document.getElementById("txtOutput");
+    if (!txtOutput.innerHTML.trim()) {
+      txtOutput.innerHTML = "\n" +
+      "           Here are some general prompt tips to help me understand:\n\n" +
+      "   #1 Be specific: The more specific your prompt, the more targeted the response will be.\n" +
+      "   #2 Start with a question: Starting your prompt will help me feel more natural.\n" +
+      "   #3 Provide context: Often good context goes a long way for me.\n" +
+      "   #4 Use punctuation, periods and question marks.\n" +
+      "   #5 Keep it short: Occam's razor.\n" +
+      "      ";
+    }
 }
 
 // Apply UI theme (default | lcars)
@@ -829,7 +836,7 @@ function getSelectedModel() {
 // Count all conversation messages across all providers
 function _countAllMessages() {
   var count = 0;
-  ['messages', 'copilotMessages', 'copilotACPMessages', 'geminiMessages', 'openLLMessages'].forEach(function(key) {
+  ['messages', 'copilotMessages', 'copilotACPMessages', 'geminiMessages', 'openLLMessages', 'aigMessages'].forEach(function(key) {
     try {
       var raw = localStorage.getItem(key);
       if (raw) {
@@ -1683,6 +1690,9 @@ async function renderEvaResponse(content, txtOutput) {
   }
 
   txtOutput.scrollTop = txtOutput.scrollHeight;
+
+  // Auto-save session after each response
+  if (typeof saveCurrentSession === 'function') saveCurrentSession();
 }
 
 /**
@@ -1859,38 +1869,21 @@ document.querySelector("#txtMsg").addEventListener("keydown", function(event) {
 
 // Clear Messages for Clear Memory Button
 function clearMessages() {
-    // Preserve auth keys and settings across clear
+    // Preserve auth keys, settings, and session data across clear
     var keysToKeep = [];
     for (var i = 0; i < localStorage.length; i++) {
       var key = localStorage.key(i);
-      if (key && (key.indexOf('auth_') === 0 || key === 'theme' || key === 'systemPrompt' || key === 'lcars_collapsed' || key === 'acp_bridge_url')) {
+      if (key && (key.indexOf('auth_') === 0 || key === 'theme' || key === 'systemPrompt'
+          || key === 'lcars_collapsed' || key === 'acp_bridge_url'
+          || key === 'eva_sessions' || key.indexOf('session_') === 0)) {
         keysToKeep.push({ k: key, v: localStorage.getItem(key) });
       }
     }
     localStorage.clear();
     keysToKeep.forEach(function(item) { localStorage.setItem(item.k, item.v); });
+    // Start a fresh session (don't carry old active id)
+    localStorage.removeItem('eva_active_session');
     document.getElementById("txtOutput").innerHTML = "\n" + "		MEMORY CLEARED";
 }
 
-// Text-to-Speech
-function startSpeechRecognition() {
-  const recognition = new webkitSpeechRecognition();
-  recognition.lang = 'en-US';
-  // recognition.continuous = true;
-
-  const micButton = document.getElementById('micButton');
-  micButton.classList.add('pulsate');
-
-  recognition.start();
-
-  recognition.onresult = function(event) {
-    const transcript = event.results[0][0].transcript;
-    document.getElementById('txtMsg').innerHTML = transcript + "?";
-    recognition.stop();
-
-    sendData();
-
-    // remove the 'pulsate' class from the micButton to stop the pulsating animation
-    micButton.classList.remove('pulsate');
-  };
-}
+// Text-to-Speech (voice recognition moved to voice.js)

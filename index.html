@@ -18,6 +18,8 @@
   <script src="core/js/copilot.js"></script>
   <script src="core/js/aig.js"></script>
   <script src="core/js/dalle3.js"></script>
+  <script src="core/js/sessions.js"></script>
+  <script src="core/js/voice.js"></script>
   <script src="core/js/aws-sdk-2.1304.0.min.js"></script>
   <script>
     auth();
@@ -57,10 +59,25 @@
       <!-- Print button will be moved here at runtime in LCARS -->
     </div>
 
-    
+    <!-- Session Explorer (inside LCARS sidebar) -->
+    <div class="lcars-chip sessions" id="lcarsChipSessions">
+      <button id="sidebarSessionsBtn" type="button" title="Sessions">Sessions</button>
+    </div>
 
     <div class="lcars-label" aria-hidden="true">Access • 49204.3</div>
   </nav>
+
+  <!-- Session Explorer Panel (works in all themes) -->
+  <div id="sessionPanel" class="session-panel" aria-hidden="true">
+    <div class="session-panel-header">
+      <span>Sessions</span>
+      <button id="sessionPanelClose" aria-label="Close sessions">&times;</button>
+    </div>
+    <div class="session-panel-actions">
+      <button id="sessionNewBtn" title="New session">+ New</button>
+    </div>
+    <ul id="sessionList" class="session-list"></ul>
+  </div>
 
   <div id="idContainer">
     <div id="textToSynth">
@@ -451,6 +468,7 @@
 
   <footer>
     <img id="eEgg" src="core/img/eEgg.gif" alt="Image" style="display:none;">
+    <button id="sessionsButton" onclick="toggleSessionPanel()" style="margin: 1em;" aria-label="Sessions">Sessions</button>
     <button id="settingsButton" style="margin: 1em;">Settings</button>
   <button id="printButton" onclick="printMaster()" aria-label="Print output">Print Output</button>
     <button id="clearMessagesBtn" onclick="clearMessages()" aria-label="Clear memory">Clear Memory</button>

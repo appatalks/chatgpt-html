@@ -60,8 +60,16 @@ This project is a simple web UI for interacting with OpenAI, Google Generative m
 - "Add unit-lite tests as plain functions or small harnesses if feasible; avoid build steps."
 
 ## Security/Privacy
-- Never commit keys. `config.json` is local-only and must not be added to version control.
-- Do not introduce external network calls except to configured providers.
+- **Never commit secrets.** This includes API keys, PATs, tokens, passwords, cluster URLs, database names, and any credential material — in any file, any format (JSON, JS, Python, Markdown, HTML, comments, example snippets).
+- `config.json` and `config.local.js` are local-only and gitignored. Do not add them, reference real values from them in code examples, or create alternative config files that contain real keys.
+- Do not hardcode IP addresses, hostnames, ports of real servers, or internal URLs (e.g., `192.168.*`, `*.hoshisato.com`, Kusto cluster URLs). Use placeholders like `<your-cluster>`, `localhost`, or `example.com`.
+- Do not commit `.data` files from `core/external/` — they contain live external data fetched at runtime.
+- Do not commit audio files (`*.wav`, `*.mp3`), token caches (`.azure/`, `msal_token_cache.json`), or log files.
+- Do not introduce `console.log()` or `print()` statements that dump tokens, keys, or full request/response bodies containing auth headers.
+- Do not introduce external network calls except to configured providers (OpenAI, GitHub Models, Google, localhost endpoints).
+- Before every commit, mentally audit: **does this diff contain any real key, token, URL, or user-specific data?** If unsure, do not commit.
+- When adding example config or documentation, always use obviously fake values: `sk-FAKE...`, `ghp_EXAMPLE...`, `https://example-cluster.region.kusto.windows.net`.
+- Treat `.env`, `.env.*`, and any file matching `*secret*`, `*credential*`, `*token*` as sensitive — never create or commit them.
 
 ## Versioning
 - Update `README.md` Features list when adding models or user-visible features.

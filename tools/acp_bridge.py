@@ -720,7 +720,7 @@ def _post_response_reflection(user_message, assistant_response, model_name):
         return
 
     import datetime, uuid
-    now = datetime.datetime.utcnow().isoformat() + "Z"
+    now = datetime.datetime.now(datetime.timezone.utc).isoformat().replace("+00:00", "Z")
     session_id = str(uuid.uuid4())[:8]
 
     # 1. Log conversation
@@ -844,8 +844,21 @@ class BridgeHandler(BaseHTTPRequestHandler):
     def _mcp_status(self):
         """Return current MCP server configuration status."""
         config = acp_client.mcp_config if acp_client else {}
+        # Redact sensitive env vars (tokens, keys, secrets) before sending to browser
+        safe_config = {}
+        for srv_name, srv_cfg in config.items():
+            safe_srv = dict(srv_cfg)
+            if "env" in safe_srv:
+                safe_env = {}
+                for k, v in safe_srv["env"].items():
+                    if any(s in k.upper() for s in ("TOKEN", "KEY", "SECRET", "PAT", "PASSWORD", "CREDENTIAL")):
+                        safe_env[k] = "***REDACTED***"
+                    else:
+                        safe_env[k] = v
+                safe_srv["env"] = safe_env
+            safe_config[srv_name] = safe_srv
         self._json_response(200, {
-            "mcp_servers": config,
+            "mcp_servers": safe_config,
             "active": list(config.keys()) if config else [],
             "presets": {
                 "azure": {
@@ -893,6 +906,8 @@ class BridgeHandler(BaseHTTPRequestHandler):
 
         # Step 1: Build memory context + proactive data retrieval
         memory_context = _build_memory_context(user_message) if _cognition_enabled else ""
+        if memory_context:
+            print(f"[AIG] Injected {len(memory_context)} chars of memory context")
 
         # Step 2: Determine if we need ACP tools (MCP/Kusto queries beyond heuristics)
         import re as _re
@@ -1272,6 +1287,7 @@ class BridgeHandler(BaseHTTPRequestHandler):
 def main():
     parser = argparse.ArgumentParser(description="Eva ACP Bridge Server")
     parser.add_argument("--port", type=int, default=8888, help="HTTP server port (default: 8888)")
+    parser.add_argument("--bind", default="127.0.0.1", help="Bind address (default: 127.0.0.1, use 0.0.0.0 for LAN access)")
     parser.add_argument("--copilot-path", default="copilot", help="Path to copilot CLI binary")
     parser.add_argument("--cwd", default=os.getcwd(), help="Working directory for ACP session")
     parser.add_argument("--model", default=None, help="Default AI model (e.g. claude-sonnet-4.6, gpt-5.2)")
@@ -1426,7 +1442,7 @@ def main():
         cluster = mcp_config.get("kusto-mcp-server", {}).get("env", {}).get("KUSTO_CLUSTER_URL", "")
         if cluster:
             import datetime
-            now = datetime.datetime.utcnow().isoformat() + "Z"
+            now = datetime.datetime.now(datetime.timezone.utc).isoformat().replace("+00:00", "Z")
             selfstate_cols = ["Timestamp", "Capability", "Status", "Details"]
             capabilities = [
                 {"Timestamp": now, "Capability": "kusto_access", "Status": "active",
@@ -1445,8 +1461,8 @@ def main():
         print(f"[Bridge] Cognition layer disabled (no Kusto MCP or token)")
 
     # Start HTTP server
-    server = HTTPServer(("127.0.0.1", args.port), BridgeHandler)
-    print(f"[Bridge] Listening on http://127.0.0.1:{args.port}")
+    server = HTTPServer((args.bind, args.port), BridgeHandler)
+    print(f"[Bridge] Listening on http://{args.bind}:{args.port}")
     print(f"[Bridge] Endpoints:")
     print(f"  POST /v1/chat/completions   — Send chat messages")
     print(f"  GET  /v1/models             — List available models")
