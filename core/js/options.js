@@ -400,18 +400,18 @@ document.addEventListener('DOMContentLoaded', () => {
     applyTheme(savedTheme);
   // Ensure model options reflect the saved theme on load
   updateModelOptionsForTheme(savedTheme);
-    // Apply collapsed state if saved
-    if (savedTheme === 'lcars' && savedCollapsed) {
+    // Apply collapsed state if saved (LCARS or Eva use the sidebar)
+    if ((savedTheme === 'lcars' || savedTheme === 'eva') && savedCollapsed) {
       document.body.classList.add('lcars-collapsed');
     }
-    // Move Speak button into LCARS sidebar if active
-    if (savedTheme === 'lcars' && lcarsChipSand && speakBtn && !lcarsChipSand.contains(speakBtn)) {
+    // Move Speak button into sidebar if active (LCARS or Eva)
+    if ((savedTheme === 'lcars' || savedTheme === 'eva') && lcarsChipSand && speakBtn && !lcarsChipSand.contains(speakBtn)) {
       lcarsChipSand.appendChild(speakBtn);
       speakBtn.title = 'Speak';
       speakBtn.textContent = 'Speak';
     }
-    // Move Print button under Speak when LCARS is active
-    if (savedTheme === 'lcars' && lcarsChipPrint && printBtn && !lcarsChipPrint.contains(printBtn)) {
+    // Move Print button under Speak (LCARS or Eva)
+    if ((savedTheme === 'lcars' || savedTheme === 'eva') && lcarsChipPrint && printBtn && !lcarsChipPrint.contains(printBtn)) {
       lcarsChipPrint.appendChild(printBtn);
       printBtn.title = 'Print Output';
     }
@@ -570,6 +570,21 @@ function applyTheme(theme) {
   if (theme === 'eva') {
     body.classList.add('theme-eva');
     ensureThemeStylesheet('eva', 'core/themes/eva.css');
+    // Move speak button into sidebar (same layout as LCARS)
+    const lcarsChipSand = document.getElementById('lcarsChipSand');
+    const speakBtn = document.getElementById('speakSend');
+    if (lcarsChipSand && speakBtn && !lcarsChipSand.contains(speakBtn)) {
+      lcarsChipSand.appendChild(speakBtn);
+      speakBtn.title = 'Speak';
+      speakBtn.textContent = 'Speak';
+    }
+    // Move Print button into sidebar
+    const lcarsChipPrint = document.getElementById('lcarsChipPrint');
+    const printBtn = document.getElementById('printButton');
+    if (lcarsChipPrint && printBtn && !lcarsChipPrint.contains(printBtn)) {
+      lcarsChipPrint.appendChild(printBtn);
+      printBtn.title = 'Print Output';
+    }
   } else if (theme === 'lcars') {
     body.classList.add('theme-lcars');
   // Ensure LCARS stylesheet is present (modular theme loader)
@@ -610,9 +625,9 @@ function applyTheme(theme) {
   // Update available model options according to theme
   updateModelOptionsForTheme(theme);
 
-  // Ensure monitors dock is visible only on LCARS
+  // Ensure monitors dock is visible on LCARS and Eva themes
   var mon = document.getElementById('lcarsMonitorsDock');
-  if (mon) mon.style.display = (theme === 'lcars') ? 'block' : 'none';
+  if (mon) mon.style.display = (theme === 'lcars' || theme === 'eva') ? 'block' : 'none';
 }
 
 // Modular theme stylesheet loader (extensible for future themes)
