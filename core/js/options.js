@@ -1368,7 +1368,9 @@ function speakText() {
     // If selEngine is "bark", call barkTTS function
     if (speechParams.Engine === "bark") {
 
-      const url = 'https://192.168.86.30/send-string';
+      const barkHost = localStorage.getItem('barkTTSHost') || 'localhost';
+      const barkBase = 'https://' + barkHost;
+      const url = barkBase + '/send-string';
       const data = "WOMAN: " + textArr[1];
       const xhr = new XMLHttpRequest();
       xhr.responseType = 'blob';
@@ -1378,20 +1380,20 @@ function speakText() {
       audioElement.addEventListener("ended", function() {
       // Delete the previous recording
       const deleteRequest = new XMLHttpRequest();
-      deleteRequest.open('DELETE', 'https://192.168.86.30/audio/bark_audio.wav', true);
+      deleteRequest.open('DELETE', barkBase + '/audio/bark_audio.wav', true);
       deleteRequest.send();
       });
     
       //audioElement.play();
       // Check if the old audio file exists and delete it
       const checkRequest = new XMLHttpRequest();
-      checkRequest.open('HEAD', 'https://192.168.86.30/audio/bark_audio.wav', true);
+      checkRequest.open('HEAD', barkBase + '/audio/bark_audio.wav', true);
       checkRequest.onreadystatechange = function() {
         if (checkRequest.readyState === 4) {
           if (checkRequest.status === 200) {
             // File exists, send delete request
 	      const deleteRequest = new XMLHttpRequest(); 
-    	      deleteRequest.open('DELETE', 'https://192.168.86.30/audio/bark_audio.wav', true);
+    	      deleteRequest.open('DELETE', barkBase + '/audio/bark_audio.wav', true);
               deleteRequest.send();
           }
           // Start playing the new audio

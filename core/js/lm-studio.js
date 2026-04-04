@@ -65,8 +65,6 @@ function lmsSend() {
                 })(sQuestion);
 
     const openAIUrl = `http://localhost:1234/v1/chat/completions`;
-    // const openAIUrl = `http://192.168.86.69:1234/v1/chat/completions`;
-    // const openAIUrl = "https://api.openai.com/v1/chat/completions" ;
     const requestOptions = {
         method: "POST",
         headers: { 
