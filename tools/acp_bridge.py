@@ -541,20 +541,25 @@ def _kusto_ingest_direct(cluster_url, database, table, columns, rows_data):
                 vals.append("")
             elif isinstance(v, bool):
                 vals.append("true" if v else "false")
+            elif isinstance(v, (int, float)):
+                vals.append(str(v))
             elif isinstance(v, (dict, list)):
-                # JSON values must be quoted to protect commas in CSV
+                # Dynamic column: serialize to JSON, then CSV-quote with "" escaping
                 j = json.dumps(v)
                 vals.append('"' + j.replace('"', '""') + '"')
             else:
                 s = str(v).replace("\n", "\\n").replace("\r", "")
-                # Quote strings that contain commas
-                if "," in s:
+                # CSV-quote any string containing commas or quotes
+                if ',' in s or '"' in s:
                     vals.append('"' + s.replace('"', '""') + '"')
                 else:
                     vals.append(s)
-        rows_csv.append(", ".join(vals))
+        rows_csv.append(",".join(vals))
 
     cmd = f".ingest inline into table {table} <|\n" + "\n".join(rows_csv)
+    # Debug: log first row for troubleshooting
+    if rows_csv:
+        print(f"[Cognition] Ingest {table}: {len(rows_csv)} rows, first: {rows_csv[0][:200]}")
     url = f"{cluster_url}/v1/rest/mgmt"
     headers = {"Authorization": f"Bearer {_kusto_token_cache}", "Content-Type": "application/json"}
 
@@ -564,9 +569,23 @@ def _kusto_ingest_direct(cluster_url, database, table, columns, rows_data):
             resp = session.post(url, json={"csl": cmd, "db": database}, headers=headers, timeout=15)
             session.close()
             if resp.status_code == 200:
+                # Check for errors in the response body (Kusto returns 200 even on ingest parse errors)
+                try:
+                    body = resp.json()
+                    exceptions = body.get("Exceptions", [])
+                    if exceptions:
+                        print(f"[Cognition] Kusto ingest error in response: {exceptions[0][:200]}")
+                        return False
+                    # Also check OneApiErrors
+                    one_api = body.get("OneApiErrors", [])
+                    if one_api:
+                        print(f"[Cognition] Kusto ingest OneApiError: {one_api[0]}")
+                        return False
+                except Exception:
+                    pass
                 return True
             else:
-                print(f"[Cognition] Kusto ingest failed ({resp.status_code}): {resp.text[:200]}")
+                print(f"[Cognition] Kusto ingest failed ({resp.status_code}): {resp.text[:500]}")
                 return False
         except (_requests_mod.exceptions.SSLError, _requests_mod.exceptions.ConnectionError) as e:
             if attempt < 2:

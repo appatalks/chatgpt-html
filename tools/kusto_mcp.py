@@ -539,7 +539,8 @@ class KustoMCPServer:
             return f"Error parsing schema: {e}"
 
         # Build .ingest inline command
-        # Format: .ingest inline into table <name> <| val1, val2, val3 \n val4, val5, val6
+        # Format: .ingest inline into table <name> <| val1,val2,val3 \n val4,val5,val6
+        # CSV quoting: values containing commas or quotes are wrapped in "..." with "" escaping
         rows_csv = []
         for row_obj in data:
             vals = []
@@ -549,14 +550,19 @@ class KustoMCPServer:
                     vals.append("")
                 elif isinstance(v, bool):
                     vals.append("true" if v else "false")
+                elif isinstance(v, (int, float)):
+                    vals.append(str(v))
                 elif isinstance(v, (dict, list)):
                     import json as _json
-                    vals.append(_json.dumps(v))
+                    j = _json.dumps(v)
+                    vals.append('"' + j.replace('"', '""') + '"')
                 else:
-                    # Escape special chars for CSV-like inline format
                     s = str(v).replace("\n", "\\n").replace("\r", "")
-                    vals.append(s)
-            rows_csv.append(", ".join(vals))
+                    if ',' in s or '"' in s:
+                        vals.append('"' + s.replace('"', '""') + '"')
+                    else:
+                        vals.append(s)
+            rows_csv.append(",".join(vals))
 
         ingest_cmd = f".ingest inline into table {table} <|\n" + "\n".join(rows_csv)
 
