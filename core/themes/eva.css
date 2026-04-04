@@ -333,7 +333,7 @@ body.theme-eva .lcars-monitors {
   display: none !important; /* hide monitors in Eva theme — cleaner look */
 }
 
-/* ── Chat Input — clean bar matching splash ─────────────────── */
+/* ── Chat Input — buttons inside the pill ───────────────────── */
 body.theme-eva .chat-input-container {
   width: 100%;
   margin-top: 0;
@@ -341,37 +341,42 @@ body.theme-eva .chat-input-container {
   max-width: none;
   min-height: 56px;
   max-height: none;
-  align-items: flex-end;
   display: flex;
-  flex-direction: row;
+  flex-direction: column;
   gap: 0;
-  border: none;
-  border-top: 1px solid var(--eva-border);
-  border-radius: 0;
-  padding: 10px 16px;
-  background: var(--eva-surface);
+  border: 1px solid rgba(255,255,255,0.1);
+  border-radius: 20px;
+  padding: 0;
+  margin: 8px 16px 4px;
+  background: var(--eva-chat-bg);
   box-sizing: border-box;
+  overflow: hidden;
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+body.theme-eva .chat-input-container:focus-within {
+  border-color: var(--eva-purple);
+  box-shadow: 0 0 0 3px var(--eva-purple-glow);
 }
 body.theme-eva #txtMsg {
   flex: 1;
   max-height: 200px;
-  min-height: 80px;
+  min-height: 60px;
   height: auto;
-  border: 1px solid rgba(255,255,255,0.1);
-  border-radius: 16px;
-  background: var(--eva-chat-bg);
+  border: none;
+  border-radius: 0;
+  background: transparent;
   color: var(--eva-text);
-  padding: 12px 18px;
+  padding: 14px 18px 6px;
   font: 400 14px var(--eva-font);
   line-height: 1.6;
-  margin-left: 0;
+  margin: 0;
   outline: none;
-  transition: border-color 0.2s, box-shadow 0.2s;
-  order: 2;
+  order: 1;
+  transition: none;
 }
 body.theme-eva #txtMsg:focus {
-  border-color: var(--eva-purple);
-  box-shadow: 0 0 0 3px var(--eva-purple-glow);
+  border-color: transparent;
+  box-shadow: none;
 }
 body.theme-eva #txtMsg[placeholder]::before {
   content: attr(placeholder);
@@ -379,40 +384,44 @@ body.theme-eva #txtMsg[placeholder]::before {
   pointer-events: none;
 }
 body.theme-eva #txtMsg:not(:empty)::before { content: none; }
-body.theme-eva #txtMsg br:first-child:last-child::before { content: attr(placeholder); } /* handle single <br> as empty */
+body.theme-eva #txtMsg br:first-child:last-child::before { content: attr(placeholder); }
 body.theme-eva #txtMsg img { width: 48px; height: 48px; border-radius: 6px; }
 
-/* Input controls — split: left tools before input, send after */
+/* Controls bar — row of icons at the bottom of the pill */
 body.theme-eva .input-controls-window {
   background: transparent;
   border: none;
   border-radius: 0;
   padding: 0;
-  display: contents; /* break out so children participate in flex order */
+  display: block;
   box-sizing: border-box;
+  order: 2;
 }
 body.theme-eva .input-controls-window .input-controls {
   border: none;
   background: transparent;
   border-radius: 0;
-  padding: 0;
-  width: auto;
+  padding: 4px 10px 8px;
+  width: 100%;
   box-sizing: border-box;
   overflow: visible;
-  display: contents;
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 4px;
 }
 body.theme-eva .input-controls .controls-top {
   display: flex;
   gap: 4px;
   align-items: center;
-  order: 1; /* before input */
-  margin-right: 6px;
+  order: 1;
+  margin-right: auto; /* push send to the right */
 }
 body.theme-eva .input-controls .controls-bottom {
   display: flex;
   align-items: center;
-  order: 3; /* after input */
-  margin-left: 6px;
+  order: 2;
+  margin-left: 0;
   min-height: 0;
 }
 
@@ -436,10 +445,10 @@ body.theme-eva .input-controls #btnSend {
   text-transform: none;
   padding: 0;
   margin: 0;
-  width: 40px;
-  height: 40px;
-  min-height: 40px;
-  min-width: 40px;
+  width: 34px;
+  height: 34px;
+  min-height: 34px;
+  min-width: 34px;
   border: none;
   border-radius: 50%;
   display: flex;
@@ -448,52 +457,52 @@ body.theme-eva .input-controls #btnSend {
   flex-shrink: 0;
 }
 body.theme-eva #uploadButton {
-  background: var(--eva-surface-2);
+  background: transparent;
   color: var(--eva-text-muted);
-  border: 1px solid var(--eva-border);
+  border: none;
   font-size: 0;
-  width: 40px;
-  height: 40px;
+  width: 34px;
+  height: 34px;
 }
-body.theme-eva #uploadButton::after { content: '📎'; font-size: 18px; }
-body.theme-eva #uploadButton:hover { background: var(--eva-purple); color: #fff; border-color: var(--eva-purple); }
+body.theme-eva #uploadButton::after { content: '\1F4CE'; font-size: 16px; }
+body.theme-eva #uploadButton:hover { background: rgba(255,255,255,0.08); color: var(--eva-text); }
 body.theme-eva #micButton,
 body.theme-eva button#micButton {
-  background: var(--eva-surface-2);
+  background: transparent;
   color: var(--eva-text-muted);
-  border: 1px solid var(--eva-border);
+  border: none;
   font-size: 0;
-  width: 40px;
-  height: 40px;
+  width: 34px;
+  height: 34px;
 }
-body.theme-eva #micButton::after { content: '🎤'; font-size: 16px; }
-body.theme-eva #micButton:hover { background: var(--eva-purple); color: #fff; border-color: var(--eva-purple); }
+body.theme-eva #micButton::after { content: '\1F3A4'; font-size: 15px; }
+body.theme-eva #micButton:hover { background: rgba(255,255,255,0.08); color: var(--eva-text); }
 /* Settings gear in input bar (Eva only) */
 .eva-input-gear { display: none; } /* hidden in non-Eva themes */
 body.theme-eva .eva-input-gear {
   display: flex !important;
-  background: var(--eva-surface-2);
+  background: transparent;
   color: var(--eva-text-muted);
-  border: 1px solid var(--eva-border);
+  border: none;
   font-size: 0;
-  width: 40px;
-  height: 40px;
+  width: 34px;
+  height: 34px;
 }
-body.theme-eva .eva-input-gear::after { content: '⚙️'; font-size: 16px; }
-body.theme-eva .eva-input-gear:hover { background: var(--eva-purple); color: #fff; border-color: var(--eva-purple); }
-/* Send button — round blue circle with arrow like the splash */
+body.theme-eva .eva-input-gear::after { content: '\2699\FE0F'; font-size: 15px; }
+body.theme-eva .eva-input-gear:hover { background: rgba(255,255,255,0.08); color: var(--eva-text); }
+/* Send button — round blue circle with arrow */
 body.theme-eva #btnSend,
 body.theme-eva button#btnSend {
   background: var(--eva-accent);
   color: #fff;
   font-size: 0;
-  width: 42px;
-  height: 42px;
+  width: 36px;
+  height: 36px;
   border-radius: 50%;
   border: none;
   position: relative;
 }
-body.theme-eva #btnSend::after { content: '➤'; font-size: 18px; }
+body.theme-eva #btnSend::after { content: '\27A4'; font-size: 16px; }
 body.theme-eva #btnSend:hover { background: var(--eva-accent-hover); transform: scale(1.05); }
 body.theme-eva #clearMessagesBtn { background: rgba(239,68,68,0.15); color: #ef4444; border: 1px solid rgba(239,68,68,0.2); }
 body.theme-eva #clearMessagesBtn:hover { background: var(--eva-danger); color: #fff; }

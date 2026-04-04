@@ -485,6 +485,8 @@ document.addEventListener('DOMContentLoaded', () => {
   if (evaAboutBtn) evaAboutBtn.addEventListener('click', function(e) { evaOpenSettings(e, 'general'); });
   var evaUserBtn = document.getElementById('evaUserBtn');
   if (evaUserBtn) evaUserBtn.addEventListener('click', function(e) { evaOpenSettings(e, 'auth'); });
+  var evaInputGear = document.getElementById('evaInputSettings');
+  if (evaInputGear) evaInputGear.addEventListener('click', function(e) { evaOpenSettings(e, null); });
 
   // Monitors: tab switching
   if (monitorTabs && monitorPanels) {
