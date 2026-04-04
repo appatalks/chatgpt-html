@@ -542,9 +542,16 @@ def _kusto_ingest_direct(cluster_url, database, table, columns, rows_data):
             elif isinstance(v, bool):
                 vals.append("true" if v else "false")
             elif isinstance(v, (dict, list)):
-                vals.append(json.dumps(v))
+                # JSON values must be quoted to protect commas in CSV
+                j = json.dumps(v)
+                vals.append('"' + j.replace('"', '""') + '"')
             else:
-                vals.append(str(v).replace("\n", "\\n").replace("\r", ""))
+                s = str(v).replace("\n", "\\n").replace("\r", "")
+                # Quote strings that contain commas
+                if "," in s:
+                    vals.append('"' + s.replace('"', '""') + '"')
+                else:
+                    vals.append(s)
         rows_csv.append(", ".join(vals))
 
     cmd = f".ingest inline into table {table} <|\n" + "\n".join(rows_csv)
@@ -556,7 +563,11 @@ def _kusto_ingest_direct(cluster_url, database, table, columns, rows_data):
             session = _requests_mod.Session()
             resp = session.post(url, json={"csl": cmd, "db": database}, headers=headers, timeout=15)
             session.close()
-            return resp.status_code == 200
+            if resp.status_code == 200:
+                return True
+            else:
+                print(f"[Cognition] Kusto ingest failed ({resp.status_code}): {resp.text[:200]}")
+                return False
         except (_requests_mod.exceptions.SSLError, _requests_mod.exceptions.ConnectionError) as e:
             if attempt < 2:
                 print(f"[Cognition] Kusto ingest SSL retry {attempt+1}/3: {e}")
