@@ -72,7 +72,8 @@ async function aigSend() {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         messages: existingMessages,
-        user_message: sQuestion
+        user_message: sQuestion,
+        model: (document.getElementById('selAIGBackend') || {}).value || 'gpt-4.1'
       })
     });
 

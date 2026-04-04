@@ -224,6 +224,11 @@ function onModelSettingsChange() {
     var hideTemp = ['o3-mini', 'copilot-o3-mini', 'copilot-o4-mini', 'copilot-deepseek-r1', 'copilot-gpt-5', 'gpt-5-mini', 'latest', 'copilot-acp', 'aig'].indexOf(model) >= 0;
     tempOpt.style.display = hideTemp ? 'none' : 'block';
   }
+  // Show/hide AIG backend model selector (only for aig)
+  var aigOpt = document.getElementById('opt-aigBackend');
+  if (aigOpt) {
+    aigOpt.style.display = (model === 'aig') ? 'block' : 'none';
+  }
   // Show/hide ACP model selector (only for copilot-acp)
   var acpOpt = document.getElementById('opt-acpModel');
   if (acpOpt) {

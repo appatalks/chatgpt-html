@@ -1065,9 +1065,13 @@ class BridgeHandler(BaseHTTPRequestHandler):
         # Try to get PAT from environment or config
         github_pat = os.environ.get("GITHUB_PAT", "")
 
-        model_for_response = "gpt-4.1"  # default best for persona
+        model_for_response = data.get("model", "gpt-4.1")  # frontend-selectable, default gpt-4.1
         response_text = ""
         model_used = "aig"
+
+        if model_for_response == "acp":
+            # Explicit ACP routing — skip PAT entirely
+            github_pat = ""
 
         if github_pat:
             # Use GitHub Models API (PAT) for persona-friendly response

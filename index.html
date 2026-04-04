@@ -199,6 +199,34 @@
               <option value="high">High</option>
             </select>
           </div>
+          <div id="opt-aigBackend" class="model-opt" style="display:none">
+            <label for="selAIGBackend">Eva Backend Model:</label>
+            <select id="selAIGBackend">
+              <option value="gpt-4.1" selected>GPT-4.1 (Default)</option>
+              <optgroup label="GPT">
+                <option value="gpt-5.3-codex">GPT-5.3 Codex</option>
+                <option value="gpt-5.2-codex">GPT-5.2 Codex</option>
+                <option value="gpt-5.2">GPT-5.2</option>
+                <option value="gpt-5.1-codex">GPT-5.1 Codex</option>
+                <option value="gpt-5.1">GPT-5.1</option>
+                <option value="gpt-5-mini">GPT-5 Mini</option>
+                <option value="gpt-4.1">GPT-4.1</option>
+                <option value="gpt-4o">GPT-4o</option>
+              </optgroup>
+              <optgroup label="Claude">
+                <option value="claude-sonnet-4.6">Claude Sonnet 4.6</option>
+                <option value="claude-opus-4.6">Claude Opus 4.6</option>
+                <option value="claude-sonnet-4.5">Claude Sonnet 4.5</option>
+                <option value="claude-sonnet-4">Claude Sonnet 4</option>
+              </optgroup>
+              <optgroup label="Gemini">
+                <option value="gemini-3-pro-preview">Gemini 3 Pro Preview</option>
+              </optgroup>
+              <optgroup label="Fallback">
+                <option value="acp">ACP Bridge (Copilot CLI model)</option>
+              </optgroup>
+            </select>
+          </div>
           <div id="opt-acpModel" class="model-opt" style="display:none">
             <label for="selACPModel">ACP Model:</label>
             <select id="selACPModel">
