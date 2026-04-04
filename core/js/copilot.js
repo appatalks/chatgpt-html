@@ -198,8 +198,27 @@ async function _copilotSendModelsAPI(messages, modelValue, txtOutput, storageKey
 
   var temp = (typeof getModelTemperature === 'function') ? getModelTemperature() : 0.7;
   var maxTok = (typeof getModelMaxTokens === 'function') ? getModelMaxTokens() : 4096;
+
+  // Map short model names to GitHub Models API publisher/model format
+  // See: https://github.com/marketplace/models/catalog
+  var _modelMap = {
+    'gpt-4o': 'openai/gpt-4o',
+    'gpt-4o-mini': 'openai/gpt-4o-mini',
+    'gpt-4.1': 'openai/gpt-4.1',
+    'gpt-5': 'openai/gpt-5',
+    'gpt-5-mini': 'openai/gpt-5-mini',
+    'gpt-5-nano': 'openai/gpt-5-nano',
+    'gpt-5-chat': 'openai/gpt-5-chat',
+    'o3-mini': 'openai/o3-mini',
+    'o3': 'openai/o3',
+    'o4-mini': 'openai/o4-mini',
+    'deepseek-r1': 'deepseek/DeepSeek-R1',
+    'llama-4-maverick': 'meta/llama-4-maverick-17b-128e-instruct-fp8'
+  };
+  var apiModel = _modelMap[model] || ('openai/' + model);
+
   var payload = {
-    model: model,
+    model: apiModel,
     messages: messages,
     temperature: temp,
     max_tokens: maxTok
@@ -218,20 +237,10 @@ async function _copilotSendModelsAPI(messages, modelValue, txtOutput, storageKey
     delete payload.temperature;
   }
 
-  // Llama 4 Maverick: strip publisher prefix for API
-  if (model === 'llama-4-maverick') {
-    payload.model = 'meta/llama-4-maverick-17b-128e-instruct-fp8';
-  }
-
-  // DeepSeek-R1: use full API model ID
-  if (model === 'deepseek-r1') {
-    payload.model = 'deepseek/deepseek-r1';
-  }
-
   setStatus('info', 'Sending to GitHub Models API (' + model + ')...');
 
   try {
-    var url = 'https://models.inference.ai.azure.com/chat/completions';
+    var url = 'https://models.github.ai/inference/chat/completions';
     if (typeof DEBUG_CORS !== 'undefined' && DEBUG_CORS && typeof DEBUG_PROXY_URL !== 'undefined' && DEBUG_PROXY_URL) {
       url = DEBUG_PROXY_URL + '/?target=' + encodeURIComponent(url);
     }
