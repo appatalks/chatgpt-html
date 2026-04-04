@@ -704,8 +704,8 @@ body.theme-lcars .input-monitors-row {
   width: 100%;
   margin-top: 6px;
   flex: 0 0 auto;
-  min-height: 140px; /* ensure send button is always visible */
-  max-height: 200px;
+  min-height: 160px; /* ensure send button is always visible */
+  max-height: 240px;
 }
 body.theme-lcars .lcars-monitors {
   background: rgba(0,0,0,0.4);
@@ -1147,7 +1147,7 @@ body.theme-lcars #txtMsg { max-height: none; height: 100%; }
 /* LCARS input controls column */
 body.theme-lcars .input-controls {
   display: grid;
-  grid-template-rows: 1fr 1fr 2fr; /* Upload | Mic | Send — proportional */
+  grid-template-rows: 1fr 1fr 2.5fr; /* Upload | Mic | Send — Send gets more space */
   gap: 4px;
   height: 100%;
   padding: 0;
