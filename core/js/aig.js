@@ -73,7 +73,8 @@ async function aigSend() {
       body: JSON.stringify({
         messages: existingMessages,
         user_message: sQuestion,
-        model: (document.getElementById('selAIGBackend') || {}).value || 'gpt-4.1'
+        model: (document.getElementById('selAIGBackend') || {}).value || 'gpt-4.1',
+        github_pat: (typeof getAuthKey === 'function') ? getAuthKey('GITHUB_PAT') : ''
       })
     });
 

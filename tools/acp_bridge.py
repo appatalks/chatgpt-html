@@ -1062,8 +1062,8 @@ class BridgeHandler(BaseHTTPRequestHandler):
 
         # Step 4: Pick the best PAT model for response generation
         # Priority: GPT-4.1 (best all-rounder for persona), fallback to GPT-4o
-        # Try to get PAT from environment or config
-        github_pat = os.environ.get("GITHUB_PAT", "")
+        # Try to get PAT from request body first, then environment
+        github_pat = data.get("github_pat", "") or os.environ.get("GITHUB_PAT", "")
 
         model_for_response = data.get("model", "gpt-4.1")  # frontend-selectable, default gpt-4.1
         response_text = ""
