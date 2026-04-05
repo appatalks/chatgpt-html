@@ -84,6 +84,16 @@ def test_health():
         else:
             report("health_kusto_mcp", "warn", "kusto-mcp-server not in mcp_servers")
 
+        if d.get("cognition_enabled"):
+            launch_id = d.get("cognition_launch_id", "")
+            launch_iso = d.get("cognition_launch_iso", "")
+            if launch_id.startswith("eva-") and launch_iso:
+                report("health_cognition_launch_scope", "pass", launch_id)
+            else:
+                report("health_cognition_launch_scope", "fail", "missing launch metadata")
+        else:
+            report("health_cognition_launch_scope", "warn", "cognition disabled")
+
         if d.get("agent", {}).get("name"):
             report("health_agent_info", "pass", d["agent"]["name"])
         else:
@@ -713,7 +723,7 @@ def main():
         ]),
         ("Section 5: Post-Response Reflection", [
             test_reflection_trigger, test_reflection_empty_body,
-            test_entity_extraction,
+            test_entity_extraction_guardrail,
         ]),
         ("Section 6: AIG Tool Routing (ACP + MCP)", [
             test_aig_kusto_query_detection, test_aig_no_tool_for_simple,

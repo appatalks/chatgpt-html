@@ -491,6 +491,8 @@ _last_interaction_date = None  # Track last interaction date for day lifecycle
 _cognition_enabled = False  # Whether cognitive hooks are active (requires Kusto)
 _session_exchange_count = 0  # Exchange counter for auto-reflection triggers
 _session_conversation_buffer = []  # Buffer of recent (user, assistant) pairs for summarization
+_cognition_launch_iso = None  # UTC timestamp that marks the start of this bridge run
+_cognition_launch_id = None  # Human-readable launch identifier for this bridge run
 
 
 # ---------------------------------------------------------------------------
@@ -625,6 +627,19 @@ def _get_kusto_config():
     if not db:
         db = "Eva"
     return cluster, db
+
+
+def _with_launch_filter(query, timestamp_column="Timestamp"):
+    """Scope a Kusto query to rows written during the current cognition launch."""
+    if not _cognition_launch_iso:
+        return query
+
+    safe_iso = (_cognition_launch_iso or "").replace("'", "")
+    filter_expr = f"{timestamp_column} >= datetime('{safe_iso}')"
+
+    if "| where " in query:
+        return query.replace("| where ", f"| where {filter_expr} and ", 1)
+    return f"{query} | where {filter_expr}"
 
 
 _ENTITY_IGNORE_WORDS = {
@@ -778,7 +793,8 @@ def _build_memory_context(user_message):
     today = datetime.date.today().isoformat()
     if _last_interaction_date != today:
         _last_interaction_date = today
-        summaries = _kusto_query_direct(cluster, db, "MemorySummaries | order by Timestamp desc | take 3")
+        summaries_query = _with_launch_filter("MemorySummaries | order by Timestamp desc | take 3")
+        summaries = _kusto_query_direct(cluster, db, summaries_query)
         if summaries:
             summary_text = "\n".join(f"  - [{s.get('Period', '?')}] {s.get('Summary', '')}" for s in summaries[:3])
             context_parts.append(f"[Morning Reflection — {today}]\n{summary_text}")
@@ -786,15 +802,18 @@ def _build_memory_context(user_message):
             context_parts.append(f"[Morning Reflection — {today}]\nNew day. No prior summaries — this is a fresh start.")
 
     # ── 3. Core identity knowledge (always) ────────────────────────────
-    core_knowledge = _kusto_query_direct(cluster, db,
-        "Knowledge | where Confidence >= 0.6 and (isnull(Relation) or Relation !in~ ('mentioned', 'candidate_mentioned')) | order by Confidence desc, Timestamp desc | take 10")
+    core_query = _with_launch_filter(
+        "Knowledge | where Confidence >= 0.6 and (isnull(Relation) or Relation !in~ ('mentioned', 'candidate_mentioned')) | order by Confidence desc, Timestamp desc | take 10"
+    )
+    core_knowledge = _kusto_query_direct(cluster, db, core_query)
     if core_knowledge:
         mem_lines = [f"  {k.get('Entity','?')} — {k.get('Relation','?')}: {k.get('Value','?')}"
                      for k in core_knowledge]
         context_parts.append("[Memory — Core Facts]\n" + "\n".join(mem_lines))
 
     # ── 4. Current emotion state (always) ──────────────────────────────
-    emotion = _kusto_query_direct(cluster, db, "EmotionState | order by Timestamp desc | take 1")
+    emotion_query = _with_launch_filter("EmotionState | order by Timestamp desc | take 1")
+    emotion = _kusto_query_direct(cluster, db, emotion_query)
     if emotion:
         e = emotion[0]
         context_parts.append(
@@ -806,8 +825,10 @@ def _build_memory_context(user_message):
     words = [w.strip('?.,!') for w in user_message.split() if len(w) > 3][:4]
     if words:
         word_filters = " or ".join(f"Entity has '{w}' or Value has '{w}'" for w in words[:3])
-        knowledge = _kusto_query_direct(cluster, db,
-            f"Knowledge | where ({word_filters}) and Confidence >= 0.6 and (isnull(Relation) or Relation !in~ ('mentioned', 'candidate_mentioned')) | order by Confidence desc, Timestamp desc | take 5")
+        relevant_query = _with_launch_filter(
+            f"Knowledge | where ({word_filters}) and Confidence >= 0.6 and (isnull(Relation) or Relation !in~ ('mentioned', 'candidate_mentioned')) | order by Confidence desc, Timestamp desc | take 5"
+        )
+        knowledge = _kusto_query_direct(cluster, db, relevant_query)
         if knowledge:
             extra = [f"  {k.get('Entity','?')} — {k.get('Relation','?')}: {k.get('Value','?')}"
                      for k in knowledge]
@@ -837,15 +858,19 @@ def _build_memory_context(user_message):
                 context_parts.append(f"[Live Data] Tables in {target_db}: {', '.join(tbl_names)}")
 
     if _re.search(r'\b(conversation|history|recent|chat|talked|said)\b', msg_lower):
-        convos = _kusto_query_direct(cluster, db,
-            "Conversations | order by Timestamp desc | take 5 | project Timestamp, Role, Content")
+        conv_query = _with_launch_filter(
+            "Conversations | order by Timestamp desc | take 5 | project Timestamp, Role, Content"
+        )
+        convos = _kusto_query_direct(cluster, db, conv_query)
         if convos:
             conv_text = "\n".join(f"  [{c.get('Role','?')}] {str(c.get('Content',''))[:100]}" for c in convos[:5])
             context_parts.append(f"[Live Data] Recent conversations:\n{conv_text}")
 
     if _re.search(r'\b(emotion|feeling|mood|how.*feel)\b', msg_lower):
-        emotions = _kusto_query_direct(cluster, db,
-            "EmotionState | order by Timestamp desc | take 5 | project Timestamp, Joy, Curiosity, Concern, Trigger")
+        emo_query = _with_launch_filter(
+            "EmotionState | order by Timestamp desc | take 5 | project Timestamp, Joy, Curiosity, Concern, Trigger"
+        )
+        emotions = _kusto_query_direct(cluster, db, emo_query)
         if emotions:
             emo_text = "\n".join(
                 f"  Joy:{e.get('Joy',0):.2f} Curiosity:{e.get('Curiosity',0):.2f} Concern:{e.get('Concern',0):.2f} Trigger:{str(e.get('Trigger',''))[:60]}"
@@ -856,7 +881,8 @@ def _build_memory_context(user_message):
                     'SelfState', 'Reflections', 'EmotionState', 'EmotionBaseline']
     for tbl in known_tables:
         if tbl.lower() in msg_lower and not any('Tables in' in p for p in context_parts):
-            sample = _kusto_query_direct(cluster, db, f"{tbl} | order by Timestamp desc | take 5")
+            sample_query = _with_launch_filter(f"{tbl} | order by Timestamp desc | take 5")
+            sample = _kusto_query_direct(cluster, db, sample_query)
             if sample:
                 sample_text = "\n".join(f"  {str(row)[:150]}" for row in sample[:5])
                 context_parts.append(f"[Live Data] {tbl} (latest 5):\n{sample_text}")
@@ -879,6 +905,7 @@ def _post_response_reflection(user_message, assistant_response, model_name):
     import datetime, uuid
     now = datetime.datetime.now(datetime.timezone.utc).isoformat().replace("+00:00", "Z")
     session_id = str(uuid.uuid4())[:8]
+    source_id = f"{_cognition_launch_id or 'launch'}:{session_id}"
 
     # 1. Log conversation
     conv_columns = ["SessionId", "Timestamp", "Role", "Provider", "Model", "Content", "TokenEstimate", "ImageGenerated"]
@@ -912,7 +939,7 @@ def _post_response_reflection(user_message, assistant_response, model_name):
                 "Relation": relation,
                 "Value": value,
                 "Confidence": confidence,
-                "Source": session_id,
+                "Source": source_id,
                 "Decay": 0.01
             })
             extracted_entities.append(entity)
@@ -1104,7 +1131,10 @@ class BridgeHandler(BaseHTTPRequestHandler):
             "session_id": acp_client.session_id if acp_client else None,
             "agent": acp_client.agent_info if acp_client else None,
             "model": acp_client.model if acp_client else None,
-            "mcp_servers": list(acp_client.mcp_config.keys()) if acp_client and acp_client.mcp_config else []
+            "mcp_servers": list(acp_client.mcp_config.keys()) if acp_client and acp_client.mcp_config else [],
+            "cognition_enabled": _cognition_enabled,
+            "cognition_launch_id": _cognition_launch_id,
+            "cognition_launch_iso": _cognition_launch_iso,
         }
         self._json_response(200, status)
 
@@ -1773,14 +1803,17 @@ def main():
         sys.exit(1)
 
     # Enable cognition layer if Kusto MCP is configured
-    global _cognition_enabled
+    global _cognition_enabled, _cognition_launch_iso, _cognition_launch_id
     if "kusto-mcp-server" in mcp_config and _kusto_token_cache:
+        import datetime
+        _cognition_launch_iso = datetime.datetime.now(datetime.timezone.utc).isoformat().replace("+00:00", "Z")
+        _cognition_launch_id = f"eva-{datetime.datetime.now(datetime.timezone.utc).strftime('%Y%m%d%H%M%S')}"
         _cognition_enabled = True
         print(f"[Bridge] Cognition layer ENABLED (memory injection + reflection)")
+        print(f"[Bridge] Cognition launch scope: {_cognition_launch_id} (since {_cognition_launch_iso})")
         # Write SelfState on startup
         cluster = mcp_config.get("kusto-mcp-server", {}).get("env", {}).get("KUSTO_CLUSTER_URL", "")
         if cluster:
-            import datetime
             now = datetime.datetime.now(datetime.timezone.utc).isoformat().replace("+00:00", "Z")
             selfstate_cols = ["Timestamp", "Capability", "Status", "Details"]
             capabilities = [
