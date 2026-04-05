@@ -1336,20 +1336,35 @@ class BridgeHandler(BaseHTTPRequestHandler):
 
         # Step 2: Determine if we need ACP tools (MCP/Kusto queries beyond heuristics)
         import re as _re
+        msg_lower = user_message.lower()
         needs_acp_tools = False
         if acp_client and acp_client.alive:
             # Detect queries that need live MCP tool execution beyond what heuristics provide
-            if _re.search(r'\b(query|run|execute|kql|sample|schema|show me data|rows?|records?)\b', user_message.lower()):
+            if _re.search(r'\b(query|run|execute|kql|sample|schema|show me data|rows?|records?)\b', msg_lower):
                 needs_acp_tools = True
-            if _re.search(r'\b(count|sum|average|where|filter|join|extend|project|distinct|top|take \d)\b', user_message.lower()):
+            if _re.search(r'\b(count|sum|average|where|filter|join|extend|project|distinct|top|take \d)\b', msg_lower):
                 needs_acp_tools = True
+
+        # Raw-output mode avoids PAT restyling to reduce fabricated "live" results.
+        raw_output_requested = bool(_re.search(
+            r'\b(raw outputs?|raw rows?|raw results?|verbatim|exact output|return only|no commentary|no explanation)\b',
+            msg_lower
+        )) and needs_acp_tools
 
         acp_data = ""
         acp_model_used = ""
         if needs_acp_tools:
             print(f"[AIG] Step 2: Using ACP for data retrieval...")
             # Use ACP to run the data query (it has MCP tools)
-            acp_prompt = f"You are a data retrieval assistant. Execute the appropriate Kusto MCP tool to answer this request. Return ONLY the raw data results, no commentary:\n\n{user_message}"
+            if raw_output_requested:
+                acp_prompt = (
+                    "You are a strict Kusto query executor. "
+                    "Execute the appropriate Kusto MCP tool for the user request and return ONLY the final tool output text. "
+                    "Do not add headings, markdown, explanations, or invented rows.\n\n"
+                    f"{user_message}"
+                )
+            else:
+                acp_prompt = f"You are a data retrieval assistant. Execute the appropriate Kusto MCP tool to answer this request. Return ONLY the raw data results, no commentary:\n\n{user_message}"
             acp_result = acp_client.prompt(acp_prompt, timeout=60)
             if acp_result and "text" in acp_result and acp_result["text"]:
                 acp_data = acp_result["text"]
@@ -1430,6 +1445,18 @@ class BridgeHandler(BaseHTTPRequestHandler):
         response_text = ""
         model_used = "aig"
 
+        if raw_output_requested and acp_data:
+            active_raw_model = acp_model_used or (acp_client.model if acp_client else "copilot-acp")
+            response_text = acp_data
+            model_used = f"aig:{active_raw_model}+raw-acp"
+            github_pat = ""
+            print("[AIG] Raw-output mode: returning ACP tool output directly")
+        elif raw_output_requested and needs_acp_tools and not acp_data:
+            response_text = "Raw query mode requested but no tool output was returned. Retry with explicit KQL."
+            model_used = "aig:raw-acp-unavailable"
+            github_pat = ""
+            print("[AIG] Raw-output mode: no ACP data available")
+
         if model_for_response == "acp":
             # Explicit ACP routing — skip PAT entirely
             github_pat = ""
@@ -1486,7 +1513,7 @@ class BridgeHandler(BaseHTTPRequestHandler):
                 print(f"[AIG] PAT error: {e}, falling back to ACP")
                 github_pat = ""
 
-        if not github_pat or not response_text:
+        if not response_text:
             # Fallback: use ACP for response generation (less persona-friendly but functional)
             print(f"[AIG] Fallback: Using ACP for response generation...")
             if acp_client and acp_client.alive:

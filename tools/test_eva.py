@@ -500,6 +500,33 @@ def test_aig_no_tool_for_simple():
         report("aig_simple_speed", "warn", f"slow: {elapsed:.1f}s")
 
 
+def test_aig_raw_query_passthrough():
+    """6.3  Raw query requests should return direct ACP tool output (no PAT narrative layer)."""
+    prompt = "Run the real query on the Eva database and return raw outputs please: Reflections | take 3"
+    status, data = _aig_chat(prompt, timeout=120)
+    content = data.get("choices", [{}])[0].get("message", {}).get("content", "")
+    model = data.get("model", "")
+    lower = content.lower()
+
+    if status == 200 and "+raw-acp" in model:
+        report("aig_raw_query_model_tag", "pass", model)
+    else:
+        report("aig_raw_query_model_tag", "fail", f"status={status}, model={model}")
+
+    hallucination_markers = [
+        "running live queries now",
+        "retrieving live results",
+        "i'll print the direct results",
+        "**eva.conversations:**",
+    ]
+    if any(marker in lower for marker in hallucination_markers):
+        report("aig_raw_query_no_narration", "fail", "found narrative wrapper markers")
+    elif "|" in content and len(content) > 30:
+        report("aig_raw_query_no_narration", "pass", "looks like raw tabular output")
+    else:
+        report("aig_raw_query_no_narration", "warn", "could not confirm tabular raw output")
+
+
 # ═══════════════════════════════════════════════════════════════════════
 #  SECTION 7: SelfState & Capabilities at Startup
 # ═══════════════════════════════════════════════════════════════════════
@@ -768,6 +795,7 @@ def main():
         ]),
         ("Section 6: AIG Tool Routing (ACP + MCP)", [
             test_aig_kusto_query_detection, test_aig_no_tool_for_simple,
+            test_aig_raw_query_passthrough,
         ]),
         ("Section 7: SelfState & Capabilities", [
             test_selfstate_persisted, test_selfstate_capabilities,
