@@ -630,12 +630,13 @@ def _get_kusto_config():
 _ENTITY_IGNORE_WORDS = {
     "the", "this", "that", "what", "when", "where", "how", "why", "who", "can", "could",
     "would", "should", "hello", "please", "thanks", "hey", "eva", "image", "tell", "today",
-    "tomorrow", "yesterday", "time", "date"
+    "tomorrow", "yesterday", "time", "date", "reply", "respond", "answer", "exactly"
 }
 
 _ENTITY_RESERVED_TERMS = {
     "run", "show", "query", "timestamp", "schema", "table", "tables", "database", "databases",
     "count", "sum", "average", "filter", "where", "join", "project", "distinct", "take", "top",
+    "execute", "save", "remember", "store", "write", "reply", "respond", "answer",
     "kusto", "adx", "conversation", "conversations", "knowledge", "emotionstate", "reflections",
     "memorysummaries", "selfstate", "heuristicsindex", "emotionbaseline"
 }
@@ -1011,6 +1012,55 @@ def _post_response_reflection(user_message, assistant_response, model_name):
         _session_conversation_buffer = _session_conversation_buffer[-10:]
 
 
+def _ensure_acp_model(requested_model):
+    """Ensure ACP client is running with the requested model."""
+    global acp_client
+
+    if not acp_client or not acp_client.alive:
+        return False, "ACP bridge not connected to Copilot"
+
+    target_model = requested_model or ""
+    current_model = acp_client.model or ""
+    if target_model == current_model:
+        return True, acp_client.model or "default"
+
+    if target_model:
+        print(f"[Bridge] Model switch requested: {current_model or 'default'} -> {target_model}")
+    else:
+        print("[Bridge] Switching back to default model")
+
+    old_cwd = acp_client.cwd
+    old_path = acp_client.copilot_path
+    old_mcp = _inject_kusto_token(acp_client.mcp_config)
+    previous_model = acp_client.model
+    acp_client.stop()
+
+    acp_client = ACPClient(
+        copilot_path=old_path,
+        cwd=old_cwd,
+        model=target_model or None,
+        mcp_config=old_mcp,
+    )
+    try:
+        acp_client.start()
+        return True, acp_client.model or "default"
+    except RuntimeError as e:
+        print(f"[Bridge] Model switch failed: {e}")
+        # Attempt to restore previous model to keep bridge usable.
+        try:
+            acp_client = ACPClient(
+                copilot_path=old_path,
+                cwd=old_cwd,
+                model=previous_model or None,
+                mcp_config=old_mcp,
+            )
+            acp_client.start()
+            print(f"[Bridge] Restored previous ACP model: {previous_model or 'default'}")
+        except RuntimeError as restore_err:
+            return False, f"{e}; restore failed: {restore_err}"
+        return False, str(e)
+
+
 class BridgeHandler(BaseHTTPRequestHandler):
     """HTTP handler that bridges browser requests to ACP."""
 
@@ -1223,6 +1273,14 @@ class BridgeHandler(BaseHTTPRequestHandler):
         _acp_only_prefixes = ("claude-", "gemini-")
 
         api_model = _github_model_map.get(model_for_response, model_for_response)
+        acp_response_model = ""
+        if model_for_response == "acp":
+            acp_response_model = ""
+        elif any(model_for_response.startswith(p) for p in _acp_only_prefixes):
+            acp_response_model = model_for_response
+        elif model_for_response not in _github_model_map:
+            # Unknown/non-GitHub-Models entries must route through ACP.
+            acp_response_model = model_for_response
 
         print(f"[AIG] Model requested: {model_for_response}, API model: {api_model}, PAT present: {bool(github_pat)} ({len(github_pat)} chars)")
         response_text = ""
@@ -1288,10 +1346,18 @@ class BridgeHandler(BaseHTTPRequestHandler):
             # Fallback: use ACP for response generation (less persona-friendly but functional)
             print(f"[AIG] Fallback: Using ACP for response generation...")
             if acp_client and acp_client.alive:
-                full_prompt = eva_system + "\n\nUser: " + user_message
-                acp_result = acp_client.prompt(full_prompt, timeout=120)
-                response_text = acp_result.get("text", "I'm having trouble processing that right now.")
-                model_used = f"aig:{acp_client.model or 'acp-default'}"
+                switched, switch_info = _ensure_acp_model(acp_response_model)
+                if not switched:
+                    response_text = f"ACP model switch failed: {switch_info}"
+                    model_used = "aig:unavailable"
+                else:
+                    full_prompt = eva_system + "\n\nUser: " + user_message
+                    acp_result = acp_client.prompt(full_prompt, timeout=120)
+                    response_text = acp_result.get("text", "I'm having trouble processing that right now.")
+                    active_model = acp_client.model or "acp-default"
+                    model_used = f"aig:{active_model}"
+                    if acp_model_used and acp_model_used != active_model:
+                        model_used += f"+{acp_model_used}"
             else:
                 response_text = "The AIG system needs either a GitHub PAT or a running ACP bridge to generate responses."
                 model_used = "aig:unavailable"
@@ -1451,22 +1517,10 @@ class BridgeHandler(BaseHTTPRequestHandler):
 
         # Check if a specific ACP model was requested
         requested_model = data.get("acp_model", "") or ""
-        if requested_model != (acp_client.model or ""):
-            if requested_model:
-                print(f"[Bridge] Model switch requested: {acp_client.model or 'default'} -> {requested_model}")
-            else:
-                print(f"[Bridge] Switching back to default model")
-            # Restart ACP client with new model (preserve MCP config)
-            old_cwd = acp_client.cwd
-            old_path = acp_client.copilot_path
-            old_mcp = _inject_kusto_token(acp_client.mcp_config)
-            acp_client.stop()
-            acp_client = ACPClient(copilot_path=old_path, cwd=old_cwd, model=requested_model or None, mcp_config=old_mcp)
-            try:
-                acp_client.start()
-            except RuntimeError as e:
-                self._json_response(503, {"error": {"message": str(e)}})
-                return
+        switched, switch_info = _ensure_acp_model(requested_model)
+        if not switched:
+            self._json_response(503, {"error": {"message": switch_info}})
+            return
 
         # Build prompt text from messages (combine for context)
         # ACP doesn't have native message roles, so we format them
