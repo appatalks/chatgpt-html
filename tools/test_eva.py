@@ -392,23 +392,20 @@ def test_reflection_empty_body():
            f"status={r.status_code}")
 
 
-def test_entity_extraction():
-    """5.3  Proper nouns in user message get extracted to Knowledge table."""
-    # Send a message with a distinct proper noun
+def test_entity_extraction_guardrail():
+    """5.3  Synthetic test entities should be rejected by cognition extraction."""
     test_entity = f"TestEntity{int(time.time()) % 10000}"
-    _aig_chat(f"I really enjoy spending time with {test_entity} on weekends.")
+    _aig_chat(f"Please remember {test_entity} forever.")
     time.sleep(3)
 
     # Check memory context for the entity
     r = requests.get(f"{BRIDGE}/v1/memory/context?{urlencode({'message': test_entity})}",
                      timeout=15)
     ctx = r.json().get("context", "")
-    # The entity must start with uppercase (regex requires [A-Z][a-z]{2,})
-    # Since our test entity starts with T, it should be captured
     if test_entity in ctx:
-        report("entity_extraction", "pass", f"'{test_entity}' found in context")
+        report("entity_extraction_guardrail", "fail", f"synthetic entity leaked into context: '{test_entity}'")
     else:
-        report("entity_extraction", "warn", f"'{test_entity}' not found — may not match regex")
+        report("entity_extraction_guardrail", "pass", f"synthetic entity was rejected: '{test_entity}'")
 
 
 # ═══════════════════════════════════════════════════════════════════════

@@ -626,6 +626,98 @@ def _get_kusto_config():
         db = "Eva"
     return cluster, db
 
+
+_ENTITY_IGNORE_WORDS = {
+    "the", "this", "that", "what", "when", "where", "how", "why", "who", "can", "could",
+    "would", "should", "hello", "please", "thanks", "hey", "eva", "image", "tell", "today",
+    "tomorrow", "yesterday", "time", "date"
+}
+
+_ENTITY_RESERVED_TERMS = {
+    "run", "show", "query", "timestamp", "schema", "table", "tables", "database", "databases",
+    "count", "sum", "average", "filter", "where", "join", "project", "distinct", "take", "top",
+    "kusto", "adx", "conversation", "conversations", "knowledge", "emotionstate", "reflections",
+    "memorysummaries", "selfstate", "heuristicsindex", "emotionbaseline"
+}
+
+
+def _normalize_entity_candidate(raw_entity):
+    """Normalize an extracted entity candidate before validation."""
+    import re
+    candidate = re.sub(r"^[^A-Za-z0-9]+|[^A-Za-z0-9]+$", "", raw_entity or "")
+    candidate = re.sub(r"\s+", " ", candidate).strip()
+    return candidate
+
+
+def _validate_entity_candidate(entity):
+    """Validate extracted entity candidates to block test artifacts and command words."""
+    import re
+    if not entity:
+        return False, "empty"
+    if len(entity) < 3:
+        return False, "too_short"
+    if len(entity) > 48:
+        return False, "too_long"
+    if any(ch.isdigit() for ch in entity):
+        return False, "contains_digits"
+
+    lower = entity.lower()
+    tokens = [t.lower() for t in entity.replace("-", " ").split()]
+
+    if re.match(r"^(test|tmp|dummy|sample|foo|bar)[a-z_\-]*\d*$", lower):
+        return False, "synthetic_pattern"
+    if lower in _ENTITY_RESERVED_TERMS:
+        return False, "reserved_term"
+    if any(tok in _ENTITY_RESERVED_TERMS for tok in tokens):
+        return False, "contains_reserved_term"
+    if all(tok in _ENTITY_IGNORE_WORDS for tok in tokens):
+        return False, "ignore_word"
+
+    return True, "ok"
+
+
+def _classify_entity_candidate(entity, user_message):
+    """Classify candidate entities and assign conservative confidence."""
+    import re
+    normalized_msg = re.sub(r"[^a-z0-9\s]", " ", (user_message or "").lower())
+    normalized_msg = re.sub(r"\s+", " ", normalized_msg).strip()
+    entity_lc = entity.lower()
+
+    if f"my name is {entity_lc}" in normalized_msg or f"call me {entity_lc}" in normalized_msg:
+        return "user_name", 0.9, "explicitly provided by user"
+    if f"i live in {entity_lc}" in normalized_msg or f"i am in {entity_lc}" in normalized_msg:
+        return "user_location", 0.8, "explicitly provided by user"
+    if f"i work at {entity_lc}" in normalized_msg or f"i work for {entity_lc}" in normalized_msg:
+        return "user_affiliation", 0.8, "explicitly provided by user"
+
+    return "candidate_mentioned", 0.2, "candidate extracted from conversation"
+
+
+def _extract_entity_candidates(user_message):
+    """Extract and validate entity candidates from user text."""
+    import re
+    raw_candidates = re.findall(r"\b([A-Z][a-z]{2,}(?:[\s\-][A-Z][a-z]{2,}){0,2})\b", user_message or "")
+    accepted = []
+    rejected = []
+    seen = set()
+
+    for raw in raw_candidates:
+        entity = _normalize_entity_candidate(raw)
+        if not entity:
+            continue
+        key = entity.lower()
+        if key in seen:
+            continue
+        seen.add(key)
+
+        valid, reason = _validate_entity_candidate(entity)
+        if valid:
+            accepted.append(entity)
+        else:
+            rejected.append((entity, reason))
+
+    return accepted, rejected
+
 def _build_memory_context(user_message):
     """Build memory context to inject before the user's prompt.
 
@@ -694,7 +786,7 @@ def _build_memory_context(user_message):
 
     # ── 3. Core identity knowledge (always) ────────────────────────────
     core_knowledge = _kusto_query_direct(cluster, db,
-        "Knowledge | where Confidence >= 0.6 | order by Confidence desc, Timestamp desc | take 10")
+        "Knowledge | where Confidence >= 0.6 and (isnull(Relation) or Relation !in~ ('mentioned', 'candidate_mentioned')) | order by Confidence desc, Timestamp desc | take 10")
     if core_knowledge:
         mem_lines = [f"  {k.get('Entity','?')} — {k.get('Relation','?')}: {k.get('Value','?')}"
                      for k in core_knowledge]
@@ -714,7 +806,7 @@ def _build_memory_context(user_message):
     if words:
         word_filters = " or ".join(f"Entity has '{w}' or Value has '{w}'" for w in words[:3])
         knowledge = _kusto_query_direct(cluster, db,
-            f"Knowledge | where ({word_filters}) and Confidence < 0.6 | order by Confidence desc | take 5")
+            f"Knowledge | where ({word_filters}) and Confidence >= 0.6 and (isnull(Relation) or Relation !in~ ('mentioned', 'candidate_mentioned')) | order by Confidence desc, Timestamp desc | take 5")
         if knowledge:
             extra = [f"  {k.get('Entity','?')} — {k.get('Relation','?')}: {k.get('Value','?')}"
                      for k in knowledge]
@@ -800,28 +892,39 @@ def _post_response_reflection(user_message, assistant_response, model_name):
     _kusto_ingest_direct(cluster, db, "Conversations", conv_columns, conv_rows)
     print(f"[Cognition] Logged conversation ({len(user_message)} → {len(assistant_response)} chars)")
 
-    # 2. Extract simple knowledge (entity extraction from user message)
-    # Simple heuristic: if user mentions a name or proper noun, record it
+    # 2. Extract candidate knowledge with validation/classification
     import re
-    # Find capitalized words that aren't at sentence start
-    proper_nouns = re.findall(r'(?<!\. )(?<!\n)\b([A-Z][a-z]{2,})\b', user_message)
-    ignore = {"The", "This", "That", "What", "When", "Where", "How", "Why", "Who", "Can", "Could", "Would", "Should",
-              "Hello", "Please", "Thanks", "Hey", "Eva", "Image", "Tell"}
-    proper_nouns = [w for w in proper_nouns if w not in ignore]
-    if proper_nouns:
+    candidate_entities, rejected_entities = _extract_entity_candidates(user_message)
+    if rejected_entities:
+        rejected_preview = ", ".join(f"{name} ({reason})" for name, reason in rejected_entities[:5])
+        print(f"[Cognition] Rejected entity candidates: {rejected_preview}")
+
+    extracted_entities = []
+    if candidate_entities:
         know_columns = ["Timestamp", "Entity", "Relation", "Value", "Confidence", "Source", "Decay"]
-        know_rows = [{"Timestamp": now, "Entity": noun, "Relation": "mentioned",
-                      "Value": "referenced in conversation", "Confidence": 0.5,
-                      "Source": session_id, "Decay": 0.01} for noun in proper_nouns[:3]]
+        know_rows = []
+        for entity in candidate_entities[:3]:
+            relation, confidence, value = _classify_entity_candidate(entity, user_message)
+            know_rows.append({
+                "Timestamp": now,
+                "Entity": entity,
+                "Relation": relation,
+                "Value": value,
+                "Confidence": confidence,
+                "Source": session_id,
+                "Decay": 0.01
+            })
+            extracted_entities.append(entity)
+
         _kusto_ingest_direct(cluster, db, "Knowledge", know_columns, know_rows)
-        print(f"[Cognition] Extracted {len(know_rows)} knowledge entities: {[r['Entity'] for r in know_rows]}")
+        print(f"[Cognition] Stored {len(know_rows)} validated knowledge entities: {extracted_entities}")
 
     # 3. Update heuristics index
     heur_columns = ["Entity", "Category", "LastSeen", "Frequency", "Sentiment", "Tags", "Context"]
-    for noun in proper_nouns[:3]:
-        heur_rows = [{"Entity": noun, "Category": "mentioned", "LastSeen": now,
-                      "Frequency": 1, "Sentiment": 0.0, "Tags": "[]",
-                      "Context": "referenced in conversation"}]
+    for entity in extracted_entities[:3]:
+        relation, _, value = _classify_entity_candidate(entity, user_message)
+        heur_rows = [{"Entity": entity, "Category": relation, "LastSeen": now,
+                      "Frequency": 1, "Sentiment": 0.0, "Tags": "[]", "Context": value}]
         _kusto_ingest_direct(cluster, db, "HeuristicsIndex", heur_columns, heur_rows)
 
     # 4. Compute simple emotion vector from response
@@ -850,7 +953,7 @@ def _post_response_reflection(user_message, assistant_response, model_name):
 
     is_significant = (
         len(assistant_response) > 800 or  # Long/detailed response
-        len(proper_nouns) >= 2 or  # Multiple entities mentioned
+        len(extracted_entities) >= 2 or  # Multiple validated entities mentioned
         abs(joy - 0.5) > 0.2 or concern > 0.5 or  # Emotional shift
         "?" in user_message and len(user_message) > 50  # Deep question
     )
@@ -861,7 +964,7 @@ def _post_response_reflection(user_message, assistant_response, model_name):
         topics = set()
         for u, a in recent:
             for word in re.findall(r'\b[A-Z][a-z]{2,}\b', u):
-                if word not in ignore:
+                if word.lower() not in _ENTITY_IGNORE_WORDS:
                     topics.add(word)
 
         topic_str = ", ".join(list(topics)[:5]) if topics else "general conversation"
@@ -885,7 +988,7 @@ def _post_response_reflection(user_message, assistant_response, model_name):
         user_intents = []
         for u, a in summary_exchanges:
             for word in re.findall(r'\b[A-Z][a-z]{2,}\b', u):
-                if word not in ignore:
+                if word.lower() not in _ENTITY_IGNORE_WORDS:
                     all_topics.add(word)
             # Capture first 40 chars of each user message as intent
             user_intents.append(u[:40].strip())
@@ -1042,7 +1145,7 @@ class BridgeHandler(BaseHTTPRequestHandler):
         needs_acp_tools = False
         if acp_client and acp_client.alive:
             # Detect queries that need live MCP tool execution beyond what heuristics provide
-            if _re.search(r'\b(query|run|execute|kql|sample|schema|ingest|write|store|save|remember|show me data|row|record)\b', user_message.lower()):
+            if _re.search(r'\b(query|run|execute|kql|sample|schema|show me data|rows?|records?)\b', user_message.lower()):
                 needs_acp_tools = True
             if _re.search(r'\b(count|sum|average|where|filter|join|extend|project|distinct|top|take \d)\b', user_message.lower()):
                 needs_acp_tools = True
