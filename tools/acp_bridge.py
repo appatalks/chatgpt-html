@@ -493,6 +493,7 @@ _session_exchange_count = 0  # Exchange counter for auto-reflection triggers
 _session_conversation_buffer = []  # Buffer of recent (user, assistant) pairs for summarization
 _cognition_launch_iso = None  # UTC timestamp that marks the start of this bridge run
 _cognition_launch_id = None  # Human-readable launch identifier for this bridge run
+_cognition_candidate_counts = {}  # Lowercased entity -> mention count in current launch
 
 
 # ---------------------------------------------------------------------------
@@ -642,6 +643,24 @@ def _with_launch_filter(query, timestamp_column="Timestamp"):
     return f"{query} | where {filter_expr}"
 
 
+def _knowledge_scope_clause(max_entities=200):
+    """Build a KQL filter clause for entities observed in the current launch."""
+    if not _cognition_candidate_counts:
+        return ""
+
+    scoped = list(_cognition_candidate_counts.keys())[-max_entities:]
+    safe_entities = []
+    for entity in scoped:
+        norm = (entity or "").strip()
+        if not norm:
+            continue
+        safe_entities.append(f"'{norm.replace("'", "''")}'")
+
+    if not safe_entities:
+        return ""
+    return f"Entity in~ ({', '.join(safe_entities)})"
+
+
 _ENTITY_IGNORE_WORDS = {
     "the", "this", "that", "what", "when", "where", "how", "why", "who", "can", "could",
     "would", "should", "hello", "please", "thanks", "hey", "eva", "image", "tell", "today",
@@ -707,6 +726,38 @@ def _classify_entity_candidate(entity, user_message):
         return "user_affiliation", 0.8, "explicitly provided by user"
 
     return "candidate_mentioned", 0.2, "candidate extracted from conversation"
+
+
+def _maybe_promote_candidate(entity):
+    """Promote candidate entities after repeated mentions in the current launch."""
+    key = (entity or "").strip().lower()
+    if not key:
+        return None
+
+    seen_count = _cognition_candidate_counts.get(key, 0)
+    if seen_count >= 2:
+        return {
+            "relation": "candidate_confirmed",
+            "confidence": 0.75,
+            "value": "reinforced by repeated mention",
+            "reason": "reinforced_repetition"
+        }
+    if seen_count >= 1:
+        return {
+            "relation": "candidate_confirmed",
+            "confidence": 0.65,
+            "value": "candidate repeated by user across turns",
+            "reason": "repeated_mention"
+        }
+    return None
+
+
+def _track_candidate_observation(entity):
+    """Record an entity mention for this launch-scoped promotion memory."""
+    key = (entity or "").strip().lower()
+    if not key:
+        return
+    _cognition_candidate_counts[key] = _cognition_candidate_counts.get(key, 0) + 1
 
 
 def _extract_entity_candidates(user_message):
@@ -802,14 +853,19 @@ def _build_memory_context(user_message):
             context_parts.append(f"[Morning Reflection — {today}]\nNew day. No prior summaries — this is a fresh start.")
 
     # ── 3. Core identity knowledge (always) ────────────────────────────
-    core_query = _with_launch_filter(
-        "Knowledge | where Confidence >= 0.6 and (isnull(Relation) or Relation !in~ ('mentioned', 'candidate_mentioned')) | order by Confidence desc, Timestamp desc | take 10"
-    )
-    core_knowledge = _kusto_query_direct(cluster, db, core_query)
-    if core_knowledge:
-        mem_lines = [f"  {k.get('Entity','?')} — {k.get('Relation','?')}: {k.get('Value','?')}"
-                     for k in core_knowledge]
-        context_parts.append("[Memory — Core Facts]\n" + "\n".join(mem_lines))
+    knowledge_scope = _knowledge_scope_clause()
+    if knowledge_scope:
+        core_query = (
+            "Knowledge "
+            f"| where {knowledge_scope} and Confidence >= 0.6 "
+            "and (isnull(Relation) or Relation !in~ ('mentioned', 'candidate_mentioned')) "
+            "| order by Confidence desc | take 10"
+        )
+        core_knowledge = _kusto_query_direct(cluster, db, core_query)
+        if core_knowledge:
+            mem_lines = [f"  {k.get('Entity','?')} — {k.get('Relation','?')}: {k.get('Value','?')}"
+                         for k in core_knowledge]
+            context_parts.append("[Memory — Core Facts]\n" + "\n".join(mem_lines))
 
     # ── 4. Current emotion state (always) ──────────────────────────────
     emotion_query = _with_launch_filter("EmotionState | order by Timestamp desc | take 1")
@@ -823,10 +879,13 @@ def _build_memory_context(user_message):
 
     # ── 5. Message-relevant knowledge (on-demand) ──────────────────────
     words = [w.strip('?.,!') for w in user_message.split() if len(w) > 3][:4]
-    if words:
+    if words and knowledge_scope:
         word_filters = " or ".join(f"Entity has '{w}' or Value has '{w}'" for w in words[:3])
-        relevant_query = _with_launch_filter(
-            f"Knowledge | where ({word_filters}) and Confidence >= 0.6 and (isnull(Relation) or Relation !in~ ('mentioned', 'candidate_mentioned')) | order by Confidence desc, Timestamp desc | take 5"
+        relevant_query = (
+            "Knowledge "
+            f"| where {knowledge_scope} and ({word_filters}) and Confidence >= 0.6 "
+            "and (isnull(Relation) or Relation !in~ ('mentioned', 'candidate_mentioned')) "
+            "| order by Confidence desc | take 5"
         )
         knowledge = _kusto_query_direct(cluster, db, relevant_query)
         if knowledge:
@@ -881,7 +940,12 @@ def _build_memory_context(user_message):
                     'SelfState', 'Reflections', 'EmotionState', 'EmotionBaseline']
     for tbl in known_tables:
         if tbl.lower() in msg_lower and not any('Tables in' in p for p in context_parts):
-            sample_query = _with_launch_filter(f"{tbl} | order by Timestamp desc | take 5")
+            if tbl == 'Knowledge':
+                if not knowledge_scope:
+                    continue
+                sample_query = f"Knowledge | where {knowledge_scope} | take 5"
+            else:
+                sample_query = _with_launch_filter(f"{tbl} | order by Timestamp desc | take 5")
             sample = _kusto_query_direct(cluster, db, sample_query)
             if sample:
                 sample_text = "\n".join(f"  {str(row)[:150]}" for row in sample[:5])
@@ -933,6 +997,13 @@ def _post_response_reflection(user_message, assistant_response, model_name):
         know_rows = []
         for entity in candidate_entities[:3]:
             relation, confidence, value = _classify_entity_candidate(entity, user_message)
+            promotion = None
+            if relation == "candidate_mentioned":
+                promotion = _maybe_promote_candidate(entity)
+                if promotion:
+                    relation = promotion["relation"]
+                    confidence = promotion["confidence"]
+                    value = promotion["value"]
             know_rows.append({
                 "Timestamp": now,
                 "Entity": entity,
@@ -943,6 +1014,9 @@ def _post_response_reflection(user_message, assistant_response, model_name):
                 "Decay": 0.01
             })
             extracted_entities.append(entity)
+            _track_candidate_observation(entity)
+            if promotion:
+                print(f"[Cognition] Promoted candidate: {entity} ({promotion['reason']})")
 
         _kusto_ingest_direct(cluster, db, "Knowledge", know_columns, know_rows)
         print(f"[Cognition] Stored {len(know_rows)} validated knowledge entities: {extracted_entities}")

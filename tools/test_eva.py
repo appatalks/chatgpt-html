@@ -418,6 +418,39 @@ def test_entity_extraction_guardrail():
         report("entity_extraction_guardrail", "pass", f"synthetic entity was rejected: '{test_entity}'")
 
 
+def test_candidate_promotion_repetition():
+    """5.4  Repeated candidate entities should be promoted into recallable memory."""
+    seed = int(time.time()) % (26 * 26 * 26)
+    suffix = "".join(chr(97 + ((seed // (26 ** i)) % 26)) for i in range(3))
+    entity = f"Aurora{suffix}"
+
+    status1, _ = _aig_chat(f"I met {entity} yesterday.")
+    if status1 != 200:
+        report("candidate_promotion_first_write", "fail", f"status={status1}")
+        return
+
+    time.sleep(3)
+    r1 = requests.get(f"{BRIDGE}/v1/memory/context?{urlencode({'message': entity})}", timeout=15)
+    ctx1 = r1.json().get("context", "")
+    if entity in ctx1:
+        report("candidate_promotion_precheck", "fail", f"entity visible too early: {entity}")
+        return
+    report("candidate_promotion_precheck", "pass", f"entity hidden before repetition: {entity}")
+
+    status2, _ = _aig_chat(f"{entity} came up again in our discussion.")
+    if status2 != 200:
+        report("candidate_promotion_second_write", "fail", f"status={status2}")
+        return
+
+    time.sleep(3)
+    r2 = requests.get(f"{BRIDGE}/v1/memory/context?{urlencode({'message': entity})}", timeout=15)
+    ctx2 = r2.json().get("context", "")
+    if entity in ctx2:
+        report("candidate_promotion_repetition", "pass", f"entity promoted after repetition: {entity}")
+    else:
+        report("candidate_promotion_repetition", "fail", f"entity not promoted: {entity}")
+
+
 # ═══════════════════════════════════════════════════════════════════════
 #  SECTION 6: AIG Tool Routing (ACP + MCP)
 # ═══════════════════════════════════════════════════════════════════════
@@ -724,6 +757,7 @@ def main():
         ("Section 5: Post-Response Reflection", [
             test_reflection_trigger, test_reflection_empty_body,
             test_entity_extraction_guardrail,
+            test_candidate_promotion_repetition,
         ]),
         ("Section 6: AIG Tool Routing (ACP + MCP)", [
             test_aig_kusto_query_detection, test_aig_no_tool_for_simple,
