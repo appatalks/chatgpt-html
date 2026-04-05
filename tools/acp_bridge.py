@@ -452,12 +452,13 @@ class ACPClient:
 
 def _refresh_kusto_token():
     """Try to refresh the cached Kusto token using the stored credential. Returns True if refreshed."""
-    global _kusto_token_cache, _kusto_credential
+    global _kusto_token_cache, _kusto_credential, _kusto_table_columns_cache
     if not _kusto_credential:
         return False
     try:
         token = _kusto_credential.get_token("https://kusto.kusto.windows.net/.default")
         _kusto_token_cache = token.token
+        _kusto_table_columns_cache = {}
         print(f"[Bridge] Kusto token refreshed (length: {len(token.token)})")
         return True
     except Exception as e:
@@ -494,6 +495,7 @@ _session_conversation_buffer = []  # Buffer of recent (user, assistant) pairs fo
 _cognition_launch_iso = None  # UTC timestamp that marks the start of this bridge run
 _cognition_launch_id = None  # Human-readable launch identifier for this bridge run
 _cognition_candidate_counts = {}  # Lowercased entity -> mention count in current launch
+_kusto_table_columns_cache = {}  # (cluster, db, table) -> [columns]
 
 
 # ---------------------------------------------------------------------------
@@ -542,16 +544,54 @@ def _kusto_query_direct(cluster_url, database, query, is_mgmt=False):
             print(f"[Cognition] Kusto query error: {e}")
             return None
 
+
+def _get_table_columns(cluster_url, database, table):
+    """Return known table columns from Kusto schema, cached per cluster/db/table."""
+    key = (cluster_url, database, table)
+    cached = _kusto_table_columns_cache.get(key)
+    if cached is not None:
+        return cached
+
+    schema_rows = _kusto_query_direct(
+        cluster_url,
+        database,
+        f".show table {table} schema | project ColumnName",
+        is_mgmt=True,
+    )
+    if not schema_rows:
+        return None
+
+    cols = [str(r.get("ColumnName", "")).strip() for r in schema_rows if r.get("ColumnName")]
+    if not cols:
+        return None
+
+    _kusto_table_columns_cache[key] = cols
+    return cols
+
 def _kusto_ingest_direct(cluster_url, database, table, columns, rows_data):
     """Ingest data directly into Kusto via .ingest inline."""
     global _kusto_token_cache
     if not _kusto_token_cache:
         return False
+
+    table_columns = _get_table_columns(cluster_url, database, table)
+    if table_columns:
+        # Preserve table schema order for positional CSV ingest.
+        resolved_columns = [c for c in table_columns if c in columns]
+        dropped = [c for c in columns if c not in table_columns]
+        if dropped:
+            print(f"[Cognition] Ingest {table}: dropping unknown columns for current schema: {', '.join(dropped)}")
+        if not resolved_columns:
+            print(f"[Cognition] Ingest {table}: no matching columns found in table schema")
+            return False
+    else:
+        resolved_columns = list(columns)
+
     import requests as _requests_mod
     rows_csv = []
     for row_obj in rows_data:
         vals = []
-        for col in columns:
+        for col in resolved_columns:
             v = row_obj.get(col, "")
             if v is None:
                 vals.append("")
@@ -574,7 +614,7 @@ def _kusto_ingest_direct(cluster_url, database, table, columns, rows_data):
 
     cmd = f".ingest inline into table {table} <|\n" + "\n".join(rows_csv)
     if rows_csv:
-        print(f"[Cognition] Ingest {table}: {len(rows_csv)} rows")
+        print(f"[Cognition] Ingest {table}: {len(rows_csv)} rows ({len(resolved_columns)} cols)")
     url = f"{cluster_url}/v1/rest/mgmt"
     headers = {"Authorization": f"Bearer {_kusto_token_cache}", "Content-Type": "application/json"}
 
@@ -1877,9 +1917,10 @@ def main():
         sys.exit(1)
 
     # Enable cognition layer if Kusto MCP is configured
-    global _cognition_enabled, _cognition_launch_iso, _cognition_launch_id
+    global _cognition_enabled, _cognition_launch_iso, _cognition_launch_id, _kusto_table_columns_cache
     if "kusto-mcp-server" in mcp_config and _kusto_token_cache:
         import datetime
+        _kusto_table_columns_cache = {}
         _cognition_launch_iso = datetime.datetime.now(datetime.timezone.utc).isoformat().replace("+00:00", "Z")
         _cognition_launch_id = f"eva-{datetime.datetime.now(datetime.timezone.utc).strftime('%Y%m%d%H%M%S')}"
         _cognition_enabled = True
@@ -1909,8 +1950,10 @@ def main():
             for srv in mcp_config:
                 capabilities.append({"Timestamp": now, "Capability": f"mcp_{srv}",
                                      "Status": "active", "Details": "{}"})
-            _kusto_ingest_direct(cluster, "Eva", "SelfState", selfstate_cols, capabilities)
-            print(f"[Bridge] SelfState written ({len(capabilities)} capabilities)")
+            if _kusto_ingest_direct(cluster, "Eva", "SelfState", selfstate_cols, capabilities):
+                print(f"[Bridge] SelfState written ({len(capabilities)} capabilities)")
+            else:
+                print("[Bridge] SelfState write failed (continuing startup)")
     else:
         print(f"[Bridge] Cognition layer disabled (no Kusto MCP or token)")
 
