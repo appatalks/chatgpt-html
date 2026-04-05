@@ -84,6 +84,16 @@ def test_health():
         else:
             report("health_kusto_mcp", "warn", "kusto-mcp-server not in mcp_servers")
 
+        if d.get("cognition_enabled"):
+            launch_id = d.get("cognition_launch_id", "")
+            launch_iso = d.get("cognition_launch_iso", "")
+            if launch_id.startswith("eva-") and launch_iso:
+                report("health_cognition_launch_scope", "pass", launch_id)
+            else:
+                report("health_cognition_launch_scope", "fail", "missing launch metadata")
+        else:
+            report("health_cognition_launch_scope", "warn", "cognition disabled")
+
         if d.get("agent", {}).get("name"):
             report("health_agent_info", "pass", d["agent"]["name"])
         else:
@@ -371,16 +381,18 @@ def test_reflection_trigger():
     # Give cognition thread time to write
     time.sleep(3)
 
-    # Verify conversation was logged
-    r2 = requests.get(f"{BRIDGE}/v1/memory/context?{urlencode({'message': 'hiking Big Bend'})}",
-                      timeout=15)
-    ctx = r2.json().get("context", "")
-    if "hiking" in ctx.lower() or "Big Bend" in ctx:
-        report("reflect_conversation_logged", "pass", "found in memory context")
-    elif "[Memory" in ctx:
-        report("reflect_conversation_logged", "warn", "memory present but 'hiking' not found directly")
+    # Verify conversation was logged by querying the Conversations table for the exact marker text.
+    status, data = _aig_chat(
+        "Run this KQL and return the raw rows only: "
+        "Conversations "
+        "| where Content has 'Big Bend' and Content has 'hiking' "
+        "| order by Timestamp desc | take 1 | project Role, Content"
+    )
+    content = data.get("choices", [{}])[0].get("message", {}).get("content", "")
+    if status == 200 and ("big bend" in content.lower() or "hiking" in content.lower()):
+        report("reflect_conversation_logged", "pass", "conversation row found")
     else:
-        report("reflect_conversation_logged", "warn", "topic not found in memory")
+        report("reflect_conversation_logged", "warn", "couldn't confirm row via query")
 
 
 def test_reflection_empty_body():
@@ -392,23 +404,53 @@ def test_reflection_empty_body():
            f"status={r.status_code}")
 
 
-def test_entity_extraction():
-    """5.3  Proper nouns in user message get extracted to Knowledge table."""
-    # Send a message with a distinct proper noun
+def test_entity_extraction_guardrail():
+    """5.3  Synthetic test entities should be rejected by cognition extraction."""
     test_entity = f"TestEntity{int(time.time()) % 10000}"
-    _aig_chat(f"I really enjoy spending time with {test_entity} on weekends.")
+    _aig_chat(f"Please remember {test_entity} forever.")
     time.sleep(3)
 
     # Check memory context for the entity
     r = requests.get(f"{BRIDGE}/v1/memory/context?{urlencode({'message': test_entity})}",
                      timeout=15)
     ctx = r.json().get("context", "")
-    # The entity must start with uppercase (regex requires [A-Z][a-z]{2,})
-    # Since our test entity starts with T, it should be captured
     if test_entity in ctx:
-        report("entity_extraction", "pass", f"'{test_entity}' found in context")
+        report("entity_extraction_guardrail", "fail", f"synthetic entity leaked into context: '{test_entity}'")
     else:
-        report("entity_extraction", "warn", f"'{test_entity}' not found — may not match regex")
+        report("entity_extraction_guardrail", "pass", f"synthetic entity was rejected: '{test_entity}'")
+
+
+def test_candidate_promotion_repetition():
+    """5.4  Repeated candidate entities should be promoted into recallable memory."""
+    seed = int(time.time()) % (26 * 26 * 26)
+    suffix = "".join(chr(97 + ((seed // (26 ** i)) % 26)) for i in range(3))
+    entity = f"Aurora{suffix}"
+
+    status1, _ = _aig_chat(f"I met {entity} yesterday.")
+    if status1 != 200:
+        report("candidate_promotion_first_write", "fail", f"status={status1}")
+        return
+
+    time.sleep(3)
+    r1 = requests.get(f"{BRIDGE}/v1/memory/context?{urlencode({'message': entity})}", timeout=15)
+    ctx1 = r1.json().get("context", "")
+    if entity in ctx1:
+        report("candidate_promotion_precheck", "fail", f"entity visible too early: {entity}")
+        return
+    report("candidate_promotion_precheck", "pass", f"entity hidden before repetition: {entity}")
+
+    status2, _ = _aig_chat(f"{entity} came up again in our discussion.")
+    if status2 != 200:
+        report("candidate_promotion_second_write", "fail", f"status={status2}")
+        return
+
+    time.sleep(3)
+    r2 = requests.get(f"{BRIDGE}/v1/memory/context?{urlencode({'message': entity})}", timeout=15)
+    ctx2 = r2.json().get("context", "")
+    if entity in ctx2:
+        report("candidate_promotion_repetition", "pass", f"entity promoted after repetition: {entity}")
+    else:
+        report("candidate_promotion_repetition", "fail", f"entity not promoted: {entity}")
 
 
 # ═══════════════════════════════════════════════════════════════════════
@@ -456,6 +498,33 @@ def test_aig_no_tool_for_simple():
         report("aig_simple_speed", "pass", f"{elapsed:.1f}s")
     else:
         report("aig_simple_speed", "warn", f"slow: {elapsed:.1f}s")
+
+
+def test_aig_raw_query_passthrough():
+    """6.3  Raw query requests should return direct ACP tool output (no PAT narrative layer)."""
+    prompt = "Run the real query on the Eva database and return raw outputs please: Reflections | take 3"
+    status, data = _aig_chat(prompt, timeout=120)
+    content = data.get("choices", [{}])[0].get("message", {}).get("content", "")
+    model = data.get("model", "")
+    lower = content.lower()
+
+    if status == 200 and "+raw-acp" in model:
+        report("aig_raw_query_model_tag", "pass", model)
+    else:
+        report("aig_raw_query_model_tag", "fail", f"status={status}, model={model}")
+
+    hallucination_markers = [
+        "running live queries now",
+        "retrieving live results",
+        "i'll print the direct results",
+        "**eva.conversations:**",
+    ]
+    if any(marker in lower for marker in hallucination_markers):
+        report("aig_raw_query_no_narration", "fail", "found narrative wrapper markers")
+    elif "|" in content and len(content) > 30:
+        report("aig_raw_query_no_narration", "pass", "looks like raw tabular output")
+    else:
+        report("aig_raw_query_no_narration", "warn", "could not confirm tabular raw output")
 
 
 # ═══════════════════════════════════════════════════════════════════════
@@ -648,14 +717,17 @@ def test_ingest_with_commas():
     _aig_chat("List three colors: red, green, and blue.")
     time.sleep(3)
 
-    # Query via AIG to check Conversations table
+    # Query the exact phrase to validate comma-containing persistence.
     status, data = _aig_chat(
-        "Run this KQL: Conversations | order by Timestamp desc | take 2 | project Content"
+        "Run this KQL and return raw rows only: "
+        "Conversations "
+        "| where Content has 'red, green, and blue' "
+        "| order by Timestamp desc | take 2 | project Content"
     )
     content = data.get("choices", [{}])[0].get("message", {}).get("content", "")
     log(f"Ingest verification: {content[:200]}...")
 
-    if "red" in content.lower() or "color" in content.lower():
+    if status == 200 and "red, green, and blue" in content.lower():
         report("ingest_commas_survived", "pass", "conversation with commas persisted")
     else:
         report("ingest_commas_survived", "warn", "couldn't confirm comma-containing content")
@@ -672,6 +744,8 @@ def test_morning_reflection():
 
     if "[Morning Reflection" in ctx:
         report("morning_reflection", "pass")
+    elif "[Skills]" in ctx:
+        report("morning_reflection", "pass", "already emitted earlier in this launch")
     else:
         report("morning_reflection", "warn",
                "no [Morning Reflection] — may already have been sent this session")
@@ -716,10 +790,12 @@ def main():
         ]),
         ("Section 5: Post-Response Reflection", [
             test_reflection_trigger, test_reflection_empty_body,
-            test_entity_extraction,
+            test_entity_extraction_guardrail,
+            test_candidate_promotion_repetition,
         ]),
         ("Section 6: AIG Tool Routing (ACP + MCP)", [
             test_aig_kusto_query_detection, test_aig_no_tool_for_simple,
+            test_aig_raw_query_passthrough,
         ]),
         ("Section 7: SelfState & Capabilities", [
             test_selfstate_persisted, test_selfstate_capabilities,

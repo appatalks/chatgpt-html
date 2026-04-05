@@ -73,3 +73,13 @@ This project is a simple web UI for interacting with OpenAI, Google Generative m
 
 ## Versioning
 - Update `README.md` Features list when adding models or user-visible features.
+
+## ACP Infrastructure Roadmap
+- Keep ACP deployment assumptions aligned with `README-2.md` under **ACP Infrastructure Roadmap (tracking)**.
+- Until roadmap completion, treat split deployment as the default: static web tier may run on legacy hosts, while ACP Bridge runs on a compatible host.
+- For ACP server changes, verify and document runtime prerequisites:
+  - CPU architecture supports Copilot CLI (`x86_64` or `arm64`).
+  - Node.js is `>= 24`.
+  - Python is `>= 3.12`.
+  - Copilot CLI authentication is active (`copilot auth login` completed).
+- Do not remove localhost ACP fallback behavior in `core/js/copilot.js` until the single-host milestone is marked complete.
