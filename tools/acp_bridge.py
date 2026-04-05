@@ -456,10 +456,12 @@ def _refresh_kusto_token():
     if not _kusto_credential:
         return False
     try:
+        prior = _kusto_token_cache
         token = _kusto_credential.get_token("https://kusto.kusto.windows.net/.default")
         _kusto_token_cache = token.token
         _kusto_table_columns_cache = {}
-        print(f"[Bridge] Kusto token refreshed (length: {len(token.token)})")
+        refresh_state = "updated" if token.token != prior else "unchanged"
+        print(f"[Bridge] Kusto token refreshed ({refresh_state}, length: {len(token.token)})")
         return True
     except Exception as e:
         print(f"[Bridge] Token refresh failed: {e}")
@@ -498,6 +500,38 @@ _cognition_candidate_counts = {}  # Lowercased entity -> mention count in curren
 _kusto_table_columns_cache = {}  # (cluster, db, table) -> [columns]
 
 
+class _MSALSilentCredential:
+    """Credential wrapper that refreshes tokens from MSAL cache without interactive prompts."""
+
+    def __init__(self, app, account, token_cache, cache_path, default_scopes):
+        self._app = app
+        self._account = account
+        self._cache = token_cache
+        self._cache_path = cache_path
+        self._default_scopes = list(default_scopes)
+
+    def _persist_cache(self):
+        if self._cache.has_state_changed:
+            with open(self._cache_path, "w") as cache_file:
+                cache_file.write(self._cache.serialize())
+
+    def get_token(self, *scopes):
+        active_scopes = list(scopes) if scopes else list(self._default_scopes)
+        result = self._app.acquire_token_silent(active_scopes, account=self._account)
+        if not result or "access_token" not in result:
+            result = self._app.acquire_token_silent(active_scopes, account=self._account, force_refresh=True)
+        if not result or "access_token" not in result:
+            details = "no access_token returned"
+            if isinstance(result, dict):
+                details = result.get("error_description") or result.get("error") or details
+            raise RuntimeError(f"MSAL silent token refresh failed: {details}")
+
+        self._persist_cache()
+        token_value = result["access_token"]
+        expires_on = int(result.get("expires_on", 0) or 0)
+        return type("Token", (), {"token": token_value, "expires_on": expires_on})()
+
+
 # ---------------------------------------------------------------------------
 # Cognition Layer — memory injection, reflection, day lifecycle
 # ---------------------------------------------------------------------------
@@ -532,6 +566,8 @@ def _kusto_query_direct(cluster_url, database, query, is_mgmt=False):
                 print("[Cognition] Kusto query got 401, retrying with refreshed token")
                 headers["Authorization"] = f"Bearer {_kusto_token_cache}"
                 continue
+            elif resp.status_code == 401:
+                print("[Cognition] Kusto query still unauthorized after refresh; verify tenant/account RBAC for cluster/database")
             return None
         except (_requests_mod.exceptions.SSLError, _requests_mod.exceptions.ConnectionError) as e:
             if attempt < 2:
@@ -643,6 +679,8 @@ def _kusto_ingest_direct(cluster_url, database, table, columns, rows_data):
                 print("[Cognition] Kusto ingest got 401, retrying with refreshed token")
                 headers["Authorization"] = f"Bearer {_kusto_token_cache}"
                 continue
+            elif resp.status_code == 401:
+                print("[Cognition] Kusto ingest still unauthorized after refresh; verify tenant/account RBAC for cluster/database")
             else:
                 print(f"[Cognition] Kusto ingest failed ({resp.status_code}): {resp.text[:500]}")
                 return False
@@ -704,7 +742,16 @@ def _knowledge_scope_clause(max_entities=200):
 _ENTITY_IGNORE_WORDS = {
     "the", "this", "that", "what", "when", "where", "how", "why", "who", "can", "could",
     "would", "should", "hello", "please", "thanks", "hey", "eva", "image", "tell", "today",
-    "tomorrow", "yesterday", "time", "date", "reply", "respond", "answer", "exactly"
+    "tomorrow", "yesterday", "time", "date", "reply", "respond", "answer", "exactly",
+    "its", "whats", "have", "has", "had", "does", "did", "was", "were", "are", "been",
+    "being", "will", "shall", "may", "might", "must", "let", "lets", "also", "just",
+    "here", "there", "some", "any", "all", "each", "every", "many", "much", "very",
+    "yes", "not", "but", "and", "for", "with", "from", "about", "into", "over",
+    "your", "you", "they", "them", "their", "then", "than", "our", "his", "her",
+    "great", "good", "like", "sure", "okay", "right", "know", "think", "want",
+    "need", "make", "get", "see", "say", "said", "new", "use", "try", "give",
+    "look", "help", "come", "take", "back", "well", "too", "now",
+    "fetching", "searching", "getting", "running", "checking"
 }
 
 _ENTITY_RESERVED_TERMS = {
@@ -847,11 +894,16 @@ def _build_memory_context(user_message):
     context_parts = []
 
     # ── 1. Skills manifest (always injected, concise) ──────────────────
+    import datetime
+    _now_utc = datetime.datetime.now(datetime.timezone.utc)
+    _today_str = _now_utc.strftime("%A, %B %d, %Y")
+    _time_str = _now_utc.strftime("%H:%M UTC")
     context_parts.append(
+        f"[Current Date & Time] {_today_str} — {_time_str}\n\n"
         "[Skills]\n"
         "You have these active capabilities. Use them proactively — never say you cannot do something listed here.\n"
         "• data-retrieval: Fetch live stock quotes, financial data, company info via web tools (MCP)\n"
-        "• weather-news: Real-time weather, news headlines, market summaries, space weather (pre-loaded feeds)\n"
+        "• weather-news: Real-time weather, news headlines, market summaries, space weather via MCP tools\n"
         "• image-search: Find images on Wikimedia Commons for any topic\n"
         "• image-generation: Generate images via DALL-E 3 (use [Image of <description>] syntax)\n"
         "• persistent-memory: Read/write your Kusto database (Eva). Tables:\n"
@@ -859,7 +911,7 @@ def _build_memory_context(user_message):
         "    Conversations (SessionId, Role, Content) — chat history\n"
         "    EmotionState (Joy, Curiosity, Concern, Trigger) — your emotional readings\n"
         "    MemorySummaries (Period, Summary) — compressed session summaries\n"
-        "    Reflections (Reflection, Trigger) — your self-reflections\n"
+        "    Reflections (Timestamp, Trigger, Observation, ActionTaken, Effectiveness) — your self-reflections\n"
         "    SelfState (Capability, Status) — your active capabilities\n"
         "    HeuristicsIndex (Entity, Category, Frequency) — pattern tracking\n"
         "    EmotionBaseline (Dimension, Value) — emotional defaults\n"
@@ -872,6 +924,12 @@ def _build_memory_context(user_message):
         "2. Present results clearly with relevant metrics\n"
         "3. Add personal context from memory if relevant (e.g. user's location)\n"
         "\n"
+        "[Workflow: News & Weather]\n"
+        "When asked about news, weather, or current events:\n"
+        "1. ALWAYS use your MCP web-search tools to fetch real, current data\n"
+        "2. NEVER fabricate or guess headlines, forecasts, or events\n"
+        "3. If tools are unavailable, say so honestly — do not invent content\n"
+        "\n"
         "[Workflow: Memory]\n"
         "When asked about what you know/remember:\n"
         "1. Check the [Memory] facts provided below\n"
@@ -880,7 +938,6 @@ def _build_memory_context(user_message):
     )
 
     # ── 2. Day lifecycle (first message of the day) ────────────────────
-    import datetime
     today = datetime.date.today().isoformat()
     if _last_interaction_date != today:
         _last_interaction_date = today
@@ -893,19 +950,41 @@ def _build_memory_context(user_message):
             context_parts.append(f"[Morning Reflection — {today}]\nNew day. No prior summaries — this is a fresh start.")
 
     # ── 3. Core identity knowledge (always) ────────────────────────────
-    knowledge_scope = _knowledge_scope_clause()
-    if knowledge_scope:
-        core_query = (
-            "Knowledge "
-            f"| where {knowledge_scope} and Confidence >= 0.6 "
-            "and (isnull(Relation) or Relation !in~ ('mentioned', 'candidate_mentioned')) "
-            "| order by Confidence desc | take 10"
-        )
-        core_knowledge = _kusto_query_direct(cluster, db, core_query)
-        if core_knowledge:
-            mem_lines = [f"  {k.get('Entity','?')} — {k.get('Relation','?')}: {k.get('Value','?')}"
-                         for k in core_knowledge]
-            context_parts.append("[Memory — Core Facts]\n" + "\n".join(mem_lines))
+    knowledge_empty = True  # Track whether we have any core facts
+    # Fetch ALL high-confidence facts (not scope-limited) so persistent knowledge survives restarts
+    core_query = (
+        "Knowledge "
+        "| where Confidence >= 0.6 "
+        "and (isnull(Relation) or Relation !in~ ('mentioned', 'candidate_mentioned')) "
+        "| order by Confidence desc | take 15"
+    )
+    core_knowledge = _kusto_query_direct(cluster, db, core_query)
+    if core_knowledge:
+        knowledge_empty = False
+        mem_lines = [f"  {k.get('Entity','?')} — {k.get('Relation','?')}: {k.get('Value','?')}"
+                     for k in core_knowledge]
+        context_parts.append("[Memory — Core Facts]\n" + "\n".join(mem_lines))
+
+    # ── 3b. Init conversation — empty Knowledge triggers introduction ──
+    if knowledge_empty:
+        # Check total Knowledge rows (not just high-confidence / current scope)
+        total_check = _kusto_query_direct(cluster, db, "Knowledge | count")
+        total_rows = 0
+        if total_check:
+            total_rows = total_check[0].get("Count", 0) if total_check else 0
+        if total_rows < 5:
+            context_parts.append(
+                "[Init — First Conversation]\n"
+                "Your memory is empty. This is your very first conversation.\n"
+                "Warmly introduce yourself as Eva. Then ask the user these questions naturally "
+                "(not all at once — weave them into conversation over the first few exchanges):\n"
+                "  1. What is your name?\n"
+                "  2. Where are you located?\n"
+                "  3. What topics interest you most?\n"
+                "  4. Is there anything specific you'd like me to remember about you?\n"
+                "Once the user answers, confirm what you've learned and let them know you'll "
+                "remember it. Do NOT fabricate facts — only store what the user explicitly tells you."
+            )
 
     # ── 4. Current emotion state (always) ──────────────────────────────
     emotion_query = _with_launch_filter("EmotionState | order by Timestamp desc | take 1")
@@ -919,11 +998,11 @@ def _build_memory_context(user_message):
 
     # ── 5. Message-relevant knowledge (on-demand) ──────────────────────
     words = [w.strip('?.,!') for w in user_message.split() if len(w) > 3][:4]
-    if words and knowledge_scope:
+    if words:
         word_filters = " or ".join(f"Entity has '{w}' or Value has '{w}'" for w in words[:3])
         relevant_query = (
             "Knowledge "
-            f"| where {knowledge_scope} and ({word_filters}) and Confidence >= 0.6 "
+            f"| where ({word_filters}) and Confidence >= 0.6 "
             "and (isnull(Relation) or Relation !in~ ('mentioned', 'candidate_mentioned')) "
             "| order by Confidence desc | take 5"
         )
@@ -1117,8 +1196,8 @@ def _post_response_reflection(user_message, assistant_response, model_name):
             f"User asked about: {user_message[:80]}."
         )
 
-        ref_columns = ["Reflection", "Trigger", "Timestamp"]
-        ref_rows = [{"Reflection": reflection_text, "Trigger": user_message[:100], "Timestamp": now}]
+        ref_columns = ["Timestamp", "Trigger", "Observation", "ActionTaken", "Effectiveness"]
+        ref_rows = [{"Timestamp": now, "Trigger": user_message[:100], "Observation": reflection_text, "ActionTaken": "", "Effectiveness": 0.0}]
         _kusto_ingest_direct(cluster, db, "Reflections", ref_columns, ref_rows)
         print(f"[Cognition] Auto-reflection #{_session_exchange_count}: {reflection_text[:100]}")
 
@@ -1334,16 +1413,52 @@ class BridgeHandler(BaseHTTPRequestHandler):
         if memory_context:
             print(f"[AIG] Injected {len(memory_context)} chars of memory context")
 
-        # Step 2: Determine if we need ACP tools (MCP/Kusto queries beyond heuristics)
+        # Step 2: ACP-first routing — ACP is the default path (it has MCP tools).
+        # Only skip ACP for trivial conversational messages with high confidence.
         import re as _re
         msg_lower = user_message.lower()
-        needs_acp_tools = False
-        if acp_client and acp_client.alive:
-            # Detect queries that need live MCP tool execution beyond what heuristics provide
-            if _re.search(r'\b(query|run|execute|kql|sample|schema|show me data|rows?|records?)\b', msg_lower):
-                needs_acp_tools = True
-            if _re.search(r'\b(count|sum|average|where|filter|join|extend|project|distinct|top|take \d)\b', msg_lower):
-                needs_acp_tools = True
+        msg_stripped = _re.sub(r'[^\w\s]', '', msg_lower).strip()
+        msg_words = msg_stripped.split()
+
+        skip_acp = False
+        _acp_route = "default"
+
+        if not (acp_client and acp_client.alive):
+            skip_acp = True
+            _acp_route = "acp-unavailable"
+        elif len(msg_words) <= 4 and _re.match(
+            r'^(hi|hey|hello|howdy|yo|sup|good morning|good evening|good afternoon|thanks|thank you|ok|okay|bye|goodbye|see you|great|cool|nice|sure|yes|no|nah|yep|nope)\b',
+            msg_stripped
+        ):
+            skip_acp = True
+            _acp_route = "greeting/trivial"
+        elif len(msg_words) <= 6 and _re.match(
+            r'^(how are you|how do you feel|what is your name|who are you|what can you do|tell me about yourself)\b',
+            msg_stripped
+        ):
+            skip_acp = True
+            _acp_route = "meta-question"
+
+        # Classify the request type for logging and prompt tuning
+        _request_type = "general"
+        if _re.search(r'\b(query|run|execute|kql|sample|schema|show me data|rows?|records?)\b', msg_lower):
+            _request_type = "kusto-query"
+        elif _re.search(r'\b(count|sum|average|where|filter|join|extend|project|distinct|top|take \d)\b', msg_lower):
+            _request_type = "kusto-operator"
+        elif _re.search(r'\b(news|headline|current events?|latest.*(?:update|report|story|stories|happening))\b', msg_lower):
+            _request_type = "news-search"
+        elif _re.search(r'\b(weather|forecast|temperature|rain|storm)\b', msg_lower):
+            _request_type = "weather-search"
+        elif _re.search(r'\b(stock|price|ticker|market|close|open|share|nasdaq|s&p|dow)\b', msg_lower):
+            _request_type = "financial-data"
+        elif _re.search(r'\b(search|look up|find out|what happened|who won|score|result)\b', msg_lower):
+            _request_type = "web-search"
+
+        needs_acp_tools = not skip_acp
+        if skip_acp:
+            print(f"[AIG] Skipping ACP ({_acp_route})")
+        else:
+            print(f"[AIG] ACP-first routing: {_request_type}")
 
         # Raw-output mode avoids PAT restyling to reduce fabricated "live" results.
         raw_output_requested = bool(_re.search(
@@ -1351,10 +1466,18 @@ class BridgeHandler(BaseHTTPRequestHandler):
             msg_lower
         )) and needs_acp_tools
 
+        row_recall_requested = bool(_re.search(
+            r'\b(latest|recent|rows?|records?)\b',
+            msg_lower
+        )) and bool(_re.search(
+            r'\b(table|reflections|conversations|knowledge|selfstate|emotionstate|memorysummaries|heuristicsindex|emotionbaseline)\b',
+            msg_lower
+        )) and needs_acp_tools
+
         acp_data = ""
         acp_model_used = ""
         if needs_acp_tools:
-            print(f"[AIG] Step 2: Using ACP for data retrieval...")
+            print(f"[AIG] Step 2: Using ACP ({_request_type})...")
             # Use ACP to run the data query (it has MCP tools)
             if raw_output_requested:
                 acp_prompt = (
@@ -1363,9 +1486,29 @@ class BridgeHandler(BaseHTTPRequestHandler):
                     "Do not add headings, markdown, explanations, or invented rows.\n\n"
                     f"{user_message}"
                 )
+            elif _request_type in ("news-search", "weather-search", "financial-data", "web-search"):
+                acp_prompt = (
+                    "You are a research assistant with web search tools. "
+                    "Use your available tools to search the web and find REAL, CURRENT information for the user's request. "
+                    "Return factual results with sources. Do NOT invent or guess information. "
+                    "If no tools return results, say 'No results found' — do NOT fabricate data.\n\n"
+                    f"{user_message}"
+                )
+            elif _request_type in ("kusto-query", "kusto-operator"):
+                acp_prompt = (
+                    "You are a data retrieval assistant. Execute the appropriate Kusto MCP tool to answer this request. "
+                    "Return ONLY the raw data results, no commentary:\n\n"
+                    f"{user_message}"
+                )
             else:
-                acp_prompt = f"You are a data retrieval assistant. Execute the appropriate Kusto MCP tool to answer this request. Return ONLY the raw data results, no commentary:\n\n{user_message}"
-            acp_result = acp_client.prompt(acp_prompt, timeout=60)
+                # General request — let ACP use whatever tools it deems appropriate
+                acp_prompt = (
+                    "You are an assistant with access to web search, Kusto databases, GitHub, and Azure tools. "
+                    "Answer the user's question using your available tools if they would help. "
+                    "If no tools are needed, answer directly. Be factual and concise.\n\n"
+                    f"{user_message}"
+                )
+            acp_result = acp_client.prompt(acp_prompt, timeout=90)
             if acp_result and "text" in acp_result and acp_result["text"]:
                 acp_data = acp_result["text"]
                 acp_model_used = acp_client.model or "copilot-acp"
@@ -1376,8 +1519,14 @@ class BridgeHandler(BaseHTTPRequestHandler):
             "You are Eva, an AI assistant with persistent memory and active tool access. "
             "You have skills for live data retrieval (stocks, weather, news, markets), "
             "web search, image generation, and a Kusto persistent memory database. "
-            "Always use your tools to fulfill requests — never claim inability for listed skills. "
             "Use the context below naturally as your own knowledge.\n\n"
+            "CRITICAL RULES:\n"
+            "- NEVER fabricate news headlines, stock prices, weather forecasts, or current events.\n"
+            "- NEVER pretend to 'fetch' or 'search' for data — you either have it in [Data Retrieved] below, or you don't.\n"
+            "- If [Data Retrieved] is present, use it as your authoritative source.\n"
+            "- If NO [Data Retrieved] section exists for a real-time question (news, stocks, weather), "
+            "honestly say you could not retrieve that information right now.\n"
+            "- Do NOT generate fake source citations (AP, Reuters, etc.) unless they appear in [Data Retrieved].\n\n"
         )
 
         if memory_context:
@@ -1385,7 +1534,12 @@ class BridgeHandler(BaseHTTPRequestHandler):
 
         if acp_data:
             eva_system += f"\n[Data Retrieved]\n{acp_data}\n\n"
-            eva_system += "Use the data above to answer the user's question accurately. Present it clearly.\n"
+            eva_system += (
+                "Use the data above as authoritative live results. "
+                "Do not claim the data is missing, preloaded-only, or unavailable when [Data Retrieved] is present. "
+                "Do not ask the user to confirm running a query that has already been executed. "
+                "Answer directly from [Data Retrieved].\n"
+            )
 
         # Step 4: Pick the best PAT model for response generation
         # Priority: request body PAT > env var > Copilot CLI OAuth token > ACP fallback
@@ -1451,6 +1605,12 @@ class BridgeHandler(BaseHTTPRequestHandler):
             model_used = f"aig:{active_raw_model}+raw-acp"
             github_pat = ""
             print("[AIG] Raw-output mode: returning ACP tool output directly")
+        elif row_recall_requested and acp_data:
+            active_data_model = acp_model_used or (acp_client.model if acp_client else "copilot-acp")
+            response_text = acp_data
+            model_used = f"aig:{active_data_model}+acp-data"
+            github_pat = ""
+            print("[AIG] Row-recall mode: returning ACP tool output directly")
         elif raw_output_requested and needs_acp_tools and not acp_data:
             response_text = "Raw query mode requested but no tool output was returned. Retry with explicit KQL."
             model_used = "aig:raw-acp-unavailable"
@@ -1503,6 +1663,27 @@ class BridgeHandler(BaseHTTPRequestHandler):
                     model_used = f"aig:{model_for_response}"
                     if acp_model_used:
                         model_used += f"+{acp_model_used}"
+
+                    # If PAT produces a planning/deferral narrative despite ACP data,
+                    # prefer the already-retrieved tool output to avoid hallucinated recall text.
+                    if acp_data and needs_acp_tools:
+                        pat_lower = (response_text or "").lower()
+                        deferral_markers = [
+                            "if you'd like",
+                            "i can run this query",
+                            "i can run the query",
+                            "once results are available",
+                            "i will execute",
+                            "please confirm",
+                            "preloaded data",
+                            "no explicit",
+                        ]
+                        if any(m in pat_lower for m in deferral_markers):
+                            active_data_model = acp_model_used or (acp_client.model if acp_client else "copilot-acp")
+                            response_text = acp_data
+                            model_used = f"aig:{active_data_model}+acp-data"
+                            print("[AIG] PAT response deferred despite ACP data; returning ACP data directly")
+
                     print(f"[AIG] PAT response: {len(response_text)} chars")
                 else:
                     err_body = pat_resp.text[:500] if pat_resp.text else "(empty)"
@@ -1875,27 +2056,17 @@ def main():
                     )
                     _accounts = _app.get_accounts()
                     if _accounts:
-                        _result = _app.acquire_token_silent(
-                            scopes=["https://kusto.kusto.windows.net/.default"],
-                            account=_accounts[0]
+                        msal_cred = _MSALSilentCredential(
+                            app=_app,
+                            account=_accounts[0],
+                            token_cache=_msal_cache,
+                            cache_path=_cache_path,
+                            default_scopes=["https://kusto.kusto.windows.net/.default"],
                         )
-                        if _result and "access_token" in _result:
-                            # Create a simple credential wrapper for compatibility
-                            class _MSALCredential:
-                                def __init__(self, tok):
-                                    self._tok = tok
-                                def get_token(self, *a, **kw):
-                                    import collections
-                                    T = collections.namedtuple("T", ["token", "expires_on"])
-                                    return T(self._tok, 0)
-                            token_str = _result["access_token"]
-                            token = type('T', (), {'token': token_str})()
-                            cred = _MSALCredential(token_str)
+                        token = msal_cred.get_token("https://kusto.kusto.windows.net/.default")
+                        if token and getattr(token, "token", None):
+                            cred = msal_cred
                             print(f"[Bridge] Kusto token refreshed silently from MSAL cache")
-                            # Save updated cache
-                            if _msal_cache.has_state_changed:
-                                with open(_cache_path, "w") as _cf:
-                                    _cf.write(_msal_cache.serialize())
                         else:
                             print(f"[Bridge] MSAL silent refresh returned no token")
                     else:

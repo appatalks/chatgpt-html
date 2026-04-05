@@ -162,8 +162,8 @@ tools/
 ### Server-side (for ACP Bridge)
 | Dependency | Required for | Install |
 |---|---|---|
-| Python 3.7+ | ACP Bridge, Kusto MCP | Pre-installed on most Linux |
-| Node.js 20+ | Copilot CLI | `nvm install 20` or system package |
+| Python 3.12+ | ACP Bridge, Kusto MCP | System package or `pyenv` |
+| Node.js 24+ | Copilot CLI | `nvm install 24` or system package |
 | `@github/copilot` | Copilot CLI | `npm install -g @github/copilot` |
 | `azure-identity` | Kusto MCP auth | `pip install azure-identity` |
 | `requests` | Kusto MCP HTTP calls | `pip install requests` |
@@ -354,6 +354,22 @@ sudo ./tools/acp_setup.sh
 - Deploys systemd service (`acp-bridge`)
 - Auto-starts on boot, restarts on failure
 - Bridge auto-detected by browser on same host
+
+### ACP Infrastructure Roadmap (tracking)
+
+Current state (2026-04-05):
+- Static web tier can run on legacy 32-bit hosts.
+- ACP Bridge currently runs on a separate compatible machine.
+- Single-host deployment is blocked until new hardware is available.
+
+| Milestone | Status | Notes |
+|---|---|---|
+| Provision new bridge-capable server (`x86_64` or `arm64`) | planned | Recommended baseline: 2+ vCPU, 4+ GB RAM |
+| Install runtime baseline (`node >= 24`, `python >= 3.12`) | planned | Copilot CLI currently requires Node.js 24+ |
+| Authenticate Copilot CLI service account | planned | `copilot auth login` on target host |
+| Deploy bridge as systemd service | planned | Use `tools/acp_setup.sh` and `tools/acp_bridge.service` |
+| Move from split setup to single-host ACP | planned | Keep localhost fallback until this is complete |
+| Post-migration validation gate | planned | `/health` ok + AIG raw-query smoke + `tools/test_eva.py` |
 
 ## Eva (AIG) — Recommended Model
 
