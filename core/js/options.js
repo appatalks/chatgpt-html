@@ -123,8 +123,38 @@ function populateAuthFields() {
   }
 }
 
-function applyStandaloneSurface() {
+function applyStandaloneSimplifications() {
   if (!(typeof isEvaStandalone === 'function' && isEvaStandalone())) return;
+
+  var selModel = document.getElementById('selModel');
+  if (selModel) {
+    var modelChanged = selModel.value !== 'aig';
+    Array.from(selModel.children).forEach(function(child) {
+      if (child.tagName === 'OPTGROUP') {
+        var hasAigOption = false;
+        Array.from(child.children).forEach(function(option) {
+          if (option.value === 'aig') {
+            hasAigOption = true;
+          } else {
+            option.remove();
+          }
+        });
+        if (!hasAigOption) child.remove();
+      } else if (child.tagName === 'OPTION' && child.value !== 'aig') {
+        child.remove();
+      }
+    });
+
+    selModel.value = 'aig';
+    var modelLabel = document.querySelector('label[for="selModel"]');
+    if (modelLabel) modelLabel.style.display = 'none';
+    selModel.style.display = 'none';
+
+    if (modelChanged) {
+      selModel.dispatchEvent(new Event('change', { bubbles: true }));
+    }
+  }
+
   var barkOption = document.querySelector('#selEngine option[value="bark"]');
   if (!barkOption) return;
   var engineSelect = barkOption.parentElement;
@@ -132,6 +162,10 @@ function applyStandaloneSurface() {
     engineSelect.value = 'standard';
   }
   barkOption.remove();
+}
+
+function applyStandaloneSurface() {
+  applyStandaloneSimplifications();
 }
 
 function toggleAuthVis(btn) {
@@ -342,6 +376,7 @@ function updateModelOptionsForTheme(theme) {
       }
     }
   }
+  applyStandaloneSimplifications();
 }
 
 // Settings Menu Options 
@@ -789,6 +824,7 @@ function _detectGenerationIntent() {
 }
 
 function updateButton() {
+  applyStandaloneSimplifications();
     var selModel = document.getElementById("selModel");
     var btnSend = document.getElementById("btnSend");
 
@@ -841,6 +877,7 @@ function updateButton() {
 function sendData() {
     // Hide Eva welcome MOTD on first send
     hideEvaWelcome();
+  applyStandaloneSimplifications();
 
     // Logic required for initial message
     var selModel = document.getElementById("selModel");

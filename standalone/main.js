@@ -22,6 +22,19 @@ function clearBridgeStopTimer() {
   }
 }
 
+function groupSignal(child, signal) {
+  if (!child) return;
+  try {
+    if (child.pid) {
+      process.kill(-child.pid, signal);
+      return;
+    }
+  } catch (_) {}
+  try {
+    child.kill(signal);
+  } catch (_) {}
+}
+
 function createAddressInUseError(port) {
   const err = new Error('ACP bridge could not bind to 127.0.0.1:' + port + ' because the port was already in use. Retrying with a new local port.');
   err.code = 'EADDRINUSE';
@@ -56,7 +69,7 @@ function logFatalError(label, err) {
 function exitAfterFatalError(label, err) {
   logFatalError(label, err);
   try {
-    stopBridge();
+    forceKillBridgeSync();
   } finally {
     process.exit(1);
   }
@@ -178,6 +191,27 @@ function waitForBridge(baseUrl, childProcess, timeoutMs) {
   });
 }
 
+function waitForBridgeExit(childProcess, timeoutMs) {
+  return new Promise(function(resolve) {
+    if (!childProcess || childProcess.exitCode !== null || childProcess.signalCode !== null) {
+      resolve();
+      return;
+    }
+    let settled = false;
+    const timer = setTimeout(done, timeoutMs);
+
+    function done() {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      childProcess.off('exit', done);
+      resolve();
+    }
+
+    childProcess.once('exit', done);
+  });
+}
+
 function startBridge(port) {
   const appRoot = getAppRoot();
   const bridgePath = path.join(appRoot, 'tools', 'acp_bridge.py');
@@ -190,11 +224,16 @@ function startBridge(port) {
   const child = spawn('python3', args, {
     cwd: appRoot,
     env: env,
+    detached: true,
     stdio: ['ignore', 'pipe', 'pipe']
   });
   let stderrBuffer = '';
 
   bridgeProcess = child;
+  child.evaAwaitingReady = true;
+  child.evaClearStderrBuffer = function() {
+    stderrBuffer = '';
+  };
 
   child.stdout.on('data', function(chunk) {
     process.stdout.write('[eva-acp] ' + chunk.toString());
@@ -203,7 +242,7 @@ function startBridge(port) {
     const text = chunk.toString();
     process.stderr.write('[eva-acp] ' + text);
     stderrBuffer = (stderrBuffer + text).slice(-1000);
-    if (!child.evaAddressInUseError && ADDRESS_IN_USE_PATTERN.test(stderrBuffer)) {
+    if (child.evaAwaitingReady && !child.evaAddressInUseError && ADDRESS_IN_USE_PATTERN.test(stderrBuffer)) {
       const err = createAddressInUseError(port);
       child.evaAddressInUseError = err;
       child.emit('eva-address-in-use', err);
@@ -235,6 +274,21 @@ function startBridge(port) {
   return child;
 }
 
+function forceKillBridgeSync() {
+  shuttingDown = true;
+  const child = bridgeProcess;
+  if (!child || !child.pid) return;
+
+  try {
+    process.kill(-child.pid, 'SIGKILL');
+    return;
+  } catch (err) {
+    try {
+      child.kill('SIGKILL');
+    } catch (_) {}
+  }
+}
+
 function stopBridge() {
   shuttingDown = true;
   if (stoppingBridge) return;
@@ -243,10 +297,10 @@ function stopBridge() {
   const child = bridgeProcess;
   stoppingBridge = true;
   bridgeStoppingProcess = child;
-  child.kill('SIGTERM');
+  groupSignal(child, 'SIGTERM');
   bridgeStopTimer = setTimeout(function() {
     if (bridgeStoppingProcess === child) {
-      child.kill('SIGKILL');
+      groupSignal(child, 'SIGKILL');
     }
   }, 3000);
 }
@@ -289,12 +343,19 @@ async function boot() {
     try {
       await waitForBridge(acpBaseUrl, child, BRIDGE_READY_TIMEOUT_MS);
       readyBridgeProcess = child;
+      child.evaAwaitingReady = false;
+      if (typeof child.evaClearStderrBuffer === 'function') child.evaClearStderrBuffer();
       createWindow(acpBaseUrl);
       return;
     } catch (err) {
       if (err && err.code === 'EADDRINUSE') {
         if (attempt < BRIDGE_PORT_RETRY_LIMIT) {
           console.error('ACP bridge port ' + port + ' was already in use. Retrying with a new local port.');
+          const priorChild = child;
+          await waitForBridgeExit(priorChild, 1000);
+          if (priorChild.exitCode === null && priorChild.signalCode === null) {
+            groupSignal(priorChild, 'SIGKILL');
+          }
           continue;
         }
         throw createPortRetryError();

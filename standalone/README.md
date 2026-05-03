@@ -30,5 +30,6 @@ The AppImage build is configured in `package.json` but this scaffold does not in
 
 - Electron starts `tools/acp_bridge.py` with `python3` on `127.0.0.1` using a free dynamic port.
 - The renderer receives the bridge URL through `window.evaStandalone.acpBaseUrl`.
+- Standalone exposes Eva (AIG) only. All routing, cognition, AIG backend selection, and Settings sub-controls remain available.
 - The Kusto database field is intentionally blank on first run. Configure it in Settings > MCP.
 - Bark is hidden in standalone mode. AWS Polly remains in the Auth tab, and browser SpeechSynthesis remains available.
