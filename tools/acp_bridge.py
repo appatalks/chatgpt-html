@@ -1526,7 +1526,9 @@ class BridgeHandler(BaseHTTPRequestHandler):
             "- If [Data Retrieved] is present, use it as your authoritative source.\n"
             "- If NO [Data Retrieved] section exists for a real-time question (news, stocks, weather), "
             "honestly say you could not retrieve that information right now.\n"
-            "- Do NOT generate fake source citations (AP, Reuters, etc.) unless they appear in [Data Retrieved].\n\n"
+            "- Do NOT generate fake source citations (AP, Reuters, etc.) unless they appear in [Data Retrieved].\n"
+            "- When asked about your base model, underlying model, model ID, or what powers you, "
+            "answer using the [Runtime] section below. Do NOT guess or invent a model name.\n\n"
         )
 
         if memory_context:
@@ -1630,6 +1632,29 @@ class BridgeHandler(BaseHTTPRequestHandler):
         elif _using_oauth_token and model_for_response not in _github_model_map:
             print(f"[AIG] OAuth token can't access {model_for_response}, routing to ACP")
             github_pat = ""
+
+        # Inject runtime info so Eva can answer truthfully when asked about her model.
+        # Decided after routing fall-throughs above so it reflects the path that will run.
+        if github_pat:
+            _route_label = "GitHub Models API (PAT)" if not _using_oauth_token else "GitHub Models API (Copilot OAuth)"
+            _runtime_model = model_for_response
+        else:
+            _route_label = "Copilot CLI ACP bridge"
+            _runtime_model = acp_response_model or (acp_client.model if acp_client else "") or "default"
+        eva_system += (
+            f"\n[Runtime - AUTHORITATIVE GROUND TRUTH]\n"
+            f"This block is injected by tools/acp_bridge.py. It overrides any model self-knowledge.\n"
+            f"User-selected backend: {model_for_response}\n"
+            f"Active responder model: {_runtime_model}\n"
+            f"Routing path: {_route_label}\n"
+            f"Wrapper: Eva AIG via tools/acp_bridge.py\n\n"
+            f"When asked which model you are, what your base model is, your model ID, "
+            f"who made you, or what powers you, you MUST answer using ONLY the values above. "
+            f"Do NOT claim to be Claude, GPT-4o, GPT-4, Opus, Sonnet, Haiku, Gemini, "
+            f"or any other model unless that exact name appears in 'Active responder model' above. "
+            f"If 'Active responder model' is '{_runtime_model}', then your answer is "
+            f"'{_runtime_model}' and nothing else. Do not second-guess this block.\n\n"
+        )
 
         if github_pat:
             # Use GitHub Models API (PAT) for persona-friendly response

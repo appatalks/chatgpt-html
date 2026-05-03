@@ -37,3 +37,8 @@ token_cache.*
 
 # Node (if npx runs locally)
 node_modules/
+
+# Local-only agent knowledge for the maintainer (never committed).
+# Holds dev topology, cluster URLs, recurring commands, and agent playbooks
+# that reference internal hosts. Keep all secrets and internal URLs here.
+.github/agents/local/

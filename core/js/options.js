@@ -861,12 +861,25 @@ function sendData() {
 // Footer status helper
 function setStatus(type, text) {
   var el = document.getElementById('idText');
-  if (!el) return;
-  el.classList.remove('status-info','status-warn','status-error');
-  if (type === 'warn') el.classList.add('status-warn');
-  else if (type === 'error') el.classList.add('status-error');
-  else el.classList.add('status-info');
-  if (text) el.textContent = text;
+  if (el) {
+    el.classList.remove('status-info','status-warn','status-error');
+    if (type === 'warn') el.classList.add('status-warn');
+    else if (type === 'error') el.classList.add('status-error');
+    else el.classList.add('status-info');
+    if (text) el.textContent = text;
+  }
+  // Mirror into the Eva-theme footer status line so users on the Eva theme
+  // (which hides the LCARS monitor dock) still see model/route updates.
+  var foot = document.getElementById('evaStatusFooter');
+  if (foot) {
+    foot.classList.remove('status-info','status-warn','status-error');
+    if (type === 'warn') foot.classList.add('status-warn');
+    else if (type === 'error') foot.classList.add('status-error');
+    else foot.classList.add('status-info');
+    var msg = text || '';
+    foot.textContent = msg;
+    foot.setAttribute('data-empty', msg ? 'false' : 'true');
+  }
 }
 
 // --- Monitors: Token, Network, Session ---

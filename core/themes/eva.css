@@ -809,7 +809,38 @@ body.theme-eva .eva-disclaimer {
   border-top: 1px solid var(--eva-border);
   opacity: 0.7;
 }
-
+/* ── Eva Status Footer (mirrors #idText) ────────────── */
+.eva-status-footer { display: none; } /* hidden outside Eva theme */
+body.theme-eva .eva-status-footer {
+  display: block;
+  text-align: center;
+  font: 400 11px var(--eva-font);
+  color: var(--eva-text-muted);
+  padding: 4px 16px 0;
+  background: var(--eva-surface);
+  border-top: 1px solid var(--eva-border);
+  opacity: 0.85;
+  letter-spacing: .01em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+body.theme-eva .eva-status-footer[data-empty="true"] {
+  /* Collapse spacing when empty so the disclaimer sits flush. */
+  padding: 0;
+  border-top: none;
+  height: 0;
+  overflow: hidden;
+}
+body.theme-eva .eva-status-footer.status-info { color: var(--eva-accent); }
+body.theme-eva .eva-status-footer.status-warn { color: var(--eva-warning); }
+body.theme-eva .eva-status-footer.status-error { color: var(--eva-danger); }
+/* When the status footer is visible, drop the disclaimer's top border so the
+   two lines read as one footer block. */
+body.theme-eva .eva-status-footer:not([data-empty="true"]) + .eva-disclaimer {
+  border-top: none;
+  padding-top: 2px;
+}
 /* ── Responsive ─────────────────────────────────────────────── */
 @media (max-width: 599px) {
   body.theme-eva { grid-template-columns: 1fr; padding: 0; }

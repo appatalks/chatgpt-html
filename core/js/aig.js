@@ -101,7 +101,24 @@ async function aigSend() {
       localStorage.setItem('masterOutput', masterOutput);
     }
 
-    setStatus('info', 'Response from Eva (AIG) via ' + modelUsed);
+    // Friendly status: pull the actual responder model out of the bridge tag
+    // (e.g. "aig:gpt-5.5+copilot-acp" -> responder "gpt-5.5", route "via ACP").
+    var responder = modelUsed;
+    var routeLabel = '';
+    var stripped = String(modelUsed).replace(/^aig:/, '');
+    var firstSegment = stripped.split('+')[0] || stripped;
+    if (firstSegment) responder = firstSegment;
+    var acpTagRe = /(^|\+)(copilot-acp|acp-data|raw-acp|raw-acp-unavailable|acp-default)$/;
+    if (/^(claude-|gemini-)/.test(responder) || acpTagRe.test(stripped) || responder === 'acp-default') {
+      routeLabel = ' via ACP';
+    } else if (/^(gpt-|o\d|deepseek-|llama-)/.test(responder)) {
+      routeLabel = ' via GitHub Models';
+    }
+    if (responder === 'unavailable' || responder === 'raw-acp-unavailable') {
+      setStatus('error', 'Eva (AIG) responder unavailable (' + modelUsed + ')');
+    } else {
+      setStatus('info', 'Eva (AIG) \u2014 ' + responder + routeLabel + '  [' + modelUsed + ']');
+    }
 
     // Auto-speak
     var checkbox = document.getElementById('autoSpeak');
