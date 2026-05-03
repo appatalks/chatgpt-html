@@ -1709,7 +1709,7 @@ class BridgeHandler(BaseHTTPRequestHandler):
         model_for_response = data.get("model", "gpt-4.1")  # frontend-selectable, default gpt-4.1
 
         # Models available on GitHub Models API (PAT).
-        # Claude/Gemini are NOT available — they must route through ACP.
+        # Models absent from this map must route through ACP.
         # See: https://github.com/marketplace/models/catalog
         # API endpoint: https://models.github.ai/inference/chat/completions
         # Model names use publisher/model format.
@@ -1727,17 +1727,15 @@ class BridgeHandler(BaseHTTPRequestHandler):
             "deepseek-r1": "deepseek/DeepSeek-R1",
             "llama-4-maverick": "meta/llama-4-maverick-17b-128e-instruct-fp8",
         }
-        # Models that MUST go through ACP (not on GitHub Models API)
-        _acp_only_prefixes = ("claude-", "gemini-")
+        # Any selector model not listed in _github_model_map routes
+        # through ACP. This covers Claude, Gemini, and unmapped GPT
+        # variants (e.g. gpt-5.5, gpt-5.3-codex) that Copilot CLI serves.
 
         api_model = _github_model_map.get(model_for_response, model_for_response)
         acp_response_model = ""
         if model_for_response == "acp":
             acp_response_model = ""
-        elif any(model_for_response.startswith(p) for p in _acp_only_prefixes):
-            acp_response_model = model_for_response
         elif model_for_response not in _github_model_map:
-            # Unknown/non-GitHub-Models entries must route through ACP.
             acp_response_model = model_for_response
 
         print(f"[AIG] Model requested: {model_for_response}, API model: {api_model}, PAT present: {bool(github_pat)} ({len(github_pat)} chars)")
@@ -1766,14 +1764,9 @@ class BridgeHandler(BaseHTTPRequestHandler):
             # Explicit ACP routing — skip PAT entirely
             github_pat = ""
 
-        # Claude/Gemini are not on GitHub Models API — must go through ACP
-        if any(model_for_response.startswith(p) for p in _acp_only_prefixes):
+        # Non-mapped models are not on GitHub Models API and must go through ACP.
+        if model_for_response != "acp" and model_for_response not in _github_model_map:
             print(f"[AIG] {model_for_response} not on GitHub Models API, routing to ACP")
-            github_pat = ""
-
-        # OAuth tokens (gho_) only support OpenAI models — route others to ACP
-        elif _using_oauth_token and model_for_response not in _github_model_map:
-            print(f"[AIG] OAuth token can't access {model_for_response}, routing to ACP")
             github_pat = ""
 
         # Inject runtime info so Eva can answer truthfully when asked about her model.
