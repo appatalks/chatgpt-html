@@ -17,6 +17,7 @@
   <script src="core/js/gl-google.js"></script>
   <script src="core/js/lm-studio.js"></script>
   <script src="core/js/copilot.js"></script>
+  <script src="core/js/cognition.js"></script>
   <script src="core/js/aig.js"></script>
   <script src="core/js/dalle3.js"></script>
   <script src="core/js/idb-store.js"></script>
@@ -323,6 +324,56 @@
                 <option value="gpt-4.1">GPT-4.1</option>
               </optgroup>
             </select>
+          </div>
+
+          <!-- Cognitive Layer (Conductor / Implementer / Reviewer) -->
+          <div class="model-opt cog-section">
+            <label class="cog-toggle-row">
+              <input type="checkbox" id="cogEnabled" onchange="cogPersist()">
+              <span><strong>Enable Cognitive Layer</strong> &mdash; route Eva (AIG) through internal conductor / implementer / reviewer agents.</span>
+            </label>
+            <p class="cog-help">When on, every Eva (AIG) turn is planned by a conductor, drafted by an implementer, then critiqued by a reviewer (bounded loop). The user only sees the final approved draft. Each agent uses its own model.</p>
+
+            <div class="cog-grid">
+              <div>
+                <label for="cogConductorModel">Conductor model:</label>
+                <select id="cogConductorModel" onchange="cogPersist()"></select>
+              </div>
+              <div>
+                <label for="cogImplementerModel">Implementer model:</label>
+                <select id="cogImplementerModel" onchange="cogPersist()"></select>
+              </div>
+              <div>
+                <label for="cogReviewerModel">Reviewer model:</label>
+                <select id="cogReviewerModel" onchange="cogPersist()"></select>
+              </div>
+              <div>
+                <label for="cogMaxCycles">Max review cycles:</label>
+                <input type="number" id="cogMaxCycles" min="0" max="3" step="1" value="1" onchange="cogPersist()">
+              </div>
+            </div>
+
+            <details class="cog-prompts">
+              <summary>Edit agent system prompts</summary>
+              <div class="cog-prompt-row">
+                <label for="cogConductorPrompt">Conductor prompt:</label>
+                <textarea id="cogConductorPrompt" rows="3" onchange="cogPersist()" placeholder="(default conductor prompt)"></textarea>
+              </div>
+              <div class="cog-prompt-row">
+                <label for="cogImplementerPrompt">Implementer prompt:</label>
+                <textarea id="cogImplementerPrompt" rows="3" onchange="cogPersist()" placeholder="(default implementer prompt)"></textarea>
+              </div>
+              <div class="cog-prompt-row">
+                <label for="cogReviewerPrompt">Reviewer prompt:</label>
+                <textarea id="cogReviewerPrompt" rows="3" onchange="cogPersist()" placeholder="(default reviewer prompt)"></textarea>
+              </div>
+              <button type="button" class="lcars-btn" onclick="cogResetPrompts()">Reset prompts to defaults</button>
+            </details>
+
+            <label class="cog-toggle-row">
+              <input type="checkbox" id="cogShowTrace" onchange="cogPersist()">
+              <span>Show pipeline trace below each response (debug)</span>
+            </label>
           </div>
         </div>
       </div>

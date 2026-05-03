@@ -546,6 +546,7 @@ document.addEventListener('DOMContentLoaded', () => {
   populateAuthFields();
   initSystemPrompt();
   onModelSettingsChange();
+  if (typeof cogInit === 'function') cogInit();
 
   // Initialize status panel with any pending config/init notes
   setStatus('info', document.getElementById('idText') && document.getElementById('idText').textContent ? document.getElementById('idText').textContent : '');
@@ -880,6 +881,73 @@ function setStatus(type, text) {
     foot.textContent = msg;
     foot.setAttribute('data-empty', msg ? 'false' : 'true');
   }
+}
+
+// --- Cognitive layer settings (conductor / implementer / reviewer) ---
+function _cogPopulateModelSelect(targetId) {
+  var src = document.getElementById('selAIGBackend');
+  var dst = document.getElementById(targetId);
+  if (!src || !dst) return;
+  // Clone the option/optgroup tree from the AIG backend selector so the
+  // cognition selectors always stay in sync with the live model catalog.
+  dst.innerHTML = '';
+  Array.from(src.children).forEach(function (child) {
+    dst.appendChild(child.cloneNode(true));
+  });
+}
+
+function cogInit() {
+  if (typeof Cognition === 'undefined') return;
+  ['cogConductorModel', 'cogImplementerModel', 'cogReviewerModel']
+    .forEach(_cogPopulateModelSelect);
+  var cfg = Cognition.getCfg();
+  var $ = function (id) { return document.getElementById(id); };
+  if ($('cogEnabled'))           $('cogEnabled').checked          = !!cfg.enabled;
+  if ($('cogShowTrace'))         $('cogShowTrace').checked        = !!cfg.showTrace;
+  if ($('cogConductorModel'))    $('cogConductorModel').value     = cfg.conductorModel;
+  if ($('cogImplementerModel'))  $('cogImplementerModel').value   = cfg.implementerModel;
+  if ($('cogReviewerModel'))     $('cogReviewerModel').value      = cfg.reviewerModel;
+  if ($('cogMaxCycles'))         $('cogMaxCycles').value          = String(cfg.maxCycles);
+  // Only seed prompt textareas when the user has stored a custom value;
+  // otherwise leave them empty so the placeholder shows the defaults are
+  // active.
+  var stored = {
+    conductor: localStorage.getItem('cogConductorPrompt'),
+    implementer: localStorage.getItem('cogImplementerPrompt'),
+    reviewer: localStorage.getItem('cogReviewerPrompt')
+  };
+  if ($('cogConductorPrompt'))   $('cogConductorPrompt').value   = stored.conductor   || '';
+  if ($('cogImplementerPrompt')) $('cogImplementerPrompt').value = stored.implementer || '';
+  if ($('cogReviewerPrompt'))    $('cogReviewerPrompt').value    = stored.reviewer    || '';
+}
+
+function cogPersist() {
+  if (typeof Cognition === 'undefined') return;
+  var $ = function (id) { return document.getElementById(id); };
+  var partial = {
+    enabled:           $('cogEnabled')          ? $('cogEnabled').checked        : false,
+    showTrace:         $('cogShowTrace')        ? $('cogShowTrace').checked      : false,
+    conductorModel:    $('cogConductorModel')   ? $('cogConductorModel').value   : '',
+    implementerModel:  $('cogImplementerModel') ? $('cogImplementerModel').value : '',
+    reviewerModel:     $('cogReviewerModel')    ? $('cogReviewerModel').value    : '',
+    maxCycles:         $('cogMaxCycles')        ? $('cogMaxCycles').value        : '1',
+    conductorPrompt:   $('cogConductorPrompt')  ? $('cogConductorPrompt').value  : '',
+    implementerPrompt: $('cogImplementerPrompt')? $('cogImplementerPrompt').value: '',
+    reviewerPrompt:    $('cogReviewerPrompt')   ? $('cogReviewerPrompt').value   : ''
+  };
+  Cognition.setCfg(partial);
+}
+
+function cogResetPrompts() {
+  ['cogConductorPrompt','cogImplementerPrompt','cogReviewerPrompt'].forEach(function (id) {
+    try { localStorage.removeItem(id.replace('cog','cog')); } catch (_) {}
+  });
+  // localStorage keys for prompts are cogConductorPrompt etc., already match
+  ['cogConductorPrompt','cogImplementerPrompt','cogReviewerPrompt'].forEach(function (id) {
+    try { localStorage.removeItem(id); } catch (_) {}
+    var el = document.getElementById(id);
+    if (el) el.value = '';
+  });
 }
 
 // --- Monitors: Token, Network, Session ---

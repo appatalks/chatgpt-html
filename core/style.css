@@ -151,6 +151,26 @@ body {
     /* Model options */
     .model-options { margin-top: 12px; }
     .model-opt { margin-bottom: 10px; }
+    /* Cognitive layer section */
+    .cog-section { padding: 10px 12px; border: 1px solid #cfd8dc; border-radius: 8px; background: rgba(0,0,0,0.02); }
+    .cog-section .cog-toggle-row { display: flex; align-items: flex-start; gap: 8px; cursor: pointer; }
+    .cog-section .cog-toggle-row input { margin-top: 3px; }
+    .cog-section .cog-help { font-size: 12px; opacity: 0.8; margin: 6px 0 10px; }
+    .cog-section .cog-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px 14px; margin-bottom: 10px; }
+    .cog-section .cog-grid label { display: block; font-size: 12px; opacity: 0.85; margin-bottom: 4px; }
+    .cog-section .cog-grid select, .cog-section .cog-grid input { width: 100%; box-sizing: border-box; }
+    .cog-section details.cog-prompts { margin: 6px 0 10px; }
+    .cog-section details.cog-prompts > summary { cursor: pointer; font-size: 12px; opacity: 0.85; margin-bottom: 6px; }
+    .cog-section .cog-prompt-row { margin-bottom: 8px; }
+    .cog-section .cog-prompt-row label { display: block; font-size: 12px; opacity: 0.85; margin-bottom: 3px; }
+    .cog-section .cog-prompt-row textarea { width: 100%; box-sizing: border-box; font-family: var(--eva-font, monospace); font-size: 12px; }
+    /* Inline trace block in chat output */
+    details.cog-trace { margin: 8px 0; padding: 6px 8px; border: 1px dashed #b0bec5; border-radius: 6px; font-size: 12px; opacity: 0.9; }
+    details.cog-trace > summary { cursor: pointer; }
+    details.cog-trace .cog-step { margin: 6px 0; }
+    details.cog-trace .cog-step-head { font-weight: 600; font-size: 11px; opacity: 0.85; }
+    details.cog-trace .cog-step-model { font-weight: 400; opacity: 0.7; margin-left: 6px; }
+    details.cog-trace .cog-step-body { white-space: pre-wrap; margin: 4px 0 0; padding: 6px 8px; background: rgba(0,0,0,0.04); border-radius: 4px; max-height: 240px; overflow: auto; }
 
     /* Auth fields */
     .auth-note {

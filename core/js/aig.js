@@ -64,6 +64,50 @@ async function aigSend() {
   setStatus('info', 'Eva (AIG) processing...');
   if (typeof _copilotLastUserMsg !== 'undefined') { _copilotLastUserMsg = sQuestion; }
 
+  // Optional cognitive layer (conductor / implementer / reviewer).
+  // When enabled in Settings, route through Cognition.run() and render
+  // the implementer's final approved draft. Falls back to the regular
+  // single-shot bridge call on any error.
+  if (typeof Cognition !== 'undefined' && Cognition.isEnabled && Cognition.isEnabled()) {
+    try {
+      var cogResult = await Cognition.run({
+        userMessage: sQuestion,
+        messages: existingMessages
+      });
+      var cogContent = (cogResult && cogResult.content) ? cogResult.content : '';
+      await renderEvaResponse(cogContent, txtOutput);
+      if (Cognition.getCfg && Cognition.getCfg().showTrace && Cognition.renderTraceHtml) {
+        try {
+          txtOutput.innerHTML += Cognition.renderTraceHtml(cogResult.trace || []);
+          txtOutput.scrollTop = txtOutput.scrollHeight;
+        } catch (_) {}
+      }
+      if (cogContent) {
+        lastResponse = cogContent;
+        masterOutput += txtOutput.innerText + '\n';
+        localStorage.setItem('masterOutput', masterOutput);
+      }
+      var cogTag = 'cog:' + (cogResult.conductorModel || '?') + '+' +
+                   (cogResult.implementerModel || '?') + '+' +
+                   (cogResult.reviewerModel || '?') +
+                   '/c' + (cogResult.cycles || 0);
+      setStatus('info', 'Eva (AIG, cognition) \u2014 ' +
+                (cogResult.implementerModel || 'implementer') +
+                '  [' + cogTag + ']');
+      var checkboxC = document.getElementById('autoSpeak');
+      if (checkboxC && checkboxC.checked) {
+        speakText();
+        var audioC = document.getElementById('audioPlayback');
+        if (audioC) audioC.setAttribute('autoplay', true);
+      }
+      return;
+    } catch (cogErr) {
+      var cogMsg = (cogErr && cogErr.message) ? cogErr.message : String(cogErr);
+      setStatus('warn', 'Cognition failed, falling back: ' + cogMsg);
+      // fall through to single-shot path
+    }
+  }
+
   try {
     var url = bridgeUrl.replace(/\/+$/, '') + '/v1/aig/chat';
 
