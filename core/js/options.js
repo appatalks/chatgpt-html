@@ -91,7 +91,9 @@ function saveAuthKeys() {
   });
   // Save ACP Bridge URL separately
   var acpEl = document.getElementById('txtACPBridgeUrl');
-  if (acpEl && acpEl.value.trim()) {
+  if (acpEl && typeof isEvaStandalone === 'function' && isEvaStandalone()) {
+    localStorage.removeItem('acp_bridge_url');
+  } else if (acpEl && acpEl.value.trim()) {
     localStorage.setItem('acp_bridge_url', acpEl.value.trim());
   } else if (acpEl) {
     localStorage.removeItem('acp_bridge_url');
@@ -117,8 +119,19 @@ function populateAuthFields() {
   // Populate ACP Bridge URL
   var acpEl = document.getElementById('txtACPBridgeUrl');
   if (acpEl) {
-    acpEl.value = localStorage.getItem('acp_bridge_url') || 'http://localhost:8888';
+    acpEl.value = (typeof getACPBridgeUrl === 'function') ? getACPBridgeUrl() : (localStorage.getItem('acp_bridge_url') || 'http://localhost:8888');
   }
+}
+
+function applyStandaloneSurface() {
+  if (!(typeof isEvaStandalone === 'function' && isEvaStandalone())) return;
+  var barkOption = document.querySelector('#selEngine option[value="bark"]');
+  if (!barkOption) return;
+  var engineSelect = barkOption.parentElement;
+  if (engineSelect && engineSelect.value === 'bark') {
+    engineSelect.value = 'standard';
+  }
+  barkOption.remove();
 }
 
 function toggleAuthVis(btn) {
@@ -348,6 +361,8 @@ document.addEventListener('DOMContentLoaded', () => {
   const lcarsChipTop = document.getElementById('lcarsChipTop');
   const monitorTabs = document.getElementById('lcarsMonitorTabs');
   const monitorPanels = document.getElementById('lcarsMonitorPanels');
+
+  applyStandaloneSurface();
 
   function toggleSettings(event) {
     event.stopPropagation();

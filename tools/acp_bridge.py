@@ -11,6 +11,7 @@ Requirements:
 Usage:
   python3 tools/acp_bridge.py                    # default port 8888
   python3 tools/acp_bridge.py --port 9999        # custom port
+    EVA_ACP_PORT=9999 python3 tools/acp_bridge.py  # custom port via env
   python3 tools/acp_bridge.py --copilot-path /usr/local/bin/copilot
 
 The server exposes a single endpoint:
@@ -2001,8 +2002,16 @@ class BridgeHandler(BaseHTTPRequestHandler):
 # ---------------------------------------------------------------------------
 
 def main():
+    default_port = 8888
+    env_port = os.environ.get("EVA_ACP_PORT", "").strip()
+    if env_port:
+        try:
+            default_port = int(env_port)
+        except ValueError:
+            print(f"[Bridge] Warning: Ignoring invalid EVA_ACP_PORT={env_port!r}")
+
     parser = argparse.ArgumentParser(description="Eva ACP Bridge Server")
-    parser.add_argument("--port", type=int, default=8888, help="HTTP server port (default: 8888)")
+    parser.add_argument("--port", type=int, default=default_port, help="HTTP server port (default: 8888 or EVA_ACP_PORT)")
     parser.add_argument("--bind", default="127.0.0.1", help="Bind address (default: 127.0.0.1, use 0.0.0.0 for LAN access)")
     parser.add_argument("--copilot-path", default="copilot", help="Path to copilot CLI binary")
     parser.add_argument("--cwd", default=os.getcwd(), help="Working directory for ACP session")

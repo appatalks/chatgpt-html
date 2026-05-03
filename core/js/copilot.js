@@ -18,7 +18,18 @@ function getCopilotMode(modelValue) {
   return 'models-api';
 }
 
+function isEvaStandalone() {
+  return !!(typeof window !== 'undefined' && window.evaStandalone && window.evaStandalone.isStandalone);
+}
+
+function getStandaloneACPBridgeUrl() {
+  if (!isEvaStandalone()) return '';
+  return (window.evaStandalone.acpBaseUrl || '').trim();
+}
+
 function getACPBridgeUrl() {
+  var standaloneUrl = getStandaloneACPBridgeUrl();
+  if (standaloneUrl) return standaloneUrl;
   var el = document.getElementById('txtACPBridgeUrl');
   if (el && el.value.trim() && el.value.trim() !== 'http://localhost:8888') return el.value.trim();
   var stored = localStorage.getItem('acp_bridge_url');
@@ -36,15 +47,17 @@ async function detectACPBridge() {
   var configured = getACPBridgeUrl();
   candidates.push(configured);
 
-  // Try same host as the page (for when bridge runs on the web server)
-  if (location.hostname && location.hostname !== 'localhost' && location.hostname !== '127.0.0.1') {
-    candidates.push(location.protocol + '//' + location.hostname + ':8888');
-    candidates.push('http://' + location.hostname + ':8888');
-  }
+  if (!isEvaStandalone()) {
+    // Try same host as the page (for when bridge runs on the web server)
+    if (location.hostname && location.hostname !== 'localhost' && location.hostname !== '127.0.0.1') {
+      candidates.push(location.protocol + '//' + location.hostname + ':8888');
+      candidates.push('http://' + location.hostname + ':8888');
+    }
 
-  // Localhost fallback
-  if (candidates.indexOf('http://localhost:8888') < 0) {
-    candidates.push('http://localhost:8888');
+    // Localhost fallback
+    if (candidates.indexOf('http://localhost:8888') < 0) {
+      candidates.push('http://localhost:8888');
+    }
   }
 
   // Deduplicate
