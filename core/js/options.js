@@ -1895,6 +1895,12 @@ async function renderEvaResponse(content, txtOutput) {
 
     // Tokenize generated image wrappers and standalone <img> tags before markdown
     var imgFragments = [];
+    // Tokenize cog-action artifact blocks (download links, ok/err markers) so
+    // the markdown renderer doesn't escape their HTML into plain text.
+    text = text.replace(/<div class="cog-action-(?:file|ok|err)">[\s\S]*?<\/div>/g, function(m) {
+      imgFragments.push(m);
+      return '\u0000IMG' + (imgFragments.length - 1) + '\u0000';
+    });
     text = text.replace(/<div class="eva-generated-wrap">[\s\S]*?<\/div>/g, function(m) {
       imgFragments.push(m);
       return '\u0000IMG' + (imgFragments.length - 1) + '\u0000';
@@ -1915,7 +1921,16 @@ async function renderEvaResponse(content, txtOutput) {
     txtOutput.innerHTML += '<div class="chat-bubble eva-bubble"><span class="eva">Eva:</span> <div class="md">' + html + '</div></div>';
   } else {
     // No images or no search keys — just render markdown
+    // Still need to protect cog-action artifact HTML from being escaped.
+    var actFragments = [];
+    text = text.replace(/<div class="cog-action-(?:file|ok|err)">[\s\S]*?<\/div>/g, function(m) {
+      actFragments.push(m);
+      return '\u0000ACT' + (actFragments.length - 1) + '\u0000';
+    });
     var html2 = (typeof renderMarkdown === 'function') ? renderMarkdown(text) : text;
+    html2 = html2.replace(/\u0000ACT(\d+)\u0000/g, function(m, idx) {
+      return actFragments[Number(idx)] || m;
+    });
     txtOutput.innerHTML += '<div class="chat-bubble eva-bubble"><span class="eva">Eva:</span> <div class="md">' + html2 + '</div></div>';
   }
 
