@@ -173,7 +173,7 @@ body {
     details.cog-trace .cog-step-body { white-space: pre-wrap; margin: 4px 0 0; padding: 6px 8px; background: rgba(0,0,0,0.04); border-radius: 4px; max-height: 240px; overflow: auto; }
     /* Cognition badge */
     .cog-badge { display: none; }
-    .cog-badge[data-active="true"] { display: inline-block; position: fixed; bottom: 6px; right: 10px; z-index: 50; padding: 2px 8px; font: 600 10px/1.4 system-ui, sans-serif; border-radius: 999px; background: rgba(33,150,243,0.12); color: #1565c0; border: 1px solid rgba(33,150,243,0.45); pointer-events: none; letter-spacing: 0.02em; }
+    .cog-badge[data-active="true"] { display: inline-block; position: fixed; bottom: 56px; right: 10px; z-index: 50; padding: 2px 8px; font: 600 10px/1.4 system-ui, sans-serif; border-radius: 999px; background: rgba(33,150,243,0.12); color: #1565c0; border: 1px solid rgba(33,150,243,0.45); pointer-events: none; letter-spacing: 0.02em; }
     body.theme-lcars .cog-badge[data-active="true"] { background: rgba(153,204,255,0.10); color: var(--ld-arctic-ice, #99ccff); border-color: var(--ld-arctic-ice, #99ccff); }
     /* Action artifact rendering (file.download etc.) */
     .cog-action-file { margin: 6px 0; padding: 8px 10px; border: 1px solid #b0bec5; border-radius: 6px; background: rgba(0,0,0,0.03); font-size: 13px; }
