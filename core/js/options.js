@@ -155,13 +155,18 @@ function applyStandaloneSimplifications() {
     }
   }
 
+  var engineSelect = document.getElementById('selEngine');
   var barkOption = document.querySelector('#selEngine option[value="bark"]');
-  if (!barkOption) return;
-  var engineSelect = barkOption.parentElement;
-  if (engineSelect && engineSelect.value === 'bark') {
-    engineSelect.value = 'standard';
+  if (engineSelect) {
+    // Standalone ships without AWS credentials, so default the TTS engine
+    // to the offline browser path. Users can still pick a Polly engine
+    // and provide credentials if they want cloud voices.
+    var current = engineSelect.value;
+    if (!current || current === 'bark' || current === 'standard' || current === 'neural' || current === 'generative') {
+      engineSelect.value = 'browser';
+    }
   }
-  barkOption.remove();
+  if (barkOption) barkOption.remove();
 }
 
 function applyStandaloneSurface() {
@@ -1772,6 +1777,36 @@ function speakText() {
 
     speechParams.VoiceId = document.getElementById("selVoice").value;
     speechParams.Engine = document.getElementById("selEngine").value;
+
+
+    // Browser SpeechSynthesis: offline, no credentials. Used by standalone.
+    if (speechParams.Engine === "browser") {
+      if (typeof window.speechSynthesis === 'undefined' || typeof window.SpeechSynthesisUtterance === 'undefined') {
+        var resultEl = document.getElementById('result');
+        var msg = 'Browser TTS not supported in this runtime.';
+        if (resultEl) resultEl.textContent = msg; else console.warn(msg);
+        return;
+      }
+      try { window.speechSynthesis.cancel(); } catch (_) {}
+      var utter = new SpeechSynthesisUtterance(speechParams.Text);
+      // Map the Polly voice id to a BCP-47 language so the browser picks a sensible voice.
+      var voiceLangMap = {
+        Salli: 'en-US',
+        Ruth: 'en-US',
+        Seoyeon: 'ko-KR',
+        Mia: 'es-MX',
+        Tatyana: 'uk-UA'
+      };
+      utter.lang = voiceLangMap[speechParams.VoiceId] || 'en-US';
+      utter.rate = 1.0;
+      utter.pitch = 1.0;
+      try {
+        window.speechSynthesis.speak(utter);
+      } catch (e) {
+        console.warn('SpeechSynthesis error:', e);
+      }
+      return;
+    }
 
 
     // If selEngine is "bark", call barkTTS function

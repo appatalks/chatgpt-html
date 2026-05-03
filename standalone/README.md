@@ -51,4 +51,4 @@ The AppImage is self-contained: it spawns the bundled ACP bridge on a random loc
 - The renderer receives the bridge URL through `window.evaStandalone.acpBaseUrl`.
 - Standalone exposes Eva (AIG) only. All routing, cognition, AIG backend selection, and Settings sub-controls remain available.
 - The Kusto database field is intentionally blank on first run. Configure it in Settings > MCP.
-- Bark is hidden in standalone mode. AWS Polly remains in the Auth tab, and browser SpeechSynthesis remains available.
+- Bark is hidden in standalone mode. Browser SpeechSynthesis remains available for offline Auto Speak. Polly engines require AWS credentials and are not configured through the standalone Auth tab.
