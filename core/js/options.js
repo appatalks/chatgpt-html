@@ -951,10 +951,6 @@ function cogUpdateBadge() {
 
 function cogResetPrompts() {
   ['cogConductorPrompt','cogImplementerPrompt','cogReviewerPrompt'].forEach(function (id) {
-    try { localStorage.removeItem(id.replace('cog','cog')); } catch (_) {}
-  });
-  // localStorage keys for prompts are cogConductorPrompt etc., already match
-  ['cogConductorPrompt','cogImplementerPrompt','cogReviewerPrompt'].forEach(function (id) {
     try { localStorage.removeItem(id); } catch (_) {}
     var el = document.getElementById(id);
     if (el) el.value = '';
