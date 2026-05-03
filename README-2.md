@@ -108,6 +108,26 @@ core/
                            - Routes through bridge /v1/aig/chat
                            - External data augmentation (weather, news, stocks, solar)
                            - localStorage-based message history (aigMessages)
+                           - Optional client-side cognitive layer (see core/js/cognition.js)
+                           - Phrase triggers ("trigger the chain", "use cognition", ...)
+                             force the layer for a single turn even when the toggle is off
+                           - Authoritative ground-truth note injected into the single-shot
+                             system prompt so the model does not fabricate pipeline runs
+    cognition.js           Browser-side multi-agent cognitive layer (Cognition.run)
+                           - Three role-specific agents: conductor, implementer, reviewer
+                           - Each agent calls /v1/aig/chat independently with its own
+                             model and editable system prompt
+                           - Bounded review loop (cogMaxCycles, default 1, range 0-3)
+                           - Verdict-first reviewer protocol (APPROVE | REQUEST_CHANGES)
+                           - Capability registry: Cognition.registerCapability({id,
+                             description, run})
+                           - Action protocol: implementer can emit
+                             [[EVA_ACTION]]{"id":"...","args":{...}}[[/EVA_ACTION]]
+                             blocks; the browser executes them and replaces each block
+                             with the rendered HTML
+                           - Built-in capability: file.download (delivers a downloadable
+                             text artifact via a Blob URL, namespaced under a virtual
+                             tmp/<session_id>/<filename> path)
     dalle3.js              DALL-E 3 image generation (dalle3Send)
                            - Standalone mode (model selector = dall-e-3)
     idb-store.js           IndexedDB storage backend (idbSaveSession, idbLoadSession)
@@ -201,30 +221,31 @@ The bridge implements the [Agent Client Protocol (ACP)](https://agentclientproto
 
 ### Available ACP Models
 
-Models available through the Copilot CLI (requires a GitHub Copilot license):
+Models available through the Copilot CLI (requires a GitHub Copilot license). The
+catalog evolves; this list reflects the live `copilot --list-models` output at the
+time of writing. The browser model selector is grouped to mirror provider boundaries.
 
 | Provider | Model ID | Notes |
 |---|---|---|
-| **Anthropic** | `claude-sonnet-4.6` | Default model |
-| | `claude-opus-4.6` | Most capable Claude |
-| | `claude-opus-4.6-fast` | Faster Opus variant |
-| | `claude-sonnet-4.5` | |
+| **Anthropic** | `claude-opus-4.7` | Most capable Claude. Variants: `-high`, `-xhigh` (reasoning effort) |
+| | `claude-opus-4.6` | Variant: `-1m` (1M context) |
 | | `claude-opus-4.5` | |
-| | `claude-haiku-4.5` | Fastest Claude |
+| | `claude-sonnet-4.6` | Default sonnet tier |
+| | `claude-sonnet-4.5` | |
 | | `claude-sonnet-4` | |
-| **OpenAI** | `gpt-5.3-codex` | Latest codex |
+| | `claude-haiku-4.5` | Fastest Claude |
+| **OpenAI** | `gpt-5.5` | |
+| | `gpt-5.4` | |
+| | `gpt-5.4-mini` | |
+| | `gpt-5.3-codex` | |
 | | `gpt-5.2-codex` | |
 | | `gpt-5.2` | |
-| | `gpt-5.1-codex-max` | Extended context |
-| | `gpt-5.1-codex` | |
-| | `gpt-5.1` | |
-| | `gpt-5.1-codex-mini` | Lighter codex |
 | | `gpt-5-mini` | |
-| | `gpt-4.1` | |
-| **Google** | `gemini-3-pro-preview` | Preview access |
+| | `gpt-4.1` | Default AIG backend |
 
 > Model availability depends on your Copilot license tier and may change.
-> The default model (when none is specified) is determined by the Copilot CLI.
+> The default model (when none is specified) is determined by the Copilot CLI
+> via `copilot config set model`.
 
 ### CLI Flags
 
@@ -296,8 +317,8 @@ Five tabs in a modal overlay:
 
 | Tab | Contents |
 |---|---|
-| **General** | Theme (Default/LCARS), TTS engine/voice, auto-speak toggle |
-| **Models** | Model selector (grouped by provider), temperature slider, max tokens, reasoning effort, ACP model selector |
+| **General** | Theme (Default/LCARS/Eva), TTS engine/voice, auto-speak toggle |
+| **Models** | Model selector (grouped by provider), temperature, max tokens, reasoning effort, AIG backend selector, ACP model selector, and the **Cognitive Layer** controls (toggle, three role-specific model selectors, max review cycles, editable per-agent system prompts, debug trace) |
 | **Auth** | API key inputs with show/hide toggles, ACP bridge URL. Keys stored in localStorage, override config.json |
 | **Prompts** | Personality presets (Default/Concise/Advanced/Terminal/Custom), editable system prompt textarea |
 | **MCP** | Azure MCP, GitHub MCP, Kusto MCP toggles with config fields. Apply/refresh buttons |
@@ -375,7 +396,9 @@ Current state (2026-04-05):
 
 The **Eva (AIG)** model is the recommended way to use Eva. Selecting it in the model
 dropdown activates the full stack: intelligent orchestration, persistent memory,
-emotion tracking, and proactive data retrieval.
+emotion tracking, and proactive data retrieval. An optional browser-side cognitive
+layer (conductor / implementer / reviewer) can be enabled on top; see
+[Cognition Layer](#cognition-layer).
 
 ### How AIG Works
 
@@ -420,7 +443,84 @@ Browser → POST /v1/aig/chat → ACP Bridge
 
 ## Cognition Layer
 
-The cognition layer runs inside `acp_bridge.py` and adds persistent intelligence to
+Eva has two complementary cognitive systems. The **bridge cognition layer** runs
+server-side inside `acp_bridge.py` and adds persistent intelligence (memory injection,
+emotion tracking, post-response reflection) to every AIG interaction. The **browser
+cognitive layer** runs entirely in the page and adds an optional multi-agent
+plan/draft/review loop on top of any AIG turn.
+
+### Browser Cognitive Layer (`core/js/cognition.js`)
+
+Opt-in via Settings > Models > **Enable Cognitive Layer**. When active, every Eva
+(AIG) turn is routed through three role-specific agents before the user sees a
+response:
+
+```
+User turn
+  -> Conductor (planning, capability selection)
+     -> Implementer (drafts the user-facing answer, may emit action blocks)
+        -> Reviewer (verdict: APPROVE | REQUEST_CHANGES)
+           -> Implementer (revises against feedback) ... up to cogMaxCycles
+  -> executeActions(): runs any [[EVA_ACTION]] blocks the implementer emitted
+  -> renderEvaResponse(): renders the final approved draft
+```
+
+Each agent calls the existing bridge endpoint `/v1/aig/chat` independently with its
+own model and editable system prompt, so users can mix providers (for example,
+Claude for planning, GPT for drafting, a smaller model for review). Per-stage progress
+is surfaced in the footer status line and a small `Cognition: on` pill.
+
+**Activation:**
+
+| Trigger | Behavior |
+|---|---|
+| Settings toggle on | Layer runs for every AIG turn |
+| Phrase in user message | Layer is force-enabled for that single turn even when the toggle is off |
+| Neither | Single-shot AIG path; an authoritative system note tells the model the layer is OFF for this turn so it cannot fabricate phase narration |
+
+Recognized trigger phrases include `trigger the chain`, `use cognition`,
+`use the cognitive layer`, `run the conductor`, `run the reviewer`,
+`run the implementer`, `engage cognition`, and `cognition: on`.
+
+**Capability registry and action protocol:**
+
+The implementer can invoke registered capabilities by emitting an action block on
+its own line:
+
+```
+[[EVA_ACTION]]
+{"id":"file.download","args":{"filename":"report.md","content":"# ...","mime":"text/markdown"}}
+[[/EVA_ACTION]]
+```
+
+`Cognition.executeActions(text)` parses each block, runs the matching capability,
+and replaces the block with the capability's rendered HTML. New capabilities are
+registered with the same shape:
+
+```js
+Cognition.registerCapability({
+  id: 'web.search',
+  description: 'Search the public web. args: {query, max_results}.',
+  run: async function (args) { /* call your search backend */ }
+});
+```
+
+Built-in: `file.download` (text artifact -> Blob URL -> inline `<a download>` link,
+namespaced under a virtual `tmp/<session_id>/<filename>` path; the repo `.gitignore`
+excludes `tmp/`).
+
+**Status tag format:**
+
+```
+Eva (AIG, cognition) - <implementer-model>  [cog:<c>+<i>+<r>/c<N>[/forced][/act<K>]]
+```
+
+`/forced` indicates a phrase-triggered run; `/act<K>` indicates K capability
+invocations executed during the turn.
+
+### Bridge Cognition Layer (`tools/acp_bridge.py`)
+
+The cognition layer that runs inside the bridge and adds persistent intelligence to
 every AIG interaction.
 
 ### Memory Context (`_build_memory_context`)
@@ -486,6 +586,23 @@ The bridge uses `.ingest inline into table <T> <|` with strict CSV:
 - **States**: Listening (green) → Awake (amber pulse) → Sending (blue) → Idle
 - **Flow**: Continuous recognition → wake word detected → capture next phrase → auto-send
 - **Fallback**: Click mic button for manual speech-to-text
+
+## Workspace Agent Profiles
+
+`.github/agents/` ships three VS Code Copilot workspace agents tuned for this
+project's conventions. These are editor-time review tooling, not runtime components
+of Eva, and they do not run automatically when the browser cognitive layer is
+active.
+
+| File | Role | When to use |
+|---|---|---|
+| `reviewer.agent.md` | Code reviewer | Reviewing browser UI, model routing, ACP bridge, Kusto cognition, secrets, tests, docs |
+| `implementer.agent.md` | Code implementer | Writing, refactoring, or fixing changes (often in response to reviewer feedback) |
+| `conductor.agent.md` | Orchestrator | Running an automated review → implement → re-review loop with bounded cycles |
+
+The optional `.github/agents/local/` folder is gitignored and reserved for
+maintainer-only notes (dev topology, recurring commands, internal hosts, agent
+playbooks). Nothing under `local/` is published.
 
 ## Database Seed
 

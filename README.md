@@ -53,14 +53,16 @@ The bridge (`tools/acp_bridge.py`) exposes an OpenAI-compatible API so any clien
 ## Highlights
 
 - **Eva (AIG)** — multi-agentic gateway with persistent memory, emotion tracking, and proactive data retrieval
+- **Browser cognitive layer** (optional): plan / draft / review pipeline with three agents (conductor, implementer, reviewer), per-agent model selection, bounded review cycles, a registered capability protocol (`[[EVA_ACTION]]` blocks), and a built-in `file.download` capability that delivers real artifacts inline
 - **MCP tool ecosystem** — Kusto (memory/analytics), GitHub (repos/issues), Azure (cloud resources) — hot-reloadable at runtime
 - **Cognition layer** — automatic knowledge extraction, morning reflections, emotion vectors, conversation logging
 - **Cross-model orchestration** — routes OpenAI models via GitHub Models API, Claude/Gemini via Copilot CLI ACP
-- **Session explorer** — auto-save/restore conversations across page refresh
+- **Session explorer** — auto-save/restore conversations across page refresh, artifacts namespaced under `tmp/<session_id>/`
+- **Live status surface**: footer status line and cognition badge that report which model actually responded and which route was used
 - **Voice activation** — wake-word "Eva" with continuous listening
-- **Settings panel** with tabbed UI (General, Models, Auth, Prompts, MCP)
+- **Settings panel** with tabbed UI (General, Models, Auth, Prompts, MCP). The Models tab includes the cognitive layer toggle and per-agent prompts
 - **Inline images** — Wikimedia search or DALL-E generation
-- **LCARS theme** — Star Trek-inspired interface
+- **LCARS and Eva themes** (Star Trek-inspired LCARS, plus a clean Eva theme with pinned footer status)
 - **Text-to-speech** — Amazon Polly and Bark TTS
 - **Conversation memory** in localStorage
 - **Database seed** — `tools/eva_seed.kql` for quick public setup
