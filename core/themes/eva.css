@@ -45,7 +45,10 @@ body.theme-eva {
   gap: 0;
   align-items: stretch;
   justify-content: stretch;
-  height: 100vh;
+  /* Reserve space at the viewport bottom for the pinned status + disclaimer
+     band so the chat input never gets covered. Status line is ~17px when
+     visible, disclaimer is ~27px, so 50px is enough for both. */
+  height: calc(100vh - 50px);
   padding: 0;
   box-sizing: border-box;
   overflow: hidden;
@@ -63,7 +66,7 @@ body.theme-eva .eva-sidebar {
   flex-direction: column;
   background: var(--eva-sidebar);
   border-right: 1px solid var(--eva-border);
-  height: 100vh;
+  height: 100%;
   overflow: hidden;
   font-family: var(--eva-font);
 }
@@ -807,9 +810,62 @@ body.theme-eva .eva-disclaimer {
   padding: 6px 16px 8px;
   background: var(--eva-surface);
   border-top: 1px solid var(--eva-border);
-  opacity: 0.7;
+  opacity: 0.85;
+  /* Pin to viewport bottom so it stays visible no matter how long the chat is. */
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 40;
+  pointer-events: none;
+  backdrop-filter: blur(4px);
 }
-
+/* ── Eva Status Footer (mirrors #idText) ────────────── */
+.eva-status-footer { display: none; } /* hidden outside Eva theme */
+body.theme-eva .eva-status-footer {
+  display: block;
+  text-align: center;
+  font: 400 11px var(--eva-font);
+  color: var(--eva-text-muted);
+  padding: 4px 16px 0;
+  background: var(--eva-surface);
+  border-top: 1px solid var(--eva-border);
+  opacity: 0.9;
+  letter-spacing: .01em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  /* Sit just above the disclaimer, also pinned to the viewport. */
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 27px; /* leave room for the disclaimer */
+  z-index: 41;
+  pointer-events: none;
+  backdrop-filter: blur(4px);
+}
+body.theme-eva .eva-status-footer[data-empty="true"] {
+  /* Collapse spacing when empty so the disclaimer sits flush. */
+  padding: 0;
+  border-top: none;
+  height: 0;
+  overflow: hidden;
+}
+body.theme-eva .eva-status-footer.status-info { color: var(--eva-accent); }
+body.theme-eva .eva-status-footer.status-warn { color: var(--eva-warning); }
+body.theme-eva .eva-status-footer.status-error { color: var(--eva-danger); }
+/* When the status footer is visible, drop the disclaimer's top border so the
+   two lines read as one footer block. */
+body.theme-eva .eva-status-footer:not([data-empty="true"]) + .eva-disclaimer {
+  border-top: none;
+  padding-top: 2px;
+}
+/* Reserve scroll padding at the bottom of the chat output so the last
+   messages don't render underneath the pinned footer band. */
+body.theme-eva #txtOutput {
+  scroll-padding-bottom: 56px;
+  padding-bottom: 56px;
+}
 /* ── Responsive ─────────────────────────────────────────────── */
 @media (max-width: 599px) {
   body.theme-eva { grid-template-columns: 1fr; padding: 0; }

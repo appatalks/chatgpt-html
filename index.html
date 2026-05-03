@@ -17,6 +17,7 @@
   <script src="core/js/gl-google.js"></script>
   <script src="core/js/lm-studio.js"></script>
   <script src="core/js/copilot.js"></script>
+  <script src="core/js/cognition.js"></script>
   <script src="core/js/aig.js"></script>
   <script src="core/js/dalle3.js"></script>
   <script src="core/js/idb-store.js"></script>
@@ -269,27 +270,30 @@
             <label for="selAIGBackend">Eva Backend Model:</label>
             <select id="selAIGBackend">
               <option value="gpt-4.1" selected>GPT-4.1 (Default)</option>
-              <optgroup label="GPT">
+              <optgroup label="Claude (via ACP)">
+                <option value="claude-opus-4.7">Claude Opus 4.7</option>
+                <option value="claude-opus-4.7-high">Claude Opus 4.7 (high reasoning)</option>
+                <option value="claude-opus-4.7-xhigh">Claude Opus 4.7 (xhigh reasoning)</option>
+                <option value="claude-opus-4.6">Claude Opus 4.6</option>
+                <option value="claude-opus-4.6-1m">Claude Opus 4.6 (1M context)</option>
+                <option value="claude-opus-4.5">Claude Opus 4.5</option>
+                <option value="claude-sonnet-4.6">Claude Sonnet 4.6</option>
+                <option value="claude-sonnet-4.5">Claude Sonnet 4.5</option>
+                <option value="claude-sonnet-4">Claude Sonnet 4</option>
+                <option value="claude-haiku-4.5">Claude Haiku 4.5</option>
+              </optgroup>
+              <optgroup label="GPT (via ACP)">
+                <option value="gpt-5.5">GPT-5.5</option>
+                <option value="gpt-5.4">GPT-5.4</option>
+                <option value="gpt-5.4-mini">GPT-5.4 Mini</option>
                 <option value="gpt-5.3-codex">GPT-5.3 Codex</option>
                 <option value="gpt-5.2-codex">GPT-5.2 Codex</option>
                 <option value="gpt-5.2">GPT-5.2</option>
-                <option value="gpt-5.1-codex">GPT-5.1 Codex</option>
-                <option value="gpt-5.1">GPT-5.1</option>
                 <option value="gpt-5-mini">GPT-5 Mini</option>
                 <option value="gpt-4.1">GPT-4.1</option>
-                <option value="gpt-4o">GPT-4o</option>
-              </optgroup>
-              <optgroup label="Claude">
-                <option value="claude-sonnet-4.6">Claude Sonnet 4.6</option>
-                <option value="claude-opus-4.6">Claude Opus 4.6</option>
-                <option value="claude-sonnet-4.5">Claude Sonnet 4.5</option>
-                <option value="claude-sonnet-4">Claude Sonnet 4</option>
-              </optgroup>
-              <optgroup label="Gemini">
-                <option value="gemini-3-pro-preview">Gemini 3 Pro Preview</option>
               </optgroup>
               <optgroup label="Fallback">
-                <option value="acp">ACP Bridge (Copilot CLI model)</option>
+                <option value="acp">ACP Bridge (Copilot CLI default)</option>
               </optgroup>
             </select>
           </div>
@@ -298,29 +302,78 @@
             <select id="selACPModel">
               <option value="" selected>Default (Copilot CLI setting)</option>
               <optgroup label="Claude">
-                <option value="claude-sonnet-4.6">Claude Sonnet 4.6</option>
+                <option value="claude-opus-4.7">Claude Opus 4.7</option>
+                <option value="claude-opus-4.7-high">Claude Opus 4.7 (high reasoning)</option>
+                <option value="claude-opus-4.7-xhigh">Claude Opus 4.7 (xhigh reasoning)</option>
                 <option value="claude-opus-4.6">Claude Opus 4.6</option>
-                <option value="claude-opus-4.6-fast">Claude Opus 4.6 Fast</option>
-                <option value="claude-sonnet-4.5">Claude Sonnet 4.5</option>
+                <option value="claude-opus-4.6-1m">Claude Opus 4.6 (1M context)</option>
                 <option value="claude-opus-4.5">Claude Opus 4.5</option>
-                <option value="claude-haiku-4.5">Claude Haiku 4.5</option>
+                <option value="claude-sonnet-4.6">Claude Sonnet 4.6</option>
+                <option value="claude-sonnet-4.5">Claude Sonnet 4.5</option>
                 <option value="claude-sonnet-4">Claude Sonnet 4</option>
+                <option value="claude-haiku-4.5">Claude Haiku 4.5</option>
               </optgroup>
               <optgroup label="GPT">
+                <option value="gpt-5.5">GPT-5.5</option>
+                <option value="gpt-5.4">GPT-5.4</option>
+                <option value="gpt-5.4-mini">GPT-5.4 Mini</option>
                 <option value="gpt-5.3-codex">GPT-5.3 Codex</option>
                 <option value="gpt-5.2-codex">GPT-5.2 Codex</option>
                 <option value="gpt-5.2">GPT-5.2</option>
-                <option value="gpt-5.1-codex-max">GPT-5.1 Codex Max</option>
-                <option value="gpt-5.1-codex">GPT-5.1 Codex</option>
-                <option value="gpt-5.1">GPT-5.1</option>
-                <option value="gpt-5.1-codex-mini">GPT-5.1 Codex Mini</option>
                 <option value="gpt-5-mini">GPT-5 Mini</option>
                 <option value="gpt-4.1">GPT-4.1</option>
               </optgroup>
-              <optgroup label="Gemini">
-                <option value="gemini-3-pro-preview">Gemini 3 Pro Preview</option>
-              </optgroup>
             </select>
+          </div>
+
+          <!-- Cognitive Layer (Conductor / Implementer / Reviewer) -->
+          <div class="model-opt cog-section">
+            <label class="cog-toggle-row">
+              <input type="checkbox" id="cogEnabled" onchange="cogPersist()">
+              <span><strong>Enable Cognitive Layer</strong> &mdash; route Eva (AIG) through internal conductor / implementer / reviewer agents.</span>
+            </label>
+            <p class="cog-help">When on, every Eva (AIG) turn is planned by a conductor, drafted by an implementer, then critiqued by a reviewer (bounded loop). The user only sees the final approved draft. Each agent uses its own model.</p>
+
+            <div class="cog-grid">
+              <div>
+                <label for="cogConductorModel">Conductor model:</label>
+                <select id="cogConductorModel" onchange="cogPersist()"></select>
+              </div>
+              <div>
+                <label for="cogImplementerModel">Implementer model:</label>
+                <select id="cogImplementerModel" onchange="cogPersist()"></select>
+              </div>
+              <div>
+                <label for="cogReviewerModel">Reviewer model:</label>
+                <select id="cogReviewerModel" onchange="cogPersist()"></select>
+              </div>
+              <div>
+                <label for="cogMaxCycles">Max review cycles:</label>
+                <input type="number" id="cogMaxCycles" min="0" max="3" step="1" value="1" onchange="cogPersist()">
+              </div>
+            </div>
+
+            <details class="cog-prompts">
+              <summary>Edit agent system prompts</summary>
+              <div class="cog-prompt-row">
+                <label for="cogConductorPrompt">Conductor prompt:</label>
+                <textarea id="cogConductorPrompt" rows="3" onchange="cogPersist()" placeholder="(default conductor prompt)"></textarea>
+              </div>
+              <div class="cog-prompt-row">
+                <label for="cogImplementerPrompt">Implementer prompt:</label>
+                <textarea id="cogImplementerPrompt" rows="3" onchange="cogPersist()" placeholder="(default implementer prompt)"></textarea>
+              </div>
+              <div class="cog-prompt-row">
+                <label for="cogReviewerPrompt">Reviewer prompt:</label>
+                <textarea id="cogReviewerPrompt" rows="3" onchange="cogPersist()" placeholder="(default reviewer prompt)"></textarea>
+              </div>
+              <button type="button" class="lcars-btn" onclick="cogResetPrompts()">Reset prompts to defaults</button>
+            </details>
+
+            <label class="cog-toggle-row">
+              <input type="checkbox" id="cogShowTrace" onchange="cogPersist()">
+              <span>Show pipeline trace below each response (debug)</span>
+            </label>
           </div>
         </div>
       </div>
@@ -543,6 +596,10 @@
     </script>
   </div>
 </div>
+    <!-- Eva theme footer status line (mirrors #idText, only visible in Eva theme) -->
+    <div id="evaStatusFooter" class="eva-status-footer" data-empty="true" role="status" aria-live="polite"></div>
+    <!-- Cognition state badge (visible in all themes, only when active) -->
+    <div id="cogBadge" class="cog-badge" data-active="false" title="Cognitive layer state">Cognition: off</div>
     <!-- Eva disclaimer footer (Eva theme only) -->
     <div id="evaDisclaimer" class="eva-disclaimer">Eva can make mistakes. Consider checking important information.</div>
 

@@ -37,3 +37,13 @@ token_cache.*
 
 # Node (if npx runs locally)
 node_modules/
+
+# Local-only agent knowledge for the maintainer (never committed).
+# Holds dev topology, cluster URLs, recurring commands, and agent playbooks
+# that reference internal hosts. Keep all secrets and internal URLs here.
+.github/agents/local/
+
+# Eva-generated data artifacts. The file.download capability namespaces
+# downloads under tmp/<session_id>/ so each session's artifacts are isolated
+# and easy to clean up. Never commit the contents.
+tmp/

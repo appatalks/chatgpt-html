@@ -64,6 +64,91 @@ async function aigSend() {
   setStatus('info', 'Eva (AIG) processing...');
   if (typeof _copilotLastUserMsg !== 'undefined') { _copilotLastUserMsg = sQuestion; }
 
+  // Optional cognitive layer (conductor / implementer / reviewer).
+  // Runs when the Settings toggle is on OR the user message contains an
+  // explicit trigger phrase like "trigger the chain" / "use cognition".
+  // Falls back to the regular single-shot bridge call on any error.
+  var cogDecision = (typeof Cognition !== 'undefined' && Cognition.shouldRun)
+                      ? Cognition.shouldRun(sQuestion)
+                      : { active: false, reason: null };
+  if (cogDecision.active) {
+    if (cogDecision.reason === 'phrase') {
+      setStatus('info', 'Eva cognition force-enabled by phrase trigger...');
+    }
+    try {
+      var cogResult = await Cognition.run({
+        userMessage: sQuestion,
+        messages: existingMessages,
+        forceEnable: cogDecision.reason === 'phrase',
+        forcedReason: cogDecision.reason
+      });
+      var cogContent = (cogResult && cogResult.content) ? cogResult.content : '';
+      // Execute any [[EVA_ACTION]] blocks the implementer emitted, then render.
+      var actionsRun = [];
+      if (Cognition.executeActions) {
+        var execRes = await Cognition.executeActions(cogContent);
+        cogContent = execRes.content;
+        actionsRun = execRes.actions || [];
+      }
+      await renderEvaResponse(cogContent, txtOutput);
+      if (Cognition.getCfg && Cognition.getCfg().showTrace && Cognition.renderTraceHtml) {
+        try {
+          txtOutput.innerHTML += Cognition.renderTraceHtml(cogResult.trace || []);
+          txtOutput.scrollTop = txtOutput.scrollHeight;
+        } catch (_) {}
+      }
+      if (cogContent) {
+        lastResponse = cogContent;
+        masterOutput += txtOutput.innerText + '\n';
+        localStorage.setItem('masterOutput', masterOutput);
+      }
+      var cogTag = 'cog:' + (cogResult.conductorModel || '?') + '+' +
+                   (cogResult.implementerModel || '?') + '+' +
+                   (cogResult.reviewerModel || '?') +
+                   '/c' + (cogResult.cycles || 0) +
+                   (cogDecision.reason === 'phrase' ? '/forced' : '') +
+                   (actionsRun.length ? '/act' + actionsRun.length : '');
+      setStatus('info', 'Eva (AIG, cognition) \u2014 ' +
+                (cogResult.implementerModel || 'implementer') +
+                '  [' + cogTag + ']');
+      var checkboxC = document.getElementById('autoSpeak');
+      if (checkboxC && checkboxC.checked) {
+        speakText();
+        var audioC = document.getElementById('audioPlayback');
+        if (audioC) audioC.setAttribute('autoplay', true);
+      }
+      return;
+    } catch (cogErr) {
+      var cogMsg = (cogErr && cogErr.message) ? cogErr.message : String(cogErr);
+      setStatus('warn', 'Cognition failed, falling back: ' + cogMsg);
+      // fall through to single-shot path
+    }
+  } else {
+    // Single-shot path: tell Eva the truth about her own cognitive layer so
+    // she does not hallucinate a fake pipeline run when asked about it.
+    var cogState = (typeof Cognition !== 'undefined' && Cognition.getCfg)
+                     ? Cognition.getCfg() : null;
+    var cogNote = [
+      '[Cognition Layer Runtime State - AUTHORITATIVE]',
+      'The cognitive layer (conductor / implementer / reviewer) is currently DISABLED for this turn.',
+      'It is controlled by the user via Settings > Models > "Enable Cognitive Layer",',
+      'or by an explicit phrase trigger such as "trigger the chain" or "use cognition".',
+      'You are NOT running inside that layer right now. You are the single-shot AIG responder.',
+      'If asked whether the layer ran, answer truthfully: it did not.',
+      'Never narrate a fake pipeline (no PHASE 1 / PHASE 2 / PHASE 3 headers, no fabricated reviewer feedback).',
+      'The .github/agents/*.agent.md files describe VS Code Copilot review agents and are NOT your runtime tools.',
+      'If the user wants the layer, tell them to enable the toggle or use a trigger phrase.'
+    ].join('\n');
+    if (cogState) {
+      cogNote += '\nConfigured models when enabled: conductor=' + cogState.conductorModel +
+                 ', implementer=' + cogState.implementerModel +
+                 ', reviewer=' + cogState.reviewerModel +
+                 ', maxCycles=' + cogState.maxCycles + '.';
+    }
+    existingMessages = existingMessages.concat([{ role: 'system', content: cogNote }]);
+    localStorage.setItem(storageKey, JSON.stringify(existingMessages));
+  }
+
   try {
     var url = bridgeUrl.replace(/\/+$/, '') + '/v1/aig/chat';
 
@@ -101,7 +186,24 @@ async function aigSend() {
       localStorage.setItem('masterOutput', masterOutput);
     }
 
-    setStatus('info', 'Response from Eva (AIG) via ' + modelUsed);
+    // Friendly status: pull the actual responder model out of the bridge tag
+    // (e.g. "aig:gpt-5.5+copilot-acp" -> responder "gpt-5.5", route "via ACP").
+    var responder = modelUsed;
+    var routeLabel = '';
+    var stripped = String(modelUsed).replace(/^aig:/, '');
+    var firstSegment = stripped.split('+')[0] || stripped;
+    if (firstSegment) responder = firstSegment;
+    var acpTagRe = /(^|\+)(copilot-acp|acp-data|raw-acp|raw-acp-unavailable|acp-default)$/;
+    if (/^(claude-|gemini-)/.test(responder) || acpTagRe.test(stripped) || responder === 'acp-default') {
+      routeLabel = ' via ACP';
+    } else if (/^(gpt-|o\d|deepseek-|llama-)/.test(responder)) {
+      routeLabel = ' via GitHub Models';
+    }
+    if (responder === 'unavailable' || responder === 'raw-acp-unavailable') {
+      setStatus('error', 'Eva (AIG) responder unavailable (' + modelUsed + ')');
+    } else {
+      setStatus('info', 'Eva (AIG) \u2014 ' + responder + routeLabel + '  [' + modelUsed + ']');
+    }
 
     // Auto-speak
     var checkbox = document.getElementById('autoSpeak');
