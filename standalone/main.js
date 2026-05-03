@@ -218,6 +218,7 @@ function startBridge(port) {
   const args = [bridgePath, '--bind', '127.0.0.1', '--port', String(port), '--cwd', appRoot];
   const env = Object.assign({}, process.env, {
     EVA_ACP_PORT: String(port),
+    KUSTO_DATABASE_LOCKED: '1',
     PYTHONUNBUFFERED: '1'
   });
 

@@ -483,6 +483,56 @@ def _inject_kusto_token(mcp_config):
 
     return mcp_config
 
+def _ensure_kusto_token():
+    """Ensure the bridge has a Kusto token for direct bridge-side Kusto calls."""
+    global _kusto_token_cache, _kusto_credential
+    if _kusto_token_cache:
+        return True, ""
+    if _refresh_kusto_token():
+        return True, ""
+    try:
+        from azure.identity import DeviceCodeCredential, TokenCachePersistenceOptions
+        cache_opts = TokenCachePersistenceOptions(allow_unencrypted_storage=True)
+        credential = DeviceCodeCredential(cache_persistence_options=cache_opts)
+        token = credential.get_token("https://kusto.kusto.windows.net/.default")
+        if token and getattr(token, "token", None):
+            _kusto_token_cache = token.token
+            _kusto_credential = credential
+            print(f"[Bridge] Kusto token obtained for direct query calls (length: {len(token.token)})")
+            return True, ""
+        return False, "Kusto token request returned no token"
+    except Exception as error:
+        return False, str(error)
+
+def _split_kusto_seed_blocks(seed_text):
+    """Split seed KQL into executable management command blocks."""
+    import re
+    blocks = []
+    for raw_block in re.split(r"\n\s*\n", seed_text):
+        lines = []
+        for line in raw_block.splitlines():
+            if line.strip().startswith("//"):
+                continue
+            lines.append(line)
+        block = "\n".join(lines).strip()
+        if block:
+            blocks.append(block)
+    return blocks
+
+
+def _env_truthy(name):
+    """Return True when an environment flag uses the shared truthy form."""
+    return os.environ.get(name, "").strip().lower() in ("1", "true", "yes")
+
+
+def _normalize_kusto_cluster_url(cluster_url):
+    """Normalize a Kusto cluster URL for policy comparisons."""
+    return str(cluster_url or "").strip().rstrip("/").lower()
+
+
+def _same_kusto_cluster(left, right):
+    return _normalize_kusto_cluster_url(left) == _normalize_kusto_cluster_url(right)
+
 
 # ---------------------------------------------------------------------------
 # HTTP Server — exposes the ACP client as an OpenAI-compatible endpoint
@@ -499,6 +549,30 @@ _cognition_launch_iso = None  # UTC timestamp that marks the start of this bridg
 _cognition_launch_id = None  # Human-readable launch identifier for this bridge run
 _cognition_candidate_counts = {}  # Lowercased entity -> mention count in current launch
 _kusto_table_columns_cache = {}  # (cluster, db, table) -> [columns]
+_kusto_database_locked = _env_truthy("KUSTO_DATABASE_LOCKED") or _env_truthy("EVA_KUSTO_LOCKED")
+_active_kusto_db = os.environ.get("KUSTO_DATABASE", "").strip()
+_active_kusto_cluster = os.environ.get("KUSTO_CLUSTER_URL", "").strip()
+_bridge_bind_address = "127.0.0.1"
+
+
+def _is_loopback_bind():
+    bind = (_bridge_bind_address or "").strip().lower()
+    return bind in ("127.0.0.1", "localhost", "::1")
+
+
+def _get_locked_kusto_database():
+    if not _kusto_database_locked:
+        return ""
+    return (_active_kusto_db or os.environ.get("KUSTO_DATABASE", "")).strip()
+
+
+def _capture_active_kusto_env(mcp_config):
+    """Track the Kusto config currently posted to the bridge."""
+    global _active_kusto_db, _active_kusto_cluster
+    kusto_cfg = (mcp_config or {}).get("kusto-mcp-server", {})
+    env = kusto_cfg.get("env", {}) if isinstance(kusto_cfg, dict) else {}
+    _active_kusto_db = str(env.get("KUSTO_DATABASE", "") or os.environ.get("KUSTO_DATABASE", "")).strip()
+    _active_kusto_cluster = str(env.get("KUSTO_CLUSTER_URL", "") or os.environ.get("KUSTO_CLUSTER_URL", "")).strip()
 
 
 class _MSALSilentCredential:
@@ -580,6 +654,62 @@ def _kusto_query_direct(cluster_url, database, query, is_mgmt=False):
         except Exception as e:
             print(f"[Cognition] Kusto query error: {e}")
             return None
+
+
+def _short_kusto_error(value):
+    if isinstance(value, (dict, list)):
+        text = json.dumps(value)
+    else:
+        text = str(value or "")
+    return text[:300]
+
+
+def _kusto_query_with_error(cluster_url, database, query, is_mgmt=False):
+    """Execute a Kusto query and return (rows, error_text) for seed diagnostics."""
+    global _kusto_token_cache
+    if not _kusto_token_cache:
+        return None, "Kusto token is not available"
+    import requests as _requests_mod
+    endpoint = "mgmt" if is_mgmt else "query"
+    url = f"{cluster_url}/v1/rest/{endpoint}"
+    headers = {"Authorization": f"Bearer {_kusto_token_cache}", "Content-Type": "application/json"}
+    payload = {"csl": query, "db": database}
+
+    for attempt in range(3):
+        try:
+            session = _requests_mod.Session()
+            resp = session.post(url, json=payload, headers=headers, timeout=15)
+            session.close()
+            if resp.status_code == 200:
+                try:
+                    data = resp.json()
+                except ValueError as error:
+                    return None, f"Kusto returned invalid JSON: {_short_kusto_error(error)}"
+                exceptions = data.get("Exceptions", [])
+                if exceptions:
+                    return None, _short_kusto_error(exceptions[0])
+                one_api = data.get("OneApiErrors", [])
+                if one_api:
+                    return None, _short_kusto_error(one_api[0])
+                tables = data.get("Tables", [])
+                if tables:
+                    rows = tables[0].get("Rows", [])
+                    cols = [c["ColumnName"] for c in tables[0].get("Columns", [])]
+                    if rows:
+                        return [dict(zip(cols, row)) for row in rows], ""
+                return [], ""
+            if resp.status_code == 401 and attempt == 0 and _refresh_kusto_token():
+                headers["Authorization"] = f"Bearer {_kusto_token_cache}"
+                continue
+            error_text = resp.text[:300] if resp.text else "empty response"
+            return None, f"Kusto API error {resp.status_code}: {error_text}"
+        except (_requests_mod.exceptions.SSLError, _requests_mod.exceptions.ConnectionError) as error:
+            if attempt < 2:
+                time.sleep(1)
+                continue
+            return None, f"Kusto connection error: {_short_kusto_error(error)}"
+        except Exception as error:
+            return None, f"Kusto query error: {_short_kusto_error(error)}"
 
 
 def _get_table_columns(cluster_url, database, table):
@@ -702,9 +832,12 @@ def _get_kusto_config():
         return None, None
     kusto_cfg = acp_client.mcp_config.get("kusto-mcp-server", {})
     env = kusto_cfg.get("env", {})
-    cluster = env.get("KUSTO_CLUSTER_URL", "")
-    db = env.get("KUSTO_DATABASE", "Eva")
-    if not db:
+    cluster = env.get("KUSTO_CLUSTER_URL", "") or _active_kusto_cluster
+    if _kusto_database_locked:
+        db = _get_locked_kusto_database()
+    else:
+        db = env.get("KUSTO_DATABASE", "") or _active_kusto_db
+    if not db and not _kusto_database_locked:
         db = "Eva"
     return cluster, db
 
@@ -889,10 +1022,18 @@ def _build_memory_context(user_message):
         return ""
 
     cluster, db = _get_kusto_config()
-    if not cluster:
+    if not cluster or not db:
         return ""
 
     context_parts = []
+
+    if _kusto_database_locked:
+        db_label = db or "configured database"
+        persistent_memory_capability = f"• persistent-memory: Read/write your configured Kusto database ({db_label}). Tables:\n"
+        kusto_query_capability = f"• kusto-query: Execute KQL queries against the configured Kusto database ({db_label})\n"
+    else:
+        persistent_memory_capability = "• persistent-memory: Read/write your Kusto database (Eva). Tables:\n"
+        kusto_query_capability = "• kusto-query: Execute arbitrary KQL queries against any database (Eva, MEMORY_CORE, ynot)\n"
 
     # ── 1. Skills manifest (always injected, concise) ──────────────────
     import datetime
@@ -907,7 +1048,7 @@ def _build_memory_context(user_message):
         "• weather-news: Real-time weather, news headlines, market summaries, space weather via MCP tools\n"
         "• image-search: Find images on Wikimedia Commons for any topic\n"
         "• image-generation: Generate images via DALL-E 3 (use [Image of <description>] syntax)\n"
-        "• persistent-memory: Read/write your Kusto database (Eva). Tables:\n"
+        f"{persistent_memory_capability}"
         "    Knowledge (Entity, Relation, Value, Confidence) — facts about the user and world\n"
         "    Conversations (SessionId, Role, Content) — chat history\n"
         "    EmotionState (Joy, Curiosity, Concern, Trigger) — your emotional readings\n"
@@ -916,7 +1057,7 @@ def _build_memory_context(user_message):
         "    SelfState (Capability, Status) — your active capabilities\n"
         "    HeuristicsIndex (Entity, Category, Frequency) — pattern tracking\n"
         "    EmotionBaseline (Dimension, Value) — emotional defaults\n"
-        "• kusto-query: Execute arbitrary KQL queries against any database (Eva, MEMORY_CORE, ynot)\n"
+        f"{kusto_query_capability}"
         "• web-search: Search the web and retrieve current information via MCP tools\n"
         "\n"
         "[Workflow: Data Requests]\n"
@@ -1018,18 +1159,17 @@ def _build_memory_context(user_message):
     import re as _re
 
     if _re.search(r'\b(database|databases|kusto|adx|data explorer)\b', msg_lower):
-        dbs = _kusto_query_direct(cluster, "Eva", ".show databases", is_mgmt=True)
-        if dbs:
-            db_names = [d.get('DatabaseName', '?') for d in dbs if 'DatabaseName' in d]
-            if db_names:
-                context_parts.append(f"[Live Data] Databases: {', '.join(db_names)}")
+        if _kusto_database_locked:
+            context_parts.append(f"[Live Data] Database: {db}")
+        else:
+            dbs = _kusto_query_direct(cluster, db, ".show databases", is_mgmt=True)
+            if dbs:
+                db_names = [d.get('DatabaseName', '?') for d in dbs if 'DatabaseName' in d]
+                if db_names:
+                    context_parts.append(f"[Live Data] Databases: {', '.join(db_names)}")
 
     if _re.search(r'\b(tables?|schema|columns?)\b', msg_lower):
         target_db = db
-        for known_db in ['ynot', 'MEMORY_CORE', 'Eva']:
-            if known_db.lower() in msg_lower:
-                target_db = known_db
-                break
         tables = _kusto_query_direct(cluster, target_db, ".show tables", is_mgmt=True)
         if tables:
             tbl_names = [t.get('TableName', '?') for t in tables if 'TableName' in t]
@@ -1083,7 +1223,7 @@ def _post_response_reflection(user_message, assistant_response, model_name):
         return
 
     cluster, db = _get_kusto_config()
-    if not cluster:
+    if not cluster or not db:
         return
 
     import datetime, uuid
@@ -1316,6 +1456,8 @@ class BridgeHandler(BaseHTTPRequestHandler):
             self._memory_reflect()
         elif self.path == "/v1/aig/chat":
             self._aig_chat()
+        elif self.path == "/v1/kusto/seed":
+            self._kusto_seed()
         else:
             self.send_error(404, "Not Found")
 
@@ -1812,6 +1954,91 @@ class BridgeHandler(BaseHTTPRequestHandler):
 
         self._json_response(200, {"status": "ok"})
 
+    def _kusto_seed(self):
+        """Apply the Eva Kusto schema seed file to a configured database."""
+        # Seed runs Kusto management commands, so refuse it on non-loopback binds.
+        if not _is_loopback_bind():
+            self._json_response(403, {"error": {"message": "/v1/kusto/seed is only available on localhost-bound bridges"}})
+            return
+
+        content_length = int(self.headers.get("Content-Length", 0))
+        if content_length == 0:
+            self._json_response(400, {"error": {"message": "Empty request body"}})
+            return
+
+        body = self.rfile.read(content_length).decode("utf-8")
+        try:
+            data = json.loads(body)
+        except json.JSONDecodeError:
+            self._json_response(400, {"error": {"message": "Invalid JSON"}})
+            return
+
+        cluster_url = str(data.get("cluster_url", "")).strip()
+        database = str(data.get("database", "")).strip()
+        if not cluster_url or not database:
+            self._json_response(400, {"error": {"message": "cluster_url and database are required"}})
+            return
+
+        expected_cluster = os.environ.get("KUSTO_CLUSTER_URL", "").strip()
+        if expected_cluster and not _same_kusto_cluster(cluster_url, expected_cluster):
+            self._json_response(400, {"error": {"message": "cluster_url does not match configured KUSTO_CLUSTER_URL"}})
+            return
+
+        if _kusto_database_locked:
+            locked_database = _get_locked_kusto_database()
+            if not locked_database:
+                self._json_response(400, {"error": {"message": "KUSTO_DATABASE is required when KUSTO_DATABASE_LOCKED is set"}})
+                return
+            if database.lower() != locked_database.lower():
+                self._json_response(400, {"error": {"message": "database does not match locked KUSTO_DATABASE"}})
+                return
+            if _active_kusto_cluster and not _same_kusto_cluster(cluster_url, _active_kusto_cluster):
+                self._json_response(400, {"error": {"message": "cluster_url does not match active Kusto MCP configuration"}})
+                return
+            database = locked_database
+
+        token_ok, token_error = _ensure_kusto_token()
+        if not token_ok:
+            self._json_response(503, {
+                "ok": False,
+                "applied": 0,
+                "failed": 1,
+                "errors": ["Kusto authentication failed: " + token_error],
+                "warning": "Re-running this seed will duplicate inline rows."
+            })
+            return
+
+        seed_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "eva_seed.kql")
+        try:
+            with open(seed_path, "r", encoding="utf-8") as seed_file:
+                seed_text = seed_file.read()
+        except OSError as error:
+            self._json_response(500, {"error": {"message": "Could not read eva_seed.kql: " + str(error)}})
+            return
+
+        applied = 0
+        failed = 0
+        errors = []
+        blocks = _split_kusto_seed_blocks(seed_text)
+        # TODO: The inline seed rows use fixed values, so repeated runs can duplicate rows.
+        for index, block in enumerate(blocks, start=1):
+            result, kusto_error = _kusto_query_with_error(cluster_url, database, block, is_mgmt=True)
+            if result is None:
+                failed += 1
+                first_line = block.splitlines()[0] if block.splitlines() else "empty block"
+                errors.append(f"Block {index} failed: {first_line[:120]}: {kusto_error or 'no Kusto diagnostic returned'}")
+            else:
+                applied += 1
+
+        warning = "Re-running this seed will duplicate inline rows."
+        self._json_response(200, {
+            "ok": failed == 0,
+            "applied": applied,
+            "failed": failed,
+            "errors": errors,
+            "warning": warning
+        })
+
     def _mcp_configure(self):
         """Configure MCP servers and restart the ACP client."""
         global acp_client
@@ -1848,8 +2075,16 @@ class BridgeHandler(BaseHTTPRequestHandler):
                 resolved_env[k] = str(v) if not isinstance(v, str) else v
             srv_cfg['env'] = resolved_env
 
+        if _kusto_database_locked and "kusto-mcp-server" in mcp_servers:
+            kusto_env = mcp_servers["kusto-mcp-server"].setdefault("env", {})
+            locked_db = kusto_env.get("KUSTO_DATABASE") or _get_locked_kusto_database()
+            if locked_db:
+                kusto_env["KUSTO_DATABASE"] = locked_db
+            kusto_env["KUSTO_DATABASE_LOCKED"] = "1"
+
         # Inject cached Kusto token if kusto-mcp-server is being configured
         mcp_servers = _inject_kusto_token(mcp_servers)
+        _capture_active_kusto_env(mcp_servers)
 
         # Restart ACP client with new MCP config
         old_path = acp_client.copilot_path if acp_client else "copilot"
@@ -2002,6 +2237,7 @@ class BridgeHandler(BaseHTTPRequestHandler):
 # ---------------------------------------------------------------------------
 
 def main():
+    global _bridge_bind_address
     default_port = 8888
     env_port = os.environ.get("EVA_ACP_PORT", "").strip()
     if env_port:
@@ -2012,7 +2248,8 @@ def main():
 
     parser = argparse.ArgumentParser(description="Eva ACP Bridge Server")
     parser.add_argument("--port", type=int, default=default_port, help="HTTP server port (default: 8888 or EVA_ACP_PORT)")
-    parser.add_argument("--bind", default="127.0.0.1", help="Bind address (default: 127.0.0.1, use 0.0.0.0 for LAN access)")
+    # The Kusto seed endpoint is refused unless this bind address is loopback.
+    parser.add_argument("--bind", default="127.0.0.1", help="Bind address (default: 127.0.0.1, use 0.0.0.0 for LAN access; seed endpoint is disabled off loopback)")
     parser.add_argument("--copilot-path", default="copilot", help="Path to copilot CLI binary")
     parser.add_argument("--cwd", default=os.getcwd(), help="Working directory for ACP session")
     parser.add_argument("--model", default=None, help="Default AI model (e.g. claude-sonnet-4.6, gpt-5.2)")
@@ -2023,6 +2260,7 @@ def main():
     parser.add_argument("--kusto-cluster", default="", help="Kusto cluster URL")
     parser.add_argument("--kusto-database", default="", help="Default Kusto database name")
     args = parser.parse_args()
+    _bridge_bind_address = args.bind
 
     # Build MCP config
     mcp_config = {}
@@ -2066,6 +2304,8 @@ def main():
             kusto_env["KUSTO_CLUSTER_URL"] = args.kusto_cluster
         if args.kusto_database:
             kusto_env["KUSTO_DATABASE"] = args.kusto_database
+        if _kusto_database_locked:
+            kusto_env["KUSTO_DATABASE_LOCKED"] = "1"
 
         # Pre-fetch Kusto token so the MCP subprocess doesn't need interactive auth
         try:
@@ -2133,6 +2373,14 @@ def main():
         }
         print(f"[Bridge] Kusto MCP Server enabled (cluster: {args.kusto_cluster or 'from tool params'})")
 
+    if _kusto_database_locked and "kusto-mcp-server" in mcp_config:
+        kusto_env = mcp_config["kusto-mcp-server"].setdefault("env", {})
+        locked_db = kusto_env.get("KUSTO_DATABASE") or _get_locked_kusto_database()
+        if locked_db:
+            kusto_env["KUSTO_DATABASE"] = locked_db
+        kusto_env["KUSTO_DATABASE_LOCKED"] = "1"
+    _capture_active_kusto_env(mcp_config)
+
     global acp_client
     print(f"[Bridge] Starting ACP bridge on port {args.port}...")
     print(f"[Bridge] Copilot CLI: {args.copilot_path}")
@@ -2159,13 +2407,13 @@ def main():
         print(f"[Bridge] Cognition layer ENABLED (memory injection + reflection)")
         print(f"[Bridge] Cognition launch scope: {_cognition_launch_id} (since {_cognition_launch_iso})")
         # Write SelfState on startup
-        cluster = mcp_config.get("kusto-mcp-server", {}).get("env", {}).get("KUSTO_CLUSTER_URL", "")
-        if cluster:
+        cluster, startup_db = _get_kusto_config()
+        if cluster and startup_db:
             now = datetime.datetime.now(datetime.timezone.utc).isoformat().replace("+00:00", "Z")
             selfstate_cols = ["Timestamp", "Capability", "Status", "Details"]
             capabilities = [
                 {"Timestamp": now, "Capability": "kusto_access", "Status": "active",
-                 "Details": json.dumps({"cluster": cluster, "database": "Eva"})},
+                 "Details": json.dumps({"cluster": cluster, "database": startup_db})},
                 {"Timestamp": now, "Capability": "acp_bridge", "Status": "active",
                  "Details": json.dumps({"model": args.model or "default", "port": args.port})},
                 {"Timestamp": now, "Capability": "cognition", "Status": "active",
@@ -2182,7 +2430,7 @@ def main():
             for srv in mcp_config:
                 capabilities.append({"Timestamp": now, "Capability": f"mcp_{srv}",
                                      "Status": "active", "Details": "{}"})
-            if _kusto_ingest_direct(cluster, "Eva", "SelfState", selfstate_cols, capabilities):
+            if _kusto_ingest_direct(cluster, startup_db, "SelfState", selfstate_cols, capabilities):
                 print(f"[Bridge] SelfState written ({len(capabilities)} capabilities)")
             else:
                 print("[Bridge] SelfState write failed (continuing startup)")
@@ -2197,6 +2445,7 @@ def main():
     print(f"  GET  /v1/models             — List available models")
     print(f"  GET  /v1/mcp                — MCP server status")
     print(f"  POST /v1/mcp/configure      — Configure MCP servers (hot-reload)")
+    print(f"  POST /v1/kusto/seed         - Apply Eva Kusto schema seed")
     print(f"  GET  /health                — Health check")
     print()
 

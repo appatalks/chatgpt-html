@@ -168,6 +168,149 @@ function applyStandaloneSurface() {
   applyStandaloneSimplifications();
 }
 
+function getSavedMCPConfig() {
+  try {
+    return JSON.parse(localStorage.getItem('mcp_config') || '{}') || {};
+  } catch (error) {
+    return {};
+  }
+}
+
+function hasSavedStandaloneKustoConfig() {
+  var config = getSavedMCPConfig();
+  var kusto = config['kusto-mcp-server'];
+  var env = kusto && kusto.env ? kusto.env : {};
+  return !!(env.KUSTO_CLUSTER_URL && String(env.KUSTO_CLUSTER_URL).trim());
+}
+
+function setStandaloneFirstRunStatus(text) {
+  var status = document.getElementById('firstRunStatus');
+  if (status) status.textContent = text || '';
+}
+
+function updateStandaloneFirstRunSaveState() {
+  var cluster = document.getElementById('firstRunKustoCluster');
+  var database = document.getElementById('firstRunKustoDatabase');
+  var saveButton = document.getElementById('firstRunSave');
+  if (!saveButton) return;
+  saveButton.disabled = !(
+    cluster && cluster.value.trim() &&
+    database && database.value.trim()
+  );
+}
+
+function showStandaloneFirstRunModal() {
+  if (!(typeof isEvaStandalone === 'function' && isEvaStandalone())) return;
+  var modal = document.getElementById('firstRunModal');
+  if (!modal) return;
+  var overlay = document.getElementById('settingsOverlay');
+  var cluster = document.getElementById('firstRunKustoCluster');
+  var database = document.getElementById('firstRunKustoDatabase');
+  if (cluster) cluster.value = '';
+  if (database) database.value = '';
+  setStandaloneFirstRunStatus('');
+  if (overlay) overlay.classList.add('open');
+  modal.style.display = 'flex';
+  updateStandaloneFirstRunSaveState();
+  setTimeout(function() {
+    if (cluster) cluster.focus();
+  }, 0);
+}
+
+function hideStandaloneFirstRunModal() {
+  var modal = document.getElementById('firstRunModal');
+  if (modal) modal.style.display = 'none';
+  var settingsMenu = document.getElementById('settingsMenu');
+  var overlay = document.getElementById('settingsOverlay');
+  if (overlay && !(settingsMenu && settingsMenu.classList.contains('open'))) {
+    overlay.classList.remove('open');
+  }
+}
+
+function skipStandaloneFirstRun() {
+  localStorage.setItem('eva_standalone_first_run_done', '1');
+  hideStandaloneFirstRunModal();
+}
+
+async function saveStandaloneFirstRunConfig() {
+  if (!(typeof isEvaStandalone === 'function' && isEvaStandalone())) return;
+  var cluster = document.getElementById('firstRunKustoCluster');
+  var database = document.getElementById('firstRunKustoDatabase');
+  var clusterUrl = cluster ? cluster.value.trim() : '';
+  var databaseName = database ? database.value.trim() : '';
+  if (!clusterUrl || !databaseName) return;
+
+  var config = getSavedMCPConfig();
+  config['kusto-mcp-server'] = {
+    command: 'python3',
+    args: ['tools/kusto_mcp.py'],
+    env: {
+      KUSTO_CLUSTER_URL: clusterUrl,
+      KUSTO_DATABASE: databaseName,
+      KUSTO_DATABASE_LOCKED: '1'
+    }
+  };
+  localStorage.setItem('mcp_config', JSON.stringify(config));
+  localStorage.setItem('eva_standalone_first_run_done', '1');
+
+  var kustoCheck = document.getElementById('mcpKusto');
+  var kustoConfig = document.getElementById('mcpKustoConfig');
+  var clusterField = document.getElementById('mcpKustoCluster');
+  var databaseField = document.getElementById('mcpKustoDatabase');
+  if (kustoCheck) kustoCheck.checked = true;
+  if (kustoConfig) kustoConfig.style.display = 'block';
+  if (clusterField) clusterField.value = clusterUrl;
+  if (databaseField) databaseField.value = databaseName;
+  if (typeof updateKustoSeedButtonState === 'function') updateKustoSeedButtonState();
+
+  setStandaloneFirstRunStatus('Configuring Kusto MCP...');
+  var result = { ok: false };
+  if (typeof applyMCPConfig === 'function') {
+    result = await applyMCPConfig();
+  }
+  hideStandaloneFirstRunModal();
+
+  if (result && result.ok) {
+    var shouldSeed = confirm('Seed Eva schema into ' + databaseName + '?');
+    if (shouldSeed && typeof seedEvaSchema === 'function') {
+      await seedEvaSchema(clusterUrl, databaseName, true);
+    }
+  }
+}
+
+function initStandaloneFirstRun() {
+  if (!(typeof isEvaStandalone === 'function' && isEvaStandalone())) return;
+  var rerunButton = document.getElementById('standaloneFirstRunButton');
+  if (rerunButton) {
+    rerunButton.style.display = 'block';
+    rerunButton.addEventListener('click', function() {
+      localStorage.removeItem('eva_standalone_first_run_done');
+      showStandaloneFirstRunModal();
+    });
+  }
+
+  var cluster = document.getElementById('firstRunKustoCluster');
+  var database = document.getElementById('firstRunKustoDatabase');
+  var saveButton = document.getElementById('firstRunSave');
+  var skipButton = document.getElementById('firstRunSkip');
+  if (cluster) cluster.addEventListener('input', updateStandaloneFirstRunSaveState);
+  if (database) database.addEventListener('input', updateStandaloneFirstRunSaveState);
+  if (saveButton) saveButton.addEventListener('click', saveStandaloneFirstRunConfig);
+  if (skipButton) {
+    skipButton.addEventListener('click', skipStandaloneFirstRun);
+  }
+  document.addEventListener('keydown', function(event) {
+    var modal = document.getElementById('firstRunModal');
+    if (event.key === 'Escape' && modal && modal.style.display !== 'none') {
+      skipStandaloneFirstRun();
+    }
+  });
+
+  if (!hasSavedStandaloneKustoConfig() && localStorage.getItem('eva_standalone_first_run_done') !== '1') {
+    showStandaloneFirstRunModal();
+  }
+}
+
 function toggleAuthVis(btn) {
   var input = btn.parentElement.querySelector('input');
   if (input.type === 'password') {
@@ -398,6 +541,7 @@ document.addEventListener('DOMContentLoaded', () => {
   const monitorPanels = document.getElementById('lcarsMonitorPanels');
 
   applyStandaloneSurface();
+  initStandaloneFirstRun();
 
   function toggleSettings(event) {
     event.stopPropagation();
