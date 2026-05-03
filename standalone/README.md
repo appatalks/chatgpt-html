@@ -21,10 +21,29 @@ npm run start
 
 ```sh
 cd standalone
+npm install
 npm run dist
 ```
 
+Output lands in `standalone/dist/`, named like `Eva Standalone-<version>.AppImage` (the version comes from `package.json`).
+
 The AppImage build is configured in `package.json` but this scaffold does not include generated output or a lockfile.
+
+## Launch The AppImage
+
+```sh
+cd standalone/dist
+chmod +x "Eva Standalone-0.1.0.AppImage"
+"./Eva Standalone-0.1.0.AppImage"
+```
+
+If the host is missing FUSE (common on minimal containers and some distros), launch with extraction instead:
+
+```sh
+"./Eva Standalone-0.1.0.AppImage" --appimage-extract-and-run
+```
+
+The AppImage is self-contained: it spawns the bundled ACP bridge on a random localhost port at startup. The host still needs Copilot CLI authenticated once via `copilot auth login`.
 
 ## Runtime Notes
 
