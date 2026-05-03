@@ -158,12 +158,11 @@ function applyStandaloneSimplifications() {
   var engineSelect = document.getElementById('selEngine');
   var barkOption = document.querySelector('#selEngine option[value="bark"]');
   if (engineSelect) {
-    // Standalone ships without AWS credentials, so default the TTS engine
-    // to the offline browser path. Users can still pick a Polly engine
-    // and provide credentials if they want cloud voices.
     var current = engineSelect.value;
-    if (!current || current === 'bark' || current === 'standard' || current === 'neural' || current === 'generative') {
-      engineSelect.value = 'browser';
+    var pollyEngine = (current === 'standard' || current === 'neural' || current === 'generative');
+    if (!current || current === 'bark' || pollyEngine) {
+      var hasOpenAIKey = (typeof getAuthKey === 'function') ? !!getAuthKey('OPENAI_API_KEY') : !!window.OPENAI_API_KEY;
+      engineSelect.value = hasOpenAIKey ? 'openai' : 'browser';
     }
   }
   if (barkOption) barkOption.remove();
@@ -1777,6 +1776,64 @@ function speakText() {
 
     speechParams.VoiceId = document.getElementById("selVoice").value;
     speechParams.Engine = document.getElementById("selEngine").value;
+
+
+    // OpenAI TTS: cloud voice, requires OPENAI_API_KEY. Reliable fallback when
+    // the host has no offline speech engine installed.
+    if (speechParams.Engine === "openai") {
+      var openaiKey = (typeof getAuthKey === 'function') ? getAuthKey('OPENAI_API_KEY') : (window.OPENAI_API_KEY || '');
+      if (!openaiKey) {
+        var resultElO = document.getElementById('result');
+        var msgO = 'OpenAI TTS requires an API key. Set it in Settings > Auth.';
+        if (resultElO) resultElO.textContent = msgO; else console.warn(msgO);
+        return;
+      }
+      // Map Polly voice ids to OpenAI voices so the existing voice dropdown
+      // still drives a sensible choice.
+      var openaiVoiceMap = {
+        Salli: 'nova',
+        Ruth: 'shimmer',
+        Seoyeon: 'nova',
+        Mia: 'alloy',
+        Tatyana: 'shimmer'
+      };
+      var oaVoice = openaiVoiceMap[speechParams.VoiceId] || 'nova';
+      fetch('https://api.openai.com/v1/audio/speech', {
+        method: 'POST',
+        headers: {
+          'Authorization': 'Bearer ' + openaiKey,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          model: 'gpt-4o-mini-tts',
+          voice: oaVoice,
+          input: speechParams.Text,
+          response_format: 'mp3'
+        })
+      }).then(function(resp) {
+        if (!resp.ok) {
+          return resp.text().then(function(t) { throw new Error('OpenAI TTS ' + resp.status + ': ' + t.slice(0, 200)); });
+        }
+        return resp.blob();
+      }).then(function(blob) {
+        var url = URL.createObjectURL(blob);
+        var src = document.getElementById('audioSource');
+        var audio = document.getElementById('audioPlayback');
+        if (src) src.src = url;
+        if (audio) {
+          audio.load();
+          audio.setAttribute('autoplay', 'true');
+          try { audio.play(); } catch (_) {}
+        }
+        var resultEl2 = document.getElementById('result');
+        if (resultEl2) resultEl2.textContent = '';
+      }).catch(function(err) {
+        var resultEl3 = document.getElementById('result');
+        var msg3 = (err && err.message) ? err.message : String(err);
+        if (resultEl3) resultEl3.textContent = msg3; else console.warn('OpenAI TTS error:', msg3);
+      });
+      return;
+    }
 
 
     // Browser SpeechSynthesis: offline, no credentials. Used by standalone.
