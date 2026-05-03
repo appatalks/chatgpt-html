@@ -842,6 +842,46 @@ def _get_kusto_config():
     return cluster, db
 
 
+def _enable_cognition(mcp_servers, model=None, port=None):
+    """Enable cognition hooks and advertise active bridge capabilities."""
+    global _cognition_enabled, _cognition_launch_iso, _cognition_launch_id, _kusto_table_columns_cache
+    import datetime
+    _kusto_table_columns_cache = {}
+    _cognition_launch_iso = datetime.datetime.now(datetime.timezone.utc).isoformat().replace("+00:00", "Z")
+    _cognition_launch_id = f"eva-{datetime.datetime.now(datetime.timezone.utc).strftime('%Y%m%d%H%M%S')}"
+    _cognition_enabled = True
+    print(f"[Bridge] Cognition layer ENABLED (memory injection + reflection)")
+    print(f"[Bridge] Cognition launch scope: {_cognition_launch_id} (since {_cognition_launch_iso})")
+
+    cluster, startup_db = _get_kusto_config()
+    if cluster and startup_db:
+        now = datetime.datetime.now(datetime.timezone.utc).isoformat().replace("+00:00", "Z")
+        selfstate_cols = ["Timestamp", "Capability", "Status", "Details"]
+        capabilities = [
+            {"Timestamp": now, "Capability": "kusto_access", "Status": "active",
+             "Details": json.dumps({"cluster": cluster, "database": startup_db})},
+            {"Timestamp": now, "Capability": "acp_bridge", "Status": "active",
+             "Details": json.dumps({"model": model or "default", "port": port})},
+            {"Timestamp": now, "Capability": "cognition", "Status": "active",
+             "Details": json.dumps({"features": ["memory_injection", "reflection", "day_lifecycle", "emotion_tracking"]})},
+            {"Timestamp": now, "Capability": "data_retrieval", "Status": "active",
+             "Details": json.dumps({"skills": ["stock_quotes", "financial_data", "company_info", "web_search"]})},
+            {"Timestamp": now, "Capability": "weather_news", "Status": "active",
+             "Details": json.dumps({"feeds": ["weather", "news", "markets", "space_weather"]})},
+            {"Timestamp": now, "Capability": "image_skills", "Status": "active",
+             "Details": json.dumps({"skills": ["wikimedia_search", "dalle3_generation"]})},
+            {"Timestamp": now, "Capability": "persistent_memory", "Status": "active",
+             "Details": json.dumps({"tables": ["Knowledge", "Conversations", "EmotionState", "MemorySummaries", "Reflections", "SelfState", "HeuristicsIndex", "EmotionBaseline"]})},
+        ]
+        for srv in mcp_servers.keys():
+            capabilities.append({"Timestamp": now, "Capability": f"mcp_{srv}",
+                                 "Status": "active", "Details": "{}"})
+        if _kusto_ingest_direct(cluster, startup_db, "SelfState", selfstate_cols, capabilities):
+            print(f"[Bridge] SelfState written ({len(capabilities)} capabilities)")
+        else:
+            print("[Bridge] SelfState write failed (continuing startup)")
+
+
 def _with_launch_filter(query, timestamp_column="Timestamp"):
     """Scope a Kusto query to rows written during the current cognition launch."""
     if not _cognition_launch_iso:
@@ -2034,7 +2074,7 @@ class BridgeHandler(BaseHTTPRequestHandler):
 
     def _mcp_configure(self):
         """Configure MCP servers and restart the ACP client."""
-        global acp_client
+        global acp_client, _cognition_enabled, _cognition_launch_iso, _cognition_launch_id, _kusto_table_columns_cache
 
         content_length = int(self.headers.get("Content-Length", 0))
         if content_length == 0:
@@ -2089,6 +2129,9 @@ class BridgeHandler(BaseHTTPRequestHandler):
         acp_client = ACPClient(copilot_path=old_path, cwd=old_cwd, model=old_model, mcp_config=mcp_servers)
         try:
             acp_client.start()
+            if "kusto-mcp-server" in mcp_servers and _kusto_token_cache and not _cognition_enabled:
+                bridge_port = getattr(self.server, "server_port", None) or getattr(self.server, "server_address", (None, None))[1]
+                _enable_cognition(mcp_servers, model=old_model, port=bridge_port)
             self._json_response(200, {
                 "status": "ok",
                 "message": f"MCP servers configured: {list(mcp_servers.keys())}",
@@ -2392,41 +2435,7 @@ def main():
     # Enable cognition layer if Kusto MCP is configured
     global _cognition_enabled, _cognition_launch_iso, _cognition_launch_id, _kusto_table_columns_cache
     if "kusto-mcp-server" in mcp_config and _kusto_token_cache:
-        import datetime
-        _kusto_table_columns_cache = {}
-        _cognition_launch_iso = datetime.datetime.now(datetime.timezone.utc).isoformat().replace("+00:00", "Z")
-        _cognition_launch_id = f"eva-{datetime.datetime.now(datetime.timezone.utc).strftime('%Y%m%d%H%M%S')}"
-        _cognition_enabled = True
-        print(f"[Bridge] Cognition layer ENABLED (memory injection + reflection)")
-        print(f"[Bridge] Cognition launch scope: {_cognition_launch_id} (since {_cognition_launch_iso})")
-        # Write SelfState on startup
-        cluster, startup_db = _get_kusto_config()
-        if cluster and startup_db:
-            now = datetime.datetime.now(datetime.timezone.utc).isoformat().replace("+00:00", "Z")
-            selfstate_cols = ["Timestamp", "Capability", "Status", "Details"]
-            capabilities = [
-                {"Timestamp": now, "Capability": "kusto_access", "Status": "active",
-                 "Details": json.dumps({"cluster": cluster, "database": startup_db})},
-                {"Timestamp": now, "Capability": "acp_bridge", "Status": "active",
-                 "Details": json.dumps({"model": args.model or "default", "port": args.port})},
-                {"Timestamp": now, "Capability": "cognition", "Status": "active",
-                 "Details": json.dumps({"features": ["memory_injection", "reflection", "day_lifecycle", "emotion_tracking"]})},
-                {"Timestamp": now, "Capability": "data_retrieval", "Status": "active",
-                 "Details": json.dumps({"skills": ["stock_quotes", "financial_data", "company_info", "web_search"]})},
-                {"Timestamp": now, "Capability": "weather_news", "Status": "active",
-                 "Details": json.dumps({"feeds": ["weather", "news", "markets", "space_weather"]})},
-                {"Timestamp": now, "Capability": "image_skills", "Status": "active",
-                 "Details": json.dumps({"skills": ["wikimedia_search", "dalle3_generation"]})},
-                {"Timestamp": now, "Capability": "persistent_memory", "Status": "active",
-                 "Details": json.dumps({"tables": ["Knowledge", "Conversations", "EmotionState", "MemorySummaries", "Reflections", "SelfState", "HeuristicsIndex", "EmotionBaseline"]})},
-            ]
-            for srv in mcp_config:
-                capabilities.append({"Timestamp": now, "Capability": f"mcp_{srv}",
-                                     "Status": "active", "Details": "{}"})
-            if _kusto_ingest_direct(cluster, startup_db, "SelfState", selfstate_cols, capabilities):
-                print(f"[Bridge] SelfState written ({len(capabilities)} capabilities)")
-            else:
-                print("[Bridge] SelfState write failed (continuing startup)")
+        _enable_cognition(mcp_config, model=args.model, port=args.port)
     else:
         print(f"[Bridge] Cognition layer disabled (no Kusto MCP or token)")
 
