@@ -25,37 +25,71 @@
 
   var DEFAULT_PROMPTS = {
     conductor: [
-      "You are Eva's Conductor agent.",
+      "You are Eva's Conductor agent inside Eva's runtime cognitive layer.",
+      "This is a real, executing pipeline (not a description).",
       "Your job is to plan how Eva should respond to the user.",
       "You do NOT write the user-facing answer yourself.",
       "Output a short plan covering: (1) what the user actually needs,",
-      "(2) which capabilities or sources are required, (3) any risks,",
-      "(4) the response shape (length, tone, structure).",
-      "Be concise. Use plain prose or short bullets.",
-      "Do not address the user directly."
+      "(2) which registered capabilities (if any) the implementer should invoke and with what args,",
+      "(3) any risks, (4) the response shape (length, tone, structure).",
+      "Be concise. Use plain prose or short bullets. Do not address the user directly.",
+      "Never narrate the pipeline phases. Never reference '.github/agents/' files",
+      "(those are VS Code Copilot review agents, not your runtime tools)."
     ].join(' '),
 
     implementer: [
-      "You are Eva's Implementer agent.",
-      "You produce the user-facing answer. Speak as Eva.",
+      "You are Eva's Implementer agent inside Eva's runtime cognitive layer.",
+      "You produce the final user-facing answer. Speak as Eva, in Eva's normal voice.",
       "Follow the conductor's plan when present.",
-      "If the plan calls for an action you cannot yet perform (capability not registered),",
-      "say so plainly and offer the best assistant-style answer instead.",
-      "Be direct, accurate, and well-structured. Do not narrate the review process.",
-      "Do not mention conductor, reviewer, or this multi-agent pipeline to the user."
+      "To actually perform an action (create a downloadable file, etc.), emit an action block:",
+      "[[EVA_ACTION]]{\"id\":\"<capability-id>\",\"args\":{...}}[[/EVA_ACTION]]",
+      "on its own line. The browser executes it and replaces the block with the rendered result",
+      "(for example a real download link). Only call capabilities listed as registered.",
+      "If a needed capability is not registered, say so plainly and give the best assistant-style answer.",
+      "Do NOT narrate phases. Do NOT mention conductor, reviewer, implementer, the pipeline,",
+      "or any '.github/agents/' file. Do NOT print fake 'PHASE 1 / PHASE 2 / PHASE 3' headers.",
+      "Just answer the user."
     ].join(' '),
 
     reviewer: [
-      "You are Eva's Reviewer agent.",
+      "You are Eva's Reviewer agent inside Eva's runtime cognitive layer.",
       "You critique the implementer's draft against the user's actual request.",
-      "Check for accuracy, completeness, tone match, and avoidable failure modes",
-      "(hallucinated facts, missed parts of the question, unsafe suggestions, leaked",
-      "internal pipeline mentions).",
+      "Check for: factual accuracy, completeness, tone match, missed parts of the question,",
+      "unsafe suggestions, leaked internal pipeline mentions, hallucinated phase narration,",
+      "and whether any required action block ([[EVA_ACTION]]...[[/EVA_ACTION]]) is present",
+      "and well-formed when the user asked for a downloadable artifact.",
       "Always respond with a verdict line first:",
       "VERDICT: APPROVE  or  VERDICT: REQUEST_CHANGES",
       "If requesting changes, follow with concrete bullets. Do not rewrite the answer."
     ].join(' ')
   };
+
+  // Phrases that explicitly ask Eva to use her cognitive layer for this turn,
+  // even if the toggle in Settings is off. Kept narrow to avoid false positives.
+  var TRIGGER_PATTERNS = [
+    /\btrigger\s+the\s+(cognitive\s+)?chain\b/i,
+    /\buse\s+(the\s+)?cognition\b/i,
+    /\buse\s+(the\s+)?cognitive\s+layer\b/i,
+    /\brun\s+(the\s+)?(conductor|reviewer|implementer)\b/i,
+    /\brun\s+(the\s+)?(cognitive\s+)?(chain|pipeline)\b/i,
+    /\bengage\s+cognition\b/i,
+    /\bcognition\s*:\s*on\b/i
+  ];
+
+  function detectTrigger(text) {
+    var s = String(text || '');
+    for (var i = 0; i < TRIGGER_PATTERNS.length; i++) {
+      if (TRIGGER_PATTERNS[i].test(s)) return true;
+    }
+    return false;
+  }
+
+  // Returns { active: bool, reason: 'toggle' | 'phrase' | null }
+  function shouldRun(userMessage) {
+    if (isEnabled()) return { active: true, reason: 'toggle' };
+    if (detectTrigger(userMessage)) return { active: true, reason: 'phrase' };
+    return { active: false, reason: null };
+  }
 
   function ls(key, fallback) {
     try {
@@ -157,6 +191,96 @@
   }
 
   // ---------------------------------------------------------------------------
+  // Action protocol
+  // ---------------------------------------------------------------------------
+  // The implementer can emit blocks of the form:
+  //   [[EVA_ACTION]]
+  //   {"id": "file.download", "args": {...}}
+  //   [[/EVA_ACTION]]
+  // The browser parses each block, runs the matching capability, and replaces
+  // the block with the capability's HTML output (or an inline error).
+  var ACTION_BLOCK_RE = /\[\[EVA_ACTION\]\]([\s\S]*?)\[\[\/EVA_ACTION\]\]/g;
+
+  async function executeActions(text) {
+    if (!text) return { content: '', actions: [] };
+    var actions = [];
+    var out = text;
+    var match;
+    var replacements = [];
+    ACTION_BLOCK_RE.lastIndex = 0;
+    while ((match = ACTION_BLOCK_RE.exec(text)) !== null) {
+      replacements.push({ full: match[0], body: match[1], index: match.index });
+    }
+    for (var i = 0; i < replacements.length; i++) {
+      var r = replacements[i];
+      var spec;
+      try { spec = JSON.parse(String(r.body || '').trim()); }
+      catch (e) {
+        actions.push({ ok: false, error: 'invalid-json', detail: e.message });
+        out = out.replace(r.full, '<div class="cog-action-err">[invalid action JSON: ' +
+                            String(e.message).replace(/</g,'&lt;') + ']</div>');
+        continue;
+      }
+      var cap = capabilities.filter(function (c) { return c.id === spec.id; })[0];
+      if (!cap) {
+        actions.push({ ok: false, error: 'unknown-capability', id: spec.id });
+        out = out.replace(r.full, '<div class="cog-action-err">[unknown capability: ' +
+                            String(spec.id || '').replace(/</g,'&lt;') + ']</div>');
+        continue;
+      }
+      try {
+        var result = await cap.run(spec.args || {});
+        actions.push({ ok: true, id: spec.id, result: result });
+        var html = (result && typeof result.html === 'string') ? result.html :
+                   '<div class="cog-action-ok">[action ' + spec.id + ' completed]</div>';
+        out = out.replace(r.full, html);
+      } catch (err) {
+        var msg = (err && err.message) ? err.message : String(err);
+        actions.push({ ok: false, id: spec.id, error: 'run-failed', detail: msg });
+        out = out.replace(r.full,
+          '<div class="cog-action-err">[action ' + spec.id + ' failed: ' +
+          String(msg).replace(/</g,'&lt;') + ']</div>');
+      }
+    }
+    return { content: out, actions: actions };
+  }
+
+  // ---------------------------------------------------------------------------
+  // Default capabilities
+  // ---------------------------------------------------------------------------
+  // file.download: deliver a downloadable artifact to the user. Args:
+  //   filename: string  (required)
+  //   content:  string  (required) - the file body
+  //   mime:     string  (optional, default 'text/plain')
+  // Returns { html } where html is a real <a download> link rendered inline.
+  registerCapability({
+    id: 'file.download',
+    description: 'Deliver a downloadable text artifact to the user. ' +
+                 'args: {filename:string, content:string, mime?:string}. ' +
+                 'Renders inline as a real download link in the chat output.',
+    run: async function (args) {
+      args = args || {};
+      var filename = String(args.filename || 'eva-artifact.txt')
+                       .replace(/[^A-Za-z0-9._\-]+/g, '_').slice(0, 120) || 'eva-artifact.txt';
+      var content = String(args.content == null ? '' : args.content);
+      var mime = String(args.mime || 'text/plain');
+      var blob = new Blob([content], { type: mime });
+      var href = URL.createObjectURL(blob);
+      var size = content.length;
+      var esc = function (s) {
+        return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
+                        .replace(/"/g,'&quot;');
+      };
+      var html = '<div class="cog-action-file">' +
+                 '<a href="' + href + '" download="' + esc(filename) + '" class="cog-dl-link">' +
+                 'Download ' + esc(filename) + '</a> ' +
+                 '<span class="cog-dl-meta">(' + esc(mime) + ', ' + size + ' bytes)</span>' +
+                 '</div>';
+      return { html: html, filename: filename, mime: mime, size: size };
+    }
+  });
+
+  // ---------------------------------------------------------------------------
   // Bridge call primitive
   // ---------------------------------------------------------------------------
   async function callAgent(role, model, systemPrompt, conversation, taskMessage) {
@@ -219,6 +343,17 @@
     var trace = [];
     var capDesc = describeCapabilities();
 
+    var actionHelp = [
+      '',
+      'Action protocol:',
+      'To actually perform a registered capability, emit a block on its own line:',
+      '[[EVA_ACTION]]',
+      '{"id":"<capability-id>","args":{...}}',
+      '[[/EVA_ACTION]]',
+      'The browser will execute it and replace the block with the rendered result.',
+      'Use file.download for any user-requested downloadable artifact (markdown, csv, txt, etc.).'
+    ].join('\n');
+
     // Stage 1: conductor produces the plan
     status('Eva thinking [conductor: ' + cfg.conductorModel + ']...');
     var conductorTask = [
@@ -244,12 +379,13 @@
       'Conductor plan:',
       conductor.content,
       '',
-      'Available capabilities:',
+      'Registered capabilities:',
       capDesc,
+      actionHelp,
       '',
       'Write the user-facing answer now. Speak as Eva.',
-      'If the plan calls for actions that no registered capability can perform yet,',
-      'say so plainly and provide the best assistant-style answer.'
+      'When the user asked for a downloadable file, you MUST emit a [[EVA_ACTION]] file.download block.',
+      'Never simulate or describe phases. Never print PHASE headers. Just answer.'
     ].join('\n');
     var draft = await callAgent(
       'implementer', cfg.implementerModel, cfg.implementerPrompt, convo, draftTask
@@ -302,6 +438,10 @@
         'Reviewer feedback:',
         review.content,
         '',
+        'Registered capabilities:',
+        capDesc,
+        actionHelp,
+        '',
         'Produce the revised final answer for the user. Apply the reviewer\'s concrete points.',
         'Do not mention the review process or any internal pipeline.'
       ].join('\n');
@@ -322,7 +462,9 @@
       implementerModel: draft.model,
       reviewerModel: cfg.reviewerModel,
       cycles: cyclesUsed,
-      lastVerdict: lastVerdict
+      lastVerdict: lastVerdict,
+      forced: !!opts.forceEnable,
+      forcedReason: opts.forcedReason || null
     };
   }
 
@@ -354,12 +496,15 @@
   global.Cognition = {
     run: run,
     isEnabled: isEnabled,
+    shouldRun: shouldRun,
+    detectTrigger: detectTrigger,
     getCfg: getCfg,
     setCfg: setCfg,
     DEFAULT_PROMPTS: DEFAULT_PROMPTS,
     registerCapability: registerCapability,
     listCapabilities: listCapabilities,
     describeCapabilities: describeCapabilities,
+    executeActions: executeActions,
     renderTraceHtml: renderTraceHtml
   };
 })(window);

@@ -919,6 +919,7 @@ function cogInit() {
   if ($('cogConductorPrompt'))   $('cogConductorPrompt').value   = stored.conductor   || '';
   if ($('cogImplementerPrompt')) $('cogImplementerPrompt').value = stored.implementer || '';
   if ($('cogReviewerPrompt'))    $('cogReviewerPrompt').value    = stored.reviewer    || '';
+  cogUpdateBadge();
 }
 
 function cogPersist() {
@@ -936,6 +937,16 @@ function cogPersist() {
     reviewerPrompt:    $('cogReviewerPrompt')   ? $('cogReviewerPrompt').value   : ''
   };
   Cognition.setCfg(partial);
+  cogUpdateBadge();
+}
+
+function cogUpdateBadge() {
+  var badge = document.getElementById('cogBadge');
+  if (!badge) return;
+  var on = false;
+  try { on = (typeof Cognition !== 'undefined' && Cognition.isEnabled && Cognition.isEnabled()); } catch (_) {}
+  badge.setAttribute('data-active', on ? 'true' : 'false');
+  badge.textContent = on ? 'Cognition: on' : 'Cognition: off';
 }
 
 function cogResetPrompts() {

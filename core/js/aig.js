@@ -65,16 +65,31 @@ async function aigSend() {
   if (typeof _copilotLastUserMsg !== 'undefined') { _copilotLastUserMsg = sQuestion; }
 
   // Optional cognitive layer (conductor / implementer / reviewer).
-  // When enabled in Settings, route through Cognition.run() and render
-  // the implementer's final approved draft. Falls back to the regular
-  // single-shot bridge call on any error.
-  if (typeof Cognition !== 'undefined' && Cognition.isEnabled && Cognition.isEnabled()) {
+  // Runs when the Settings toggle is on OR the user message contains an
+  // explicit trigger phrase like "trigger the chain" / "use cognition".
+  // Falls back to the regular single-shot bridge call on any error.
+  var cogDecision = (typeof Cognition !== 'undefined' && Cognition.shouldRun)
+                      ? Cognition.shouldRun(sQuestion)
+                      : { active: false, reason: null };
+  if (cogDecision.active) {
+    if (cogDecision.reason === 'phrase') {
+      setStatus('info', 'Eva cognition force-enabled by phrase trigger...');
+    }
     try {
       var cogResult = await Cognition.run({
         userMessage: sQuestion,
-        messages: existingMessages
+        messages: existingMessages,
+        forceEnable: cogDecision.reason === 'phrase',
+        forcedReason: cogDecision.reason
       });
       var cogContent = (cogResult && cogResult.content) ? cogResult.content : '';
+      // Execute any [[EVA_ACTION]] blocks the implementer emitted, then render.
+      var actionsRun = [];
+      if (Cognition.executeActions) {
+        var execRes = await Cognition.executeActions(cogContent);
+        cogContent = execRes.content;
+        actionsRun = execRes.actions || [];
+      }
       await renderEvaResponse(cogContent, txtOutput);
       if (Cognition.getCfg && Cognition.getCfg().showTrace && Cognition.renderTraceHtml) {
         try {
@@ -90,7 +105,9 @@ async function aigSend() {
       var cogTag = 'cog:' + (cogResult.conductorModel || '?') + '+' +
                    (cogResult.implementerModel || '?') + '+' +
                    (cogResult.reviewerModel || '?') +
-                   '/c' + (cogResult.cycles || 0);
+                   '/c' + (cogResult.cycles || 0) +
+                   (cogDecision.reason === 'phrase' ? '/forced' : '') +
+                   (actionsRun.length ? '/act' + actionsRun.length : '');
       setStatus('info', 'Eva (AIG, cognition) \u2014 ' +
                 (cogResult.implementerModel || 'implementer') +
                 '  [' + cogTag + ']');
@@ -106,6 +123,30 @@ async function aigSend() {
       setStatus('warn', 'Cognition failed, falling back: ' + cogMsg);
       // fall through to single-shot path
     }
+  } else {
+    // Single-shot path: tell Eva the truth about her own cognitive layer so
+    // she does not hallucinate a fake pipeline run when asked about it.
+    var cogState = (typeof Cognition !== 'undefined' && Cognition.getCfg)
+                     ? Cognition.getCfg() : null;
+    var cogNote = [
+      '[Cognition Layer Runtime State - AUTHORITATIVE]',
+      'The cognitive layer (conductor / implementer / reviewer) is currently DISABLED for this turn.',
+      'It is controlled by the user via Settings > Models > "Enable Cognitive Layer",',
+      'or by an explicit phrase trigger such as "trigger the chain" or "use cognition".',
+      'You are NOT running inside that layer right now. You are the single-shot AIG responder.',
+      'If asked whether the layer ran, answer truthfully: it did not.',
+      'Never narrate a fake pipeline (no PHASE 1 / PHASE 2 / PHASE 3 headers, no fabricated reviewer feedback).',
+      'The .github/agents/*.agent.md files describe VS Code Copilot review agents and are NOT your runtime tools.',
+      'If the user wants the layer, tell them to enable the toggle or use a trigger phrase.'
+    ].join('\n');
+    if (cogState) {
+      cogNote += '\nConfigured models when enabled: conductor=' + cogState.conductorModel +
+                 ', implementer=' + cogState.implementerModel +
+                 ', reviewer=' + cogState.reviewerModel +
+                 ', maxCycles=' + cogState.maxCycles + '.';
+    }
+    existingMessages = existingMessages.concat([{ role: 'system', content: cogNote }]);
+    localStorage.setItem(storageKey, JSON.stringify(existingMessages));
   }
 
   try {

@@ -171,6 +171,16 @@ body {
     details.cog-trace .cog-step-head { font-weight: 600; font-size: 11px; opacity: 0.85; }
     details.cog-trace .cog-step-model { font-weight: 400; opacity: 0.7; margin-left: 6px; }
     details.cog-trace .cog-step-body { white-space: pre-wrap; margin: 4px 0 0; padding: 6px 8px; background: rgba(0,0,0,0.04); border-radius: 4px; max-height: 240px; overflow: auto; }
+    /* Cognition badge */
+    .cog-badge { display: none; }
+    .cog-badge[data-active="true"] { display: inline-block; position: fixed; bottom: 6px; right: 10px; z-index: 50; padding: 2px 8px; font: 600 10px/1.4 system-ui, sans-serif; border-radius: 999px; background: rgba(33,150,243,0.12); color: #1565c0; border: 1px solid rgba(33,150,243,0.45); pointer-events: none; letter-spacing: 0.02em; }
+    body.theme-lcars .cog-badge[data-active="true"] { background: rgba(153,204,255,0.10); color: var(--ld-arctic-ice, #99ccff); border-color: var(--ld-arctic-ice, #99ccff); }
+    /* Action artifact rendering (file.download etc.) */
+    .cog-action-file { margin: 6px 0; padding: 8px 10px; border: 1px solid #b0bec5; border-radius: 6px; background: rgba(0,0,0,0.03); font-size: 13px; }
+    .cog-action-file .cog-dl-link { font-weight: 600; text-decoration: underline; }
+    .cog-action-file .cog-dl-meta { opacity: 0.7; font-size: 11px; margin-left: 6px; }
+    .cog-action-err { margin: 6px 0; padding: 6px 8px; border: 1px solid #ef9a9a; border-radius: 6px; background: rgba(239,154,154,0.12); color: #b71c1c; font-size: 12px; }
+    .cog-action-ok { margin: 6px 0; padding: 6px 8px; border: 1px solid #a5d6a7; border-radius: 6px; background: rgba(165,214,167,0.12); color: #1b5e20; font-size: 12px; }
 
     /* Auth fields */
     .auth-note {
