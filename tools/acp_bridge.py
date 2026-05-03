@@ -500,15 +500,6 @@ def _ensure_kusto_token():
             _kusto_token_cache = token.token
             _kusto_credential = credential
             print(f"[Bridge] Kusto token obtained for direct query calls (length: {len(token.token)})")
-            mcp_config = getattr(acp_client, "mcp_config", {}) if acp_client is not None else {}
-            if (
-                not _cognition_enabled
-                and _kusto_token_cache
-                and acp_client is not None
-                and getattr(acp_client, "alive", False)
-                and "kusto-mcp-server" in mcp_config
-            ):
-                _enable_cognition(mcp_config, model=acp_client.model, port=None)
             return True, ""
         return False, "Kusto token request returned no token"
     except Exception as error:
@@ -2345,7 +2336,8 @@ class BridgeHandler(BaseHTTPRequestHandler):
         warning = "Re-running this seed will duplicate inline rows."
         mcp_config = getattr(acp_client, "mcp_config", {}) if acp_client is not None else {}
         if (
-            not _cognition_enabled
+            failed == 0
+            and not _cognition_enabled
             and _kusto_token_cache
             and acp_client is not None
             and getattr(acp_client, "alive", False)
