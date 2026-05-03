@@ -89,6 +89,12 @@ function lmsSend() {
                         const out = document.getElementById("txtOutput");
                         await renderEvaResponse(candidate, out);
 
+                        // Keep the global last-response synced so Auto Speak
+                        // and other consumers do not pick up a stale prior turn.
+                        if (typeof lastResponse !== 'undefined') {
+                          lastResponse = candidate;
+                        }
+
                         // Update conversation history
                         openLLMessages.push({ role: "user", content: sQuestion });
                         openLLMessages.push({ role: "assistant", content: candidate });

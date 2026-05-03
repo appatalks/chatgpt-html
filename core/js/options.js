@@ -1750,28 +1750,24 @@ function speakText() {
         VoiceId: ""
     };
 
-    // Let's speak only the response.
-    let text = document.getElementById("txtOutput").innerHTML;
-
-    // Split the text by "Eva:" to get all of Eva's responses.
-    let textArr = text.split('<span class="eva">Eva:');
-
-    // Check if there are Eva's responses.
-    if (textArr.length > 1) {
-        // Take the last response from Eva.
-        let lastResponse = textArr[textArr.length - 1];
-
-        // Further process to remove any HTML tags and get pure text, if necessary.
-        // This step is crucial to avoid sending HTML tags to the speech API.
-        // Use a regular expression to remove HTML tags.
-        let cleanText = lastResponse.replace(/<\/?[^>]+(>|$)/g, "");
-
-        // Set the cleaned last response to the speechParams.Text.
-        speechParams.Text = cleanText.trim();
+    // Prefer the global `lastResponse` populated by aig.js / copilot.js /
+    // gpt-core.js. That string is the clean final response without any
+    // cognition-trace markup, which prevents Auto Speak from reading the
+    // response twice when the trace details block is rendered after it.
+    if (typeof lastResponse === 'string' && lastResponse.trim()) {
+      speechParams.Text = lastResponse.replace(/<\/?[^>]+(>|$)/g, "").trim();
     } else {
-        // Fallback to the entire text if there's no "Eva:" found.
-        // You might want to handle this case differently.
+      let text = document.getElementById("txtOutput").innerHTML;
+      // Strip any cognition-trace details block first so trace content
+      // (which echoes the implementer/reviewer drafts) does not get spoken.
+      text = text.replace(/<details class="cog-trace"[\s\S]*?<\/details>/g, '');
+      let textArr = text.split('<span class="eva">Eva:');
+      if (textArr.length > 1) {
+        let last = textArr[textArr.length - 1];
+        speechParams.Text = last.replace(/<\/?[^>]+(>|$)/g, "").trim();
+      } else {
         speechParams.Text = text;
+      }
     }
 
     speechParams.VoiceId = document.getElementById("selVoice").value;
@@ -2371,13 +2367,29 @@ document.addEventListener('DOMContentLoaded', function() {
 function shiftBreak() {
 document.querySelector("#txtMsg").addEventListener("keydown", function(event) {
   if (event.shiftKey && event.keyCode === 13) {
-    var newLine = document.createElement("br");
+    // Use the browser's native line-break command so contenteditable
+    // gets the proper trailing-br anchor. The previous manual <br>
+    // insert required two presses to visually break the line because
+    // a single trailing <br> at end-of-text is not rendered.
+    event.preventDefault();
+    try {
+      if (document.execCommand && document.execCommand('insertLineBreak')) {
+        return;
+      }
+    } catch (_) {}
     var sel = window.getSelection();
+    if (!sel || !sel.rangeCount) return;
     var range = sel.getRangeAt(0);
     range.deleteContents();
-    range.insertNode(newLine);
-    range.setStartAfter(newLine);
-    event.preventDefault();
+    var br = document.createElement("br");
+    range.insertNode(br);
+    // Anchor br: ensures the cursor falls on a visibly new line.
+    var anchor = document.createElement("br");
+    range.setStartAfter(br);
+    range.insertNode(anchor);
+    range.collapse(true);
+    sel.removeAllRanges();
+    sel.addRange(range);
   }
 });
 
