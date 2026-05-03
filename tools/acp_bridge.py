@@ -29,6 +29,7 @@ The server exposes a single endpoint:
 import argparse
 import json
 import os
+import re
 import subprocess
 import sys
 import threading
@@ -548,6 +549,7 @@ _session_conversation_buffer = []  # Buffer of recent (user, assistant) pairs fo
 _cognition_launch_iso = None  # UTC timestamp that marks the start of this bridge run
 _cognition_launch_id = None  # Human-readable launch identifier for this bridge run
 _cognition_candidate_counts = {}  # Lowercased entity -> mention count in current launch
+_CONVO_CONTENT_CAP = 8000  # Kusto string columns are unbounded, but cap defensively.
 _kusto_table_columns_cache = {}  # (cluster, db, table) -> [columns]
 _kusto_database_locked = _env_truthy("KUSTO_DATABASE_LOCKED") or _env_truthy("EVA_KUSTO_LOCKED")
 _active_kusto_db = os.environ.get("KUSTO_DATABASE", "").strip()
@@ -936,6 +938,177 @@ _ENTITY_RESERVED_TERMS = {
     "memorysummaries", "selfstate", "heuristicsindex", "emotionbaseline"
 }
 
+_EXPLICIT_FACT_WHITESPACE_RE = re.compile(r"\s+", re.IGNORECASE)
+# CHILDREN, PARTNER, PET, LOCATION patterns deliberately omit re.IGNORECASE
+# so the [A-Z] anchor on the captured name keeps real proper-noun semantics.
+# Users typing "my kids are happy" with a lowercase "happy" are not captured;
+# users typing "my kids are June and Iris" are. That trade is intentional.
+_EXPLICIT_CHILDREN_RE = re.compile(
+    r"\b[Mm]y (?:kid|kids|child|children|son|sons|daughter|daughters)(?:'s| are| is| name(?:s)? (?:are|is))?\s+"
+    r"([A-Z][a-zA-Z]+(?:[\s,]+(?:and\s+)?[A-Z][a-zA-Z]+)*)"
+)
+_EXPLICIT_MOTTO_RE = re.compile(
+    r"\bmy (motto|mantra|creed|philosophy|saying|life motto)(?:\s+is)?[:\s]+[\"“']?([^\"”'\n]{5,200})[\"”']?",
+    re.IGNORECASE
+)
+_EXPLICIT_PARTNER_RE = re.compile(
+    r"\b[Mm]y (wife|husband|partner|spouse|girlfriend|boyfriend)(?:'s name)?(?:\s+is)?\s+([A-Z][a-zA-Z]+)"
+)
+_EXPLICIT_PET_RE = re.compile(
+    r"\b[Mm]y (dog|cat|pet|bird|rabbit|hamster|fish|horse)(?:'s name)?(?:\s+is)?\s+([A-Z][a-zA-Z]+)"
+)
+_EXPLICIT_PREFERENCE_RE = re.compile(
+    r"\bi (?:love|enjoy|prefer|like)\b\s+([a-z][a-zA-Z\s,]{3,80}?)(?:[.!?\n]|$)",
+    re.IGNORECASE
+)
+_EXPLICIT_INTEREST_RE = re.compile(
+    r"\bmy (?:hobby|hobbies|interest|interests|passion|passions) (?:is|are|include|includes)\s+([a-z][a-zA-Z\s,]{3,80}?)(?:[.!?\n]|$)",
+    re.IGNORECASE
+)
+_EXPLICIT_FAVORITE_RE = re.compile(
+    r"\bmy favorite (tv show|tv shows|show|shows|movie|movies|book|books|food|color|game|games|band|song|songs|artist|artists)(?:\s+(?:is|are))?\s+([^.!?\n]{2,120})",
+    re.IGNORECASE
+)
+_EXPLICIT_EMPLOYMENT_RE = re.compile(
+    r"\bi (?:work|am working) (?:as|at|for)\s+([^.!?\n]{2,120})",
+    re.IGNORECASE
+)
+_EXPLICIT_LOCATION_RE = re.compile(
+    r"\b[Ii] (?:live|am based|am located) (?:in|at|near)\s+([A-Z][a-zA-Z\s,]+?)(?:[.!?\n]|$)"
+)
+_EXPLICIT_ROLE_RE = re.compile(
+    r"\bi am (?:a|an)\s+([a-z][a-zA-Z\s]{3,80}?)(?:[.!?\n]|$)",
+    re.IGNORECASE
+)
+# First-token deny-list for the broad ROLE / PREFERENCE patterns. Without this,
+# "I am a bit tired" or "I like that idea" would write trash into the User
+# profile at 0.65 confidence.
+_EXPLICIT_VAGUE_FIRST_TOKENS = {
+    "a", "an", "the", "that", "this", "those", "these", "it",
+    "him", "her", "them", "us", "my", "your", "our", "their",
+    "bit", "lot", "little", "kind", "sort", "type", "couple", "few",
+    "real", "true", "good", "bad", "happy", "sad", "tired", "busy",
+    "quick", "slow", "sure", "fine", "okay", "ok",
+}
+_EXPLICIT_CHILD_SPLIT_RE = re.compile(r"\s*(?:,|\band\b)\s*", re.IGNORECASE)
+_EXPLICIT_FAVORITE_SUFFIXES = {
+    "tv show": "tv_show",
+    "tv shows": "tv_show",
+    "show": "show",
+    "shows": "show",
+    "movie": "movie",
+    "movies": "movie",
+    "book": "book",
+    "books": "book",
+    "food": "food",
+    "color": "color",
+    "game": "game",
+    "games": "game",
+    "band": "band",
+    "song": "song",
+    "songs": "song",
+    "artist": "artist",
+    "artists": "artist",
+}
+
+
+def _clean_explicit_fact_value(raw_value):
+    value = str(raw_value or "").strip().strip("\"“”'")
+    value = _EXPLICIT_FACT_WHITESPACE_RE.sub(" ", value).strip()
+    value = value.rstrip(".,").strip().strip("\"“”'")
+    return value[:200]
+
+
+def _normalize_explicit_children(raw_value):
+    value = _clean_explicit_fact_value(raw_value)
+    children = []
+    for child in _EXPLICIT_CHILD_SPLIT_RE.split(value):
+        child_name = _clean_explicit_fact_value(child)
+        if child_name and child_name.lower() not in _ENTITY_RESERVED_TERMS:
+            children.append(child_name)
+    return ", ".join(children)
+
+
+def _extract_explicit_user_facts(user_message):
+    """Extract direct user-stated facts before generic entity candidates."""
+    import datetime
+    timestamp = datetime.datetime.now(datetime.timezone.utc).isoformat().replace("+00:00", "Z")
+    facts = []
+    seen = set()
+
+    def add_fact(relation, raw_value, confidence):
+        value = _clean_explicit_fact_value(raw_value)
+        if not value or value.lower() in _ENTITY_RESERVED_TERMS:
+            return
+        key = (relation, value.lower())
+        if key in seen:
+            return
+        seen.add(key)
+        facts.append({
+            "Entity": "User",
+            "Relation": relation,
+            "Value": value,
+            "Confidence": confidence,
+            "Source": "explicit_user_fact",
+            "Timestamp": timestamp,
+            "Decay": 0.005,
+        })
+
+    for match in _EXPLICIT_CHILDREN_RE.finditer(user_message or ""):
+        add_fact("user_children", _normalize_explicit_children(match.group(1)), 0.85)
+    for match in _EXPLICIT_MOTTO_RE.finditer(user_message or ""):
+        add_fact("user_motto", match.group(2), 0.85)
+    for match in _EXPLICIT_PARTNER_RE.finditer(user_message or ""):
+        add_fact("user_partner_name", match.group(2), 0.85)
+    for match in _EXPLICIT_PET_RE.finditer(user_message or ""):
+        species = match.group(1).lower()
+        add_fact(f"user_pet_{species}", match.group(2), 0.85)
+    for match in _EXPLICIT_PREFERENCE_RE.finditer(user_message or ""):
+        captured = match.group(1).strip()
+        first_token = captured.split()[0].lower() if captured else ""
+        if first_token in _EXPLICIT_VAGUE_FIRST_TOKENS:
+            continue
+        add_fact("user_preference", captured, 0.65)
+    for match in _EXPLICIT_INTEREST_RE.finditer(user_message or ""):
+        add_fact("user_interest", match.group(1), 0.7)
+    for match in _EXPLICIT_FAVORITE_RE.finditer(user_message or ""):
+        noun = match.group(1).lower()
+        relation_suffix = _EXPLICIT_FAVORITE_SUFFIXES.get(noun, noun.replace(" ", "_"))
+        add_fact(f"user_favorite_{relation_suffix}", match.group(2), 0.65)
+    for match in _EXPLICIT_EMPLOYMENT_RE.finditer(user_message or ""):
+        add_fact("user_employment", match.group(1), 0.8)
+    for match in _EXPLICIT_LOCATION_RE.finditer(user_message or ""):
+        add_fact("user_location", match.group(1), 0.8)
+    for match in _EXPLICIT_ROLE_RE.finditer(user_message or ""):
+        captured = match.group(1).strip()
+        first_token = captured.split()[0].lower() if captured else ""
+        if first_token in _EXPLICIT_VAGUE_FIRST_TOKENS:
+            continue
+        add_fact("user_role_self_described", captured, 0.65)
+
+    return facts
+
+
+def _explicit_user_fact_covers_candidate(classified_relation, entity, explicit_user_facts):
+    relation_map = {
+        "user_location": {"user_location"},
+        "user_affiliation": {"user_employment"},
+    }
+    matching_relations = relation_map.get(classified_relation)
+    if not matching_relations:
+        return False
+
+    entity_lc = (entity or "").strip().lower()
+    if not entity_lc:
+        return False
+    for fact in explicit_user_facts:
+        if fact.get("Relation") not in matching_relations:
+            continue
+        value_lc = str(fact.get("Value", "")).strip().lower()
+        if value_lc and (entity_lc in value_lc or value_lc in entity_lc):
+            return True
+    return False
+
 
 def _normalize_entity_candidate(raw_entity):
     """Normalize an extracted entity candidate before validation."""
@@ -1067,6 +1240,19 @@ def _build_memory_context(user_message):
 
     context_parts = []
 
+    user_profile_query = (
+        "Knowledge "
+        "| where Entity =~ 'User' and Confidence >= 0.5 "
+        "| summarize arg_max(Timestamp, Value, Confidence) by Relation "
+        "| project Relation, Value, Confidence "
+        "| order by Confidence desc "
+        "| take 30"
+    )
+    user_profile = _kusto_query_direct(cluster, db, user_profile_query)
+    if user_profile:
+        profile_lines = [f"- {item.get('Relation','?')}: {item.get('Value','?')}" for item in user_profile]
+        context_parts.append("[User Profile]\n" + "\n".join(profile_lines))
+
     if _kusto_database_locked:
         db_label = db or "configured database"
         persistent_memory_capability = f"• persistent-memory: Read/write your configured Kusto database ({db_label}). Tables:\n"
@@ -1132,10 +1318,12 @@ def _build_memory_context(user_message):
             context_parts.append(f"[Morning Reflection — {today}]\nNew day. No prior summaries — this is a fresh start.")
 
     # ── 3. Core identity knowledge (always) ────────────────────────────
-    knowledge_empty = True  # Track whether we have any core facts
+    knowledge_empty = not bool(user_profile)  # Track whether we have any core facts
+    # User Profile is injected separately above; this broader block remains secondary context.
     # Fetch ALL high-confidence facts (not scope-limited) so persistent knowledge survives restarts
     core_query = (
         "Knowledge "
+        "| where Entity !~ 'User' "
         "| where Confidence >= 0.6 "
         "and (isnull(Relation) or Relation !in~ ('mentioned', 'candidate_mentioned')) "
         "| order by Confidence desc | take 15"
@@ -1275,16 +1463,40 @@ def _post_response_reflection(user_message, assistant_response, model_name):
     conv_columns = ["SessionId", "Timestamp", "Role", "Provider", "Model", "Content", "TokenEstimate", "ImageGenerated"]
     conv_rows = [
         {"SessionId": session_id, "Timestamp": now, "Role": "user", "Provider": "copilot-acp",
-         "Model": model_name, "Content": user_message[:500], "TokenEstimate": len(user_message.split()),
+         "Model": model_name, "Content": user_message[:_CONVO_CONTENT_CAP], "TokenEstimate": len(user_message.split()),
          "ImageGenerated": False},
         {"SessionId": session_id, "Timestamp": now, "Role": "assistant", "Provider": "copilot-acp",
-         "Model": model_name, "Content": assistant_response[:500], "TokenEstimate": len(assistant_response.split()),
+         "Model": model_name, "Content": assistant_response[:_CONVO_CONTENT_CAP], "TokenEstimate": len(assistant_response.split()),
          "ImageGenerated": False}
     ]
     _kusto_ingest_direct(cluster, db, "Conversations", conv_columns, conv_rows)
     print(f"[Cognition] Logged conversation ({len(user_message)} → {len(assistant_response)} chars)")
 
-    # 2. Extract candidate knowledge with validation/classification
+    # 2. Extract explicit user facts before generic candidate knowledge
+    explicit_user_facts = _extract_explicit_user_facts(user_message)
+    if explicit_user_facts:
+        know_columns = ["Timestamp", "Entity", "Relation", "Value", "Confidence", "Source", "Decay"]
+        rows = []
+        for fact in explicit_user_facts:
+            rows.append({
+                "Timestamp": now,
+                "Entity": fact["Entity"],
+                "Relation": fact["Relation"],
+                "Value": fact["Value"][:200],
+                "Confidence": fact["Confidence"],
+                "Source": source_id,
+                "Decay": 0.005,
+            })
+        if rows and _kusto_ingest_direct(cluster, db, "Knowledge", know_columns, rows):
+            preview = []
+            for row in rows[:5]:
+                preview_value = row["Value"][:40]
+                if len(row["Value"]) > 40:
+                    preview_value += "..."
+                preview.append(f"{row['Relation']}={preview_value}")
+            print(f"[Cognition] Explicit user facts captured: {len(rows)} ({'; '.join(preview)})")
+
+    # 3. Extract candidate knowledge with validation/classification
     import re
     candidate_entities, rejected_entities = _extract_entity_candidates(user_message)
     if rejected_entities:
@@ -1297,6 +1509,8 @@ def _post_response_reflection(user_message, assistant_response, model_name):
         know_rows = []
         for entity in candidate_entities[:3]:
             relation, confidence, value = _classify_entity_candidate(entity, user_message)
+            if _explicit_user_fact_covers_candidate(relation, entity, explicit_user_facts):
+                relation, confidence, value = "candidate_mentioned", 0.2, "candidate extracted from conversation"
             promotion = None
             if relation == "candidate_mentioned":
                 promotion = _maybe_promote_candidate(entity)

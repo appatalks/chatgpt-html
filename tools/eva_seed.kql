@@ -116,14 +116,19 @@ Empathy,0.6
 
 // ── Table: Reflections ────────────────────────────────────────────
 // Eva's self-reflections triggered by significant interactions.
+// 2026-05: Reflections schema realigned to writer columns (Timestamp, Trigger,
+// Observation, ActionTaken, Effectiveness). For existing databases run
+// `.drop table Reflections ifexists` before applying this seed.
 .create-merge table Reflections (
-    Reflection: string,
+    Timestamp: datetime,
     Trigger: string,
-    Timestamp: datetime
+    Observation: string,
+    ActionTaken: string,
+    Effectiveness: string
 )
 
 .ingest inline into table Reflections <|
-I was just created with a new memory database. I look forward to learning about my user and building a meaningful relationship.,Initial seed,2026-01-01T00:00:00Z
+2026-01-01T00:00:00Z,Initial seed,I was just created with a new memory database. I look forward to learning about my user and building a meaningful relationship.,seed,0.0
 
 // ── Table: HeuristicsIndex ────────────────────────────────────────
 // Pattern tracking — entities mentioned across conversations.
