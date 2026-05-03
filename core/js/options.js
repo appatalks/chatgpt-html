@@ -1732,6 +1732,44 @@ function insertImage() {
 }
 
 // AWS Polly
+// Normalize a chunk of model output (raw markdown or rendered HTML) into a
+// clean plain-text string safe to send to a TTS engine. The previous
+// implementation used `/<\/?[^>]+(>|$)/g`, which would swallow everything
+// from a stray `<` to the end of the string. That occasionally truncated the
+// final sentence of a response (for example when the model emitted a `<3` or
+// any other non-tag `<`), so Auto Speak silently dropped trailing content.
+function sanitizeForSpeech(input) {
+  if (input == null) return '';
+  var t = String(input);
+  // Remove only well-formed HTML tags. Stray `<` characters are preserved.
+  t = t.replace(/<\/?[a-zA-Z][^>]*>/g, '');
+  // Decode the handful of HTML entities that show up in rendered chat content.
+  t = t.replace(/&nbsp;/g, ' ')
+       .replace(/&amp;/g, '&')
+       .replace(/&lt;/g, '<')
+       .replace(/&gt;/g, '>')
+       .replace(/&quot;/g, '"')
+       .replace(/&#39;/g, "'");
+  // Strip fenced code blocks (TTS reading source code is rarely useful).
+  t = t.replace(/```[\s\S]*?```/g, ' ');
+  // Drop inline code backticks while keeping the inner text.
+  t = t.replace(/`([^`]+)`/g, '$1');
+  // Markdown emphasis: bold, italic, strikethrough.
+  t = t.replace(/(\*\*|__)(.*?)\1/g, '$2');
+  t = t.replace(/(\*|_)(.*?)\1/g, '$2');
+  t = t.replace(/~~(.*?)~~/g, '$1');
+  // Markdown links: keep the visible text, drop the URL.
+  t = t.replace(/!\[([^\]]*)\]\([^)]*\)/g, '$1');
+  t = t.replace(/\[([^\]]+)\]\([^)]*\)/g, '$1');
+  // Headings, blockquotes, and list bullets at line start.
+  t = t.replace(/^[ \t]*#{1,6}[ \t]+/gm, '');
+  t = t.replace(/^[ \t]*>[ \t]?/gm, '');
+  t = t.replace(/^[ \t]*[-*+][ \t]+/gm, '');
+  // Collapse runs of blank lines so the synthesizer does not pause forever.
+  t = t.replace(/\n{3,}/g, '\n\n');
+  return t.trim();
+}
+
 function speakText() {
   var txtOutputEl = document.getElementById('txtOutput');
   var sText = txtOutputEl ? txtOutputEl.innerHTML : '';
@@ -1755,7 +1793,7 @@ function speakText() {
     // cognition-trace markup, which prevents Auto Speak from reading the
     // response twice when the trace details block is rendered after it.
     if (typeof lastResponse === 'string' && lastResponse.trim()) {
-      speechParams.Text = lastResponse.replace(/<\/?[^>]+(>|$)/g, "").trim();
+      speechParams.Text = sanitizeForSpeech(lastResponse);
     } else {
       let text = document.getElementById("txtOutput").innerHTML;
       // Strip any cognition-trace details block first so trace content
@@ -1764,9 +1802,9 @@ function speakText() {
       let textArr = text.split('<span class="eva">Eva:');
       if (textArr.length > 1) {
         let last = textArr[textArr.length - 1];
-        speechParams.Text = last.replace(/<\/?[^>]+(>|$)/g, "").trim();
+        speechParams.Text = sanitizeForSpeech(last);
       } else {
-        speechParams.Text = text;
+        speechParams.Text = sanitizeForSpeech(text);
       }
     }
 
