@@ -108,6 +108,20 @@ async function aigSend() {
                    '/c' + (cogResult.cycles || 0) +
                    (cogDecision.reason === 'phrase' ? '/forced' : '') +
                    (actionsRun.length ? '/act' + actionsRun.length : '');
+      if (cogContent) {
+        try {
+          fetch(bridgeUrl.replace(/\/+$/, '') + '/v1/memory/reflect', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              user_message: sQuestion,
+              assistant_message: cogContent,
+              model: cogTag
+            }),
+            signal: AbortSignal.timeout(5000)
+          }).catch(function () {});
+        } catch (_) {}
+      }
       setStatus('info', 'Eva (AIG, cognition) \u2014 ' +
                 (cogResult.implementerModel || 'implementer') +
                 '  [' + cogTag + ']');

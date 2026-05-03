@@ -330,7 +330,8 @@
         messages: msgs,
         user_message: taskMessage || '',
         model: model,
-        github_pat: authPat()
+        github_pat: authPat(),
+        internal: true
       })
     });
     if (!resp.ok) {

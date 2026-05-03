@@ -549,6 +549,8 @@ _session_conversation_buffer = []  # Buffer of recent (user, assistant) pairs fo
 _cognition_launch_iso = None  # UTC timestamp that marks the start of this bridge run
 _cognition_launch_id = None  # Human-readable launch identifier for this bridge run
 _cognition_candidate_counts = {}  # Lowercased entity -> mention count in current launch
+_candidate_history_cache = {}  # { entity_lower: (timestamp_epoch, mentions, max_confidence) }
+_CANDIDATE_HISTORY_TTL_SECONDS = 60
 _CONVO_CONTENT_CAP = 8000  # Kusto string columns are unbounded, but cap defensively.
 _kusto_table_columns_cache = {}  # (cluster, db, table) -> [columns]
 _kusto_database_locked = _env_truthy("KUSTO_DATABASE_LOCKED") or _env_truthy("EVA_KUSTO_LOCKED")
@@ -1162,26 +1164,79 @@ def _classify_entity_candidate(entity, user_message):
     return "candidate_mentioned", 0.2, "candidate extracted from conversation"
 
 
+def _load_candidate_history(entity):
+    """Load persisted mention history for a candidate entity."""
+    key = (entity or "").strip().lower()
+    if not key:
+        return 0, 0.0
+
+    now = time.time()
+    cached = _candidate_history_cache.get(key)
+    if cached and now - cached[0] < _CANDIDATE_HISTORY_TTL_SECONDS:
+        return cached[1], cached[2]
+
+    cluster, db = _get_kusto_config()
+    if not cluster or not db:
+        return 0, 0.0
+
+    safe_entity = (entity or "").strip().replace("'", "''")
+    query = (
+        "Knowledge\n"
+        f"| where Entity =~ '{safe_entity}'\n"
+        "| summarize Mentions = count(), MaxConfidence = max(Confidence)"
+    )
+    rows = _kusto_query_direct(cluster, db, query)
+    if rows is None:
+        return 0, 0.0
+
+    mentions = 0
+    max_confidence = 0.0
+    if rows:
+        row = rows[0] or {}
+        try:
+            mentions = int(row.get("Mentions") or 0)
+        except (TypeError, ValueError):
+            mentions = 0
+        try:
+            max_confidence = float(row.get("MaxConfidence") or 0.0)
+        except (TypeError, ValueError):
+            max_confidence = 0.0
+
+    _candidate_history_cache[key] = (now, mentions, max_confidence)
+    print(f"[Cognition] Candidate history for \"{entity}\": prior_mentions={mentions} max_conf={max_confidence:.3f}")
+    return mentions, max_confidence
+
+
 def _maybe_promote_candidate(entity):
-    """Promote candidate entities after repeated mentions in the current launch."""
+    """Promote candidate entities after repeated persisted or launch-local mentions."""
     key = (entity or "").strip().lower()
     if not key:
         return None
 
-    seen_count = _cognition_candidate_counts.get(key, 0)
-    if seen_count >= 2:
+    session_count = _cognition_candidate_counts.get(key, 0)
+    prior_mentions, prior_max_conf = _load_candidate_history(entity)
+    total_observations = session_count + prior_mentions
+
+    if prior_max_conf >= 0.6:
         return {
-            "relation": "candidate_confirmed",
+            "relation": "recurring_topic",
+            "confidence": min(0.85, prior_max_conf + 0.05),
+            "value": "reinforced by repeated mention",
+            "reason": "prior_high_confidence"
+        }
+    if total_observations >= 3:
+        return {
+            "relation": "recurring_topic",
             "confidence": 0.75,
             "value": "reinforced by repeated mention",
-            "reason": "reinforced_repetition"
+            "reason": "frequency"
         }
-    if seen_count >= 1:
+    if total_observations >= 2:
         return {
-            "relation": "candidate_confirmed",
+            "relation": "recurring_topic",
             "confidence": 0.65,
             "value": "candidate repeated by user across turns",
-            "reason": "repeated_mention"
+            "reason": "repeat_mention"
         }
     return None
 
@@ -1792,6 +1847,7 @@ class BridgeHandler(BaseHTTPRequestHandler):
 
         messages = data.get("messages", [])
         user_message = data.get("user_message", "")
+        internal = bool(data.get("internal"))
 
         if not user_message and messages:
             for msg in reversed(messages):
@@ -2130,7 +2186,7 @@ class BridgeHandler(BaseHTTPRequestHandler):
                 model_used = "aig:unavailable"
 
         # Step 5: Post-response reflection (background)
-        if response_text and _cognition_enabled:
+        if response_text and _cognition_enabled and not internal:
             threading.Thread(target=_post_response_reflection,
                            args=(user_message, response_text, model_used),
                            daemon=True).start()
