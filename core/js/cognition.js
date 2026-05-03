@@ -253,17 +253,38 @@
   //   content:  string  (required) - the file body
   //   mime:     string  (optional, default 'text/plain')
   // Returns { html } where html is a real <a download> link rendered inline.
+  //
+  // Artifacts are namespaced under a virtual path tmp/<session_id>/<filename>.
+  // Browsers strip path separators from the download attribute for security,
+  // so the link's effective filename is tmp__<sid8>__<filename>. The repo
+  // .gitignore excludes tmp/ so any local mirroring stays out of git.
+  function _shortSessionId() {
+    try {
+      if (typeof _activeSessionId === 'function') {
+        var sid = _activeSessionId();
+        if (sid) return String(sid).replace(/[^A-Za-z0-9_\-]/g, '').slice(0, 12) || 'nosess';
+      }
+    } catch (_) {}
+    return 'nosess';
+  }
+
   registerCapability({
     id: 'file.download',
-    description: 'Deliver a downloadable text artifact to the user. ' +
+    description: 'Deliver a downloadable text artifact. ' +
                  'args: {filename:string, content:string, mime?:string}. ' +
-                 'Renders inline as a real download link in the chat output.',
+                 'Artifact is virtually pathed at tmp/<session_id>/<filename> ' +
+                 'and rendered inline as a real download link.',
     run: async function (args) {
       args = args || {};
-      var filename = String(args.filename || 'eva-artifact.txt')
+      var safeName = String(args.filename || 'eva-artifact.txt')
                        .replace(/[^A-Za-z0-9._\-]+/g, '_').slice(0, 120) || 'eva-artifact.txt';
       var content = String(args.content == null ? '' : args.content);
       var mime = String(args.mime || 'text/plain');
+      var sid = _shortSessionId();
+      var virtualPath = 'tmp/' + sid + '/' + safeName;
+      // Browsers replace path separators in the download attribute, so encode
+      // the namespace into the filename itself.
+      var downloadName = 'tmp__' + sid + '__' + safeName;
       var blob = new Blob([content], { type: mime });
       var href = URL.createObjectURL(blob);
       var size = content.length;
@@ -272,11 +293,20 @@
                         .replace(/"/g,'&quot;');
       };
       var html = '<div class="cog-action-file">' +
-                 '<a href="' + href + '" download="' + esc(filename) + '" class="cog-dl-link">' +
-                 'Download ' + esc(filename) + '</a> ' +
-                 '<span class="cog-dl-meta">(' + esc(mime) + ', ' + size + ' bytes)</span>' +
+                 '<a href="' + href + '" download="' + esc(downloadName) +
+                 '" class="cog-dl-link">Download ' + esc(safeName) + '</a> ' +
+                 '<span class="cog-dl-meta">(' + esc(mime) + ', ' + size +
+                 ' bytes &middot; ' + esc(virtualPath) + ')</span>' +
                  '</div>';
-      return { html: html, filename: filename, mime: mime, size: size };
+      return {
+        html: html,
+        filename: safeName,
+        downloadName: downloadName,
+        virtualPath: virtualPath,
+        sessionId: sid,
+        mime: mime,
+        size: size
+      };
     }
   });
 
