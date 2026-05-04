@@ -1,6 +1,6 @@
 {
   "name": "eva-standalone",
-  "version": "5.2.0",
+  "version": "5.2.1",
   "description": "Localhost Electron shell for Eva AI Assistant.",
   "main": "main.js",
   "private": true,

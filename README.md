@@ -14,7 +14,7 @@ Download or build the standalone Linux AppImage and run it. The bridge starts au
 cd standalone
 npm install
 npm run dist
-./dist/'Eva Standalone-5.2.0.AppImage'
+./dist/'Eva Standalone-5.2.1.AppImage'
 ```
 
 Prereqs on the host: Node.js 24+, Python 3.12+, GitHub Copilot CLI authenticated (`copilot auth login`). See [standalone/README.md](standalone/README.md).

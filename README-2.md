@@ -428,7 +428,7 @@ A bundled desktop build that ships the web UI and the ACP bridge together. The E
 cd standalone
 npm install
 npm run dist
-./dist/'Eva Standalone-5.2.0.AppImage'
+./dist/'Eva Standalone-5.2.1.AppImage'
 ```
 
 Host prerequisites: Node.js 24+, Python 3.12+, Copilot CLI authenticated. The AppImage hides Bark and the AWS Polly engines from the Settings panel and locks the Kusto database to the value configured in first-run setup. Build details and runtime notes are in [standalone/README.md](standalone/README.md).
