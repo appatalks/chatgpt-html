@@ -481,6 +481,15 @@ function setKustoSeedStatus(type, text) {
   if (text) setStatus(type === 'error' ? 'error' : 'info', text);
 }
 
+function setArtifactPurgeStatus(type, text) {
+  var statusEl = document.getElementById('mcpPurgeArtifactsStatus');
+  if (statusEl) {
+    statusEl.textContent = text || '';
+    statusEl.setAttribute('data-status', type || 'info');
+  }
+  if (text) setStatus(type === 'error' ? 'error' : 'info', text);
+}
+
 function updateKustoSeedButtonState() {
   var values = getKustoSeedValues();
   var button = document.getElementById('mcpSeedButton');
@@ -525,6 +534,36 @@ async function seedEvaSchema(clusterUrl, database, alreadyConfirmed) {
     return { ok: false, error: error };
   } finally {
     updateKustoSeedButtonState();
+  }
+}
+
+async function purgeArtifactsFromSettings() {
+  if (!confirm('Delete all generated artifacts? This cannot be undone.')) return { ok: false, skipped: true };
+
+  var button = document.getElementById('mcpPurgeArtifactsButton');
+  if (button) button.disabled = true;
+  setArtifactPurgeStatus('info', 'Purging artifacts...');
+
+  try {
+    var bridgeUrl = await detectACPBridge();
+    var response = await fetch(bridgeUrl.replace(/\/+$/, '') + '/v1/files/purge', {
+      method: 'POST',
+      body: ''
+    });
+    var data = await response.json();
+    if (!response.ok || data.status !== 'ok') {
+      var message = data && data.error && data.error.message ? data.error.message : 'Artifact purge failed';
+      setArtifactPurgeStatus('error', message);
+      return { ok: false, data: data };
+    }
+    var purged = typeof data.purged === 'number' ? data.purged : 0;
+    setArtifactPurgeStatus('info', 'Purged ' + purged + ' artifacts.');
+    return { ok: true, data: data };
+  } catch (error) {
+    setArtifactPurgeStatus('error', 'Artifact purge failed: ' + error.message);
+    return { ok: false, error: error };
+  } finally {
+    if (button) button.disabled = false;
   }
 }
 
@@ -601,6 +640,8 @@ document.addEventListener('DOMContentLoaded', function() {
 
   var seedButton = document.getElementById('mcpSeedButton');
   if (seedButton) seedButton.addEventListener('click', seedEvaSchemaFromSettings);
+  var purgeArtifactsButton = document.getElementById('mcpPurgeArtifactsButton');
+  if (purgeArtifactsButton) purgeArtifactsButton.addEventListener('click', purgeArtifactsFromSettings);
   var seedCluster = document.getElementById('mcpKustoCluster');
   var seedDatabase = document.getElementById('mcpKustoDatabase');
   if (seedCluster) seedCluster.addEventListener('input', updateKustoSeedButtonState);

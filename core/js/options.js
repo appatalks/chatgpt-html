@@ -2133,6 +2133,31 @@ async function renderEvaResponse(content, txtOutput) {
   }
 
   var text = content.trim();
+  var artifactNames = [];
+  text = text.replace(/^\s*\[\[EVA_FILE\]\]\s+([A-Za-z0-9._-]{1,128})\s*$/gm, function(fullMatch, filename) {
+    artifactNames.push(filename);
+    return '';
+  });
+  if (artifactNames.length) {
+    text = text.replace(/\n{3,}/g, '\n\n').trim();
+  }
+
+  function appendArtifactLinks() {
+    if (!artifactNames.length) return;
+    var bridgeUrl = (typeof getACPBridgeUrl === 'function') ? getACPBridgeUrl() : 'http://localhost:8888';
+    bridgeUrl = bridgeUrl.replace(/\/+$/, '');
+    var bubbles = txtOutput.querySelectorAll('.chat-bubble.eva-bubble');
+    var bubble = bubbles.length ? bubbles[bubbles.length - 1] : null;
+    if (!bubble) return;
+    artifactNames.forEach(function(filename) {
+      var link = document.createElement('a');
+      link.className = 'eva-artifact-link';
+      link.href = bridgeUrl + '/v1/files/' + encodeURIComponent(filename);
+      link.download = filename;
+      link.textContent = 'Download ' + filename;
+      bubble.appendChild(link);
+    });
+  }
 
   // Detect image placeholders — multiple patterns models use
   var imagePatterns = [
@@ -2252,6 +2277,7 @@ async function renderEvaResponse(content, txtOutput) {
     txtOutput.innerHTML += '<div class="chat-bubble eva-bubble"><span class="eva">Eva:</span> <div class="md">' + html2 + '</div></div>';
   }
 
+  appendArtifactLinks();
   txtOutput.scrollTop = txtOutput.scrollHeight;
 
   // Auto-save session after each response

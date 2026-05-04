@@ -28,12 +28,14 @@ The server exposes a single endpoint:
 
 import argparse
 import json
+import mimetypes
 import os
 import re
 import subprocess
 import sys
 import threading
 import time
+import urllib.parse
 from http.server import HTTPServer, BaseHTTPRequestHandler
 
 # ---------------------------------------------------------------------------
@@ -75,11 +77,13 @@ class ACPClient:
         try:
             # Pass env vars from MCP config to the copilot process itself
             # (copilot spawns MCP servers as children, inheriting the env)
+            os.makedirs(_ARTIFACTS_DIR, exist_ok=True)
             process_env = os.environ.copy()
             for srv_name, srv_cfg in self.mcp_config.items():
                 for k, v in srv_cfg.get('env', {}).items():
                     # subprocess.Popen env requires all values to be strings
                     process_env[k] = str(v) if not isinstance(v, str) else v
+            process_env["EVA_ARTIFACTS_DIR"] = _ARTIFACTS_DIR
 
             self.process = subprocess.Popen(
                 cmd,
@@ -346,6 +350,8 @@ class ACPClient:
         for ev in env_vars:
             if isinstance(ev, dict) and "name" in ev and "value" in ev:
                 env[ev["name"]] = ev["value"]
+        os.makedirs(_ARTIFACTS_DIR, exist_ok=True)
+        env["EVA_ARTIFACTS_DIR"] = _ARTIFACTS_DIR
 
         import uuid
         terminal_id = str(uuid.uuid4())
@@ -552,6 +558,7 @@ _cognition_candidate_counts = {}  # Lowercased entity -> mention count in curren
 _candidate_history_cache = {}  # { entity_lower: (timestamp_epoch, mentions, max_confidence) }
 _CANDIDATE_HISTORY_TTL_SECONDS = 60
 _CONVO_CONTENT_CAP = 8000  # Kusto string columns are unbounded, but cap defensively.
+_ARTIFACTS_DIR = os.path.expanduser("~/.config/eva-standalone/artifacts")
 _kusto_table_columns_cache = {}  # (cluster, db, table) -> [columns]
 _kusto_database_locked = _env_truthy("KUSTO_DATABASE_LOCKED") or _env_truthy("EVA_KUSTO_LOCKED")
 _active_kusto_db = os.environ.get("KUSTO_DATABASE", "").strip()
@@ -850,6 +857,7 @@ def _enable_cognition(mcp_servers, model=None, port=None):
     """Enable cognition hooks and advertise active bridge capabilities."""
     global _cognition_enabled, _cognition_launch_iso, _cognition_launch_id, _kusto_table_columns_cache
     import datetime
+    os.makedirs(_ARTIFACTS_DIR, exist_ok=True)
     _kusto_table_columns_cache = {}
     _cognition_launch_iso = datetime.datetime.now(datetime.timezone.utc).isoformat().replace("+00:00", "Z")
     _cognition_launch_id = f"eva-{datetime.datetime.now(datetime.timezone.utc).strftime('%Y%m%d%H%M%S')}"
@@ -1753,6 +1761,9 @@ class BridgeHandler(BaseHTTPRequestHandler):
             self._mcp_status()
         elif self.path.startswith("/v1/memory/context"):
             self._memory_context()
+        elif self.path.startswith("/v1/files/"):
+            requested_name = urllib.parse.unquote(self.path.split("/v1/files/", 1)[1].split("?", 1)[0])
+            self._serve_artifact(requested_name)
         else:
             self.send_error(404, "Not Found")
 
@@ -1767,8 +1778,78 @@ class BridgeHandler(BaseHTTPRequestHandler):
             self._aig_chat()
         elif self.path == "/v1/kusto/seed":
             self._kusto_seed()
+        elif self.path == "/v1/files/purge":
+            self._purge_artifacts()
         else:
             self.send_error(404, "Not Found")
+
+    def _valid_artifact_name(self, name):
+        return (
+            bool(re.fullmatch(r"[A-Za-z0-9._-]{1,128}", name or ""))
+            and not name.startswith(".")
+            and not all(char == "." for char in name)
+        )
+
+    def _serve_artifact(self, requested_name):
+        if not _is_loopback_bind():
+            self._json_response(403, {"error": {"message": "/v1/files is only available on localhost-bound bridges"}})
+            return
+
+        if not self._valid_artifact_name(requested_name):
+            self._json_response(400, {"error": {"message": "invalid filename"}})
+            return
+
+        base = os.path.realpath(_ARTIFACTS_DIR)
+        target = os.path.realpath(os.path.join(_ARTIFACTS_DIR, requested_name))
+        if not target.startswith(base + os.sep) or not os.path.isfile(target):
+            self._json_response(404, {"error": {"message": "file not found"}})
+            return
+
+        content_type = mimetypes.guess_type(requested_name)[0] or "application/octet-stream"
+        content_length = os.path.getsize(target)
+        self.send_response(200)
+        self._cors_headers()
+        self.send_header("Content-Type", content_type)
+        self.send_header("Content-Length", str(content_length))
+        self.send_header("Content-Disposition", 'attachment; filename="' + requested_name + '"')
+        self.send_header("Cache-Control", "no-store")
+        self.end_headers()
+        with open(target, "rb") as artifact_file:
+            while True:
+                chunk = artifact_file.read(64 * 1024)
+                if not chunk:
+                    break
+                self.wfile.write(chunk)
+
+    def _purge_artifacts(self):
+        if not _is_loopback_bind():
+            self._json_response(403, {"error": {"message": "/v1/files/purge is only available on localhost-bound bridges"}})
+            return
+
+        content_length = int(self.headers.get("Content-Length", 0))
+        if content_length:
+            self.rfile.read(content_length)
+
+        purged = 0
+        try:
+            os.makedirs(_ARTIFACTS_DIR, exist_ok=True)
+            base = os.path.realpath(_ARTIFACTS_DIR)
+            for name in os.listdir(_ARTIFACTS_DIR):
+                if not self._valid_artifact_name(name):
+                    continue
+                target = os.path.realpath(os.path.join(_ARTIFACTS_DIR, name))
+                if not target.startswith(base + os.sep) or not os.path.isfile(target):
+                    continue
+                try:
+                    os.remove(target)
+                    purged += 1
+                except FileNotFoundError:
+                    pass
+        except OSError as error:
+            self._json_response(500, {"error": {"message": "artifact purge failed: " + str(error)}})
+            return
+
+        self._json_response(200, {"status": "ok", "purged": purged})
 
     def _health(self):
         status = {
@@ -1981,7 +2062,8 @@ class BridgeHandler(BaseHTTPRequestHandler):
             "honestly say you could not retrieve that information right now.\n"
             "- Do NOT generate fake source citations (AP, Reuters, etc.) unless they appear in [Data Retrieved].\n"
             "- When asked about your base model, underlying model, model ID, or what powers you, "
-            "answer using the [Runtime] section below. Do NOT guess or invent a model name.\n\n"
+            "answer using the [Runtime] section below. Do NOT guess or invent a model name.\n"
+            "- If asked to produce a downloadable file (PDF, CSV, image, etc.), write it to the directory in environment variable EVA_ARTIFACTS_DIR using a short descriptive filename. After the file is written, end your message with a single line containing exactly: [[EVA_FILE]] <filename.ext>. Do not claim a file was produced unless you actually wrote it. Do not include the EVA_FILE marker if no file exists.\n\n"
         )
 
         if memory_context:
@@ -2724,12 +2806,14 @@ def main():
     server = HTTPServer((args.bind, args.port), BridgeHandler)
     print(f"[Bridge] Listening on http://{args.bind}:{args.port}")
     print(f"[Bridge] Endpoints:")
-    print(f"  POST /v1/chat/completions   — Send chat messages")
-    print(f"  GET  /v1/models             — List available models")
-    print(f"  GET  /v1/mcp                — MCP server status")
-    print(f"  POST /v1/mcp/configure      — Configure MCP servers (hot-reload)")
+    print(f"  POST /v1/chat/completions   - Send chat messages")
+    print(f"  GET  /v1/models             - List available models")
+    print(f"  GET  /v1/mcp                - MCP server status")
+    print(f"  POST /v1/mcp/configure      - Configure MCP servers (hot-reload)")
     print(f"  POST /v1/kusto/seed         - Apply Eva Kusto schema seed")
-    print(f"  GET  /health                — Health check")
+    print(f"  GET  /v1/files/<name>       - Download a generated artifact")
+    print(f"  POST /v1/files/purge        - Delete all artifacts")
+    print(f"  GET  /health                - Health check")
     print()
 
     try:
