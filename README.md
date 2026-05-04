@@ -63,7 +63,7 @@ The bridge (`tools/acp_bridge.py`) exposes an OpenAI-compatible API so any clien
 - **Settings panel** with tabbed UI (General, Models, Auth, Prompts, MCP). The Models tab includes the cognitive layer toggle and per-agent prompts
 - **Inline images** — Wikimedia search or DALL-E generation
 - **LCARS and Eva themes** (Star Trek-inspired LCARS, plus a clean Eva theme with pinned footer status)
-- **Text-to-speech** — Amazon Polly and Bark TTS
+- **Text-to-speech**: OpenAI TTS by default, Browser, Bark, Amazon Polly
 - **Conversation memory** in localStorage
 - **Database seed** — `tools/eva_seed.kql` for quick public setup
 - **CI pipeline** — secret scanning, syntax checks, model routing validation

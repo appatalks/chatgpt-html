@@ -189,7 +189,8 @@ function applyStandaloneSimplifications() {
   var barkOption = document.querySelector('#selEngine option[value="bark"]');
   if (engineSelect) {
     var current = engineSelect.value;
-    if (!current || current === 'bark') {
+    var pollyEngine = (current === 'standard' || current === 'neural' || current === 'generative');
+    if (!current || current === 'bark' || pollyEngine) {
       var hasOpenAIKey = (typeof getAuthKey === 'function') ? !!getAuthKey('OPENAI_API_KEY') : !!window.OPENAI_API_KEY;
       engineSelect.value = hasOpenAIKey ? 'openai' : 'browser';
     }
