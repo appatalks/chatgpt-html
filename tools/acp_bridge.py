@@ -2073,6 +2073,7 @@ class BridgeHandler(BaseHTTPRequestHandler):
             "- Do NOT generate fake source citations (AP, Reuters, etc.) unless they appear in [Data Retrieved].\n"
             "- When asked about your base model, underlying model, model ID, or what powers you, "
             "answer using the [Runtime] section below. Do NOT guess or invent a model name.\n"
+            "- When the user asks to show, find, or generate an image, do NOT call the web fetch tool to look up image URLs. Instead emit a placeholder of the form [Image of <short description>] on its own line. The browser resolves the placeholder by calling DALL-E (if the user asked to generate) or Wikimedia (if the user asked to find or show). Do not invent image URLs. Do not say you cannot show or generate images. Up to 3 placeholders per response are supported.\n"
             "- If asked to produce a downloadable file (PDF, CSV, image, etc.), write it to the directory in environment variable EVA_ARTIFACTS_DIR using a short descriptive filename. After the file is written, end your message with a single line containing exactly: [[EVA_FILE]] <filename.ext>. Do not claim a file was produced unless you actually wrote it. Do not include the EVA_FILE marker if no file exists.\n\n"
         )
 
