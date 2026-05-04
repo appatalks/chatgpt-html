@@ -378,11 +378,33 @@ Star Trek-inspired interface using the Lower Decks color palette:
 
 ## Deployment
 
+### Browser only
+
+```bash
+cp config.example.json config.json   # add your API keys
+xdg-open index.html                  # or open in any browser
+```
+
+For `file://` usage without a JSON loader, copy `config.local.example.js` to `config.local.js` instead.
+
 ### Local (file://)
 Just open `index.html`. Use `config.local.js` for API keys.
 
 ### Hosted (nginx/Apache)
 Serve the directory over HTTP(S). Use `config.json` for API keys.
+
+### Manual ACP bridge launch
+
+For the full Eva experience without the AppImage, run the bridge alongside the UI to unlock persistent memory, knowledge graph, and emotion tracking through Azure Data Explorer.
+
+```bash
+python3 tools/acp_bridge.py --port 8888 \
+  --enable-kusto-mcp \
+  --kusto-cluster "https://<your-cluster>.region.kusto.windows.net" \
+  --kusto-database Eva
+```
+
+Then select **Eva (AIG)** in the dropdown. Kusto authentication uses `azure-identity` device code or interactive sign-in on first use; no keys are stored.
 
 ### With ACP Bridge (current — split setup)
 - Web server: any machine (even i386)
