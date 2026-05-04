@@ -2059,8 +2059,21 @@ function renderMarkdown(md) {
   md = md.replace(/^##\s+(.*)$/gm, '<h2>$1<\/h2>');
   md = md.replace(/^#\s+(.*)$/gm, '<h1>$1<\/h1>');
 
+  const linkTokens = [];
+  function stashLink(html) {
+    linkTokens.push(html);
+    return `\u0000LINK${linkTokens.length - 1}\u0000`;
+  }
+
   // Links [text](url)
-  md = md.replace(/\[(.+?)\]\((https?:[^\s)]+)\)/g, '<a href="$2" target="_blank" rel="noopener noreferrer">$1<\/a>');
+  md = md.replace(/\[(.+?)\]\((https?:\/\/[^\s)]+)\)/g, (m, text, url) => {
+    return stashLink(`<a href="${url}" target="_blank" rel="noopener noreferrer">${text}<\/a>`);
+  });
+
+  // Bare URLs
+  md = md.replace(/(^|[\s(])(https?:\/\/[^\s)<]+)/g, (m, prefix, url) => {
+    return prefix + stashLink(`<a href="${url}" target="_blank" rel="noopener noreferrer">${url}<\/a>`);
+  });
 
   // Bold and italic
   md = md.replace(/\*\*([^\n*][\s\S]*?)\*\*/g, '<strong>$1<\/strong>');
@@ -2086,6 +2099,10 @@ function renderMarkdown(md) {
     const i = Number(idx);
     const lang = langs[i] ? ` class=\"language-${langs[i]}\"` : '';
     return `<pre><code${lang}>${blocks[i]}<\/code><\/pre>`;
+  });
+
+  md = md.replace(/\u0000LINK(\d+)\u0000/g, (m, idx) => {
+    return linkTokens[Number(idx)] || m;
   });
 
   return md;
