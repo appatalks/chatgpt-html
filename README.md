@@ -25,5 +25,4 @@ Prereqs on the host: Node.js 24+, Python 3.12+, GitHub Copilot CLI authenticated
 
 - [README-2.md](README-2.md): architecture, MCP, ACP, browser-only setup, roadmap
 - [standalone/README.md](standalone/README.md): AppImage build and runtime
-- [.github/copilot-instructions.md](.github/copilot-instructions.md): contribution guide
 
