@@ -195,6 +195,11 @@ function applyStandaloneSimplifications() {
       engineSelect.value = hasOpenAIKey ? 'openai' : 'browser';
     }
   }
+  var pollyValues = ['standard', 'neural', 'generative'];
+  pollyValues.forEach(function (val) {
+    var opt = document.querySelector('#selEngine option[value="' + val + '"]');
+    if (opt) opt.remove();
+  });
   if (barkOption) barkOption.remove();
 }
 
