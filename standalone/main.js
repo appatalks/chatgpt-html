@@ -222,7 +222,26 @@ function startBridge(port) {
     PYTHONUNBUFFERED: '1'
   });
 
-  const child = spawn('python3', args, {
+  // GUI-launched apps on macOS inherit a stripped PATH that often misses
+  // Homebrew, python.org, and nvm bin directories. Augment PATH so the bridge
+  // can find python3 and copilot. Harmless on Linux.
+  if (process.platform === 'darwin') {
+    const extraPaths = [
+      '/opt/homebrew/bin',
+      '/usr/local/bin',
+      '/usr/local/sbin',
+      path.join(process.env.HOME || '', '.local/bin'),
+      path.join(process.env.HOME || '', '.npm-global/bin')
+    ].filter(Boolean);
+    const currentPath = env.PATH || '';
+    const merged = extraPaths.concat(currentPath.split(':')).filter(function (p, i, arr) {
+      return p && arr.indexOf(p) === i;
+    }).join(':');
+    env.PATH = merged;
+  }
+
+  const pythonCmd = process.env.EVA_PYTHON || 'python3';
+  const child = spawn(pythonCmd, args, {
     cwd: appRoot,
     env: env,
     detached: true,

@@ -6,7 +6,9 @@
   "private": true,
   "scripts": {
     "start": "electron .",
-    "dist": "electron-builder --linux AppImage"
+    "dist": "electron-builder --linux AppImage",
+    "dist:mac": "electron-builder --mac",
+    "dist:all": "electron-builder --linux AppImage --mac"
   },
   "engines": {
     "node": ">=24"
@@ -55,6 +57,19 @@
         "AppImage"
       ],
       "category": "Utility"
+    },
+    "mac": {
+      "target": [
+        {
+          "target": "dmg",
+          "arch": ["x64", "arm64"]
+        },
+        {
+          "target": "zip",
+          "arch": ["x64", "arm64"]
+        }
+      ],
+      "category": "public.app-category.productivity"
     }
   }
 }
