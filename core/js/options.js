@@ -215,6 +215,12 @@ function applyStandaloneSimplifications() {
     if (opt) opt.remove();
   });
   if (barkOption) barkOption.remove();
+
+  var standaloneVersionEl = document.getElementById('evaStandaloneVersion');
+  if (standaloneVersionEl && window.evaStandalone && window.evaStandalone.version) {
+    standaloneVersionEl.textContent = 'Standalone v' + window.evaStandalone.version;
+    standaloneVersionEl.style.display = '';
+  }
 }
 
 function applyStandaloneSurface() {
