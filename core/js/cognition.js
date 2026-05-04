@@ -330,6 +330,8 @@
         messages: msgs,
         user_message: taskMessage || '',
         model: model,
+        lmstudio_base_url: (typeof getLmStudioBaseUrl === 'function') ? getLmStudioBaseUrl() : '',
+        lmstudio_model: (typeof getLmStudioModel === 'function') ? getLmStudioModel() : '',
         github_pat: authPat(),
         internal: true
       })

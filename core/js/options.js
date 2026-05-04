@@ -98,6 +98,18 @@ function saveAuthKeys() {
   } else if (acpEl) {
     localStorage.removeItem('acp_bridge_url');
   }
+  var lmsBaseEl = document.getElementById('aigLmStudioBaseUrl');
+  if (lmsBaseEl && lmsBaseEl.value.trim()) {
+    localStorage.setItem('aig_lmstudio_base_url', lmsBaseEl.value.trim());
+  } else if (lmsBaseEl) {
+    localStorage.removeItem('aig_lmstudio_base_url');
+  }
+  var lmsModelEl = document.getElementById('aigLmStudioModel');
+  if (lmsModelEl && lmsModelEl.value.trim()) {
+    localStorage.setItem('aig_lmstudio_model', lmsModelEl.value.trim());
+  } else if (lmsModelEl) {
+    localStorage.removeItem('aig_lmstudio_model');
+  }
   setStatus('info', 'API keys saved to browser storage.');
 }
 
@@ -121,6 +133,24 @@ function populateAuthFields() {
   if (acpEl) {
     acpEl.value = (typeof getACPBridgeUrl === 'function') ? getACPBridgeUrl() : (localStorage.getItem('acp_bridge_url') || 'http://localhost:8888');
   }
+  var lmsBaseEl = document.getElementById('aigLmStudioBaseUrl');
+  if (lmsBaseEl) {
+    lmsBaseEl.value = (typeof getLmStudioBaseUrl === 'function') ? getLmStudioBaseUrl() : (localStorage.getItem('aig_lmstudio_base_url') || 'http://localhost:1234/v1');
+  }
+  var lmsModelEl = document.getElementById('aigLmStudioModel');
+  if (lmsModelEl) {
+    lmsModelEl.value = (typeof getLmStudioModel === 'function') ? getLmStudioModel() : (localStorage.getItem('aig_lmstudio_model') || 'granite-3.1-8b-instruct');
+  }
+}
+
+function getLmStudioBaseUrl() {
+  var v = (localStorage.getItem('aig_lmstudio_base_url') || '').trim();
+  return v || 'http://localhost:1234/v1';
+}
+
+function getLmStudioModel() {
+  var v = (localStorage.getItem('aig_lmstudio_model') || '').trim();
+  return v || 'granite-3.1-8b-instruct';
 }
 
 function applyStandaloneSimplifications() {
@@ -738,6 +768,11 @@ document.addEventListener('DOMContentLoaded', () => {
       settingsOverlayEl.classList.remove('open');
     });
   }
+
+  ['aigLmStudioBaseUrl', 'aigLmStudioModel'].forEach(function(id) {
+    var el = document.getElementById(id);
+    if (el) el.addEventListener('change', saveAuthKeys);
+  });
 
   // Init auth, system prompt, and model settings
   loadAuthOverrides();
@@ -2480,6 +2515,7 @@ function clearMessages() {
       var key = localStorage.key(i);
       if (key && (key.indexOf('auth_') === 0 || key === 'theme' || key === 'systemPrompt'
           || key === 'lcars_collapsed' || key === 'acp_bridge_url'
+          || key === 'aig_lmstudio_base_url' || key === 'aig_lmstudio_model'
           || key === 'eva_sessions' || key.indexOf('session_') === 0)) {
         keysToKeep.push({ k: key, v: localStorage.getItem(key) });
       }

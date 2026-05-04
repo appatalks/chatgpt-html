@@ -297,7 +297,17 @@
               <optgroup label="Fallback">
                 <option value="acp">ACP Bridge (Copilot CLI default)</option>
               </optgroup>
+              <optgroup label="LM Studio (Local)">
+                <option value="lmstudio">LM Studio (configured model)</option>
+              </optgroup>
             </select>
+          </div>
+          <div class="model-opt" id="opt-lmstudio-config">
+            <label for="aigLmStudioBaseUrl">LM Studio base URL:</label>
+            <input type="text" id="aigLmStudioBaseUrl" placeholder="http://localhost:1234/v1" style="width:100%">
+            <label for="aigLmStudioModel" style="margin-top:6px">LM Studio model name:</label>
+            <input type="text" id="aigLmStudioModel" placeholder="granite-3.1-8b-instruct" style="width:100%">
+            <p class="auth-note" style="margin-top:4px">Used when "LM Studio (configured model)" is selected as Eva or cognition backend. Make sure LM Studio's local server is running with this model loaded.</p>
           </div>
           <div id="opt-acpModel" class="model-opt" style="display:none">
             <label for="selACPModel">ACP Model:</label>

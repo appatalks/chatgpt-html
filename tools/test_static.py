@@ -275,6 +275,11 @@ def test_model_selector():
     else:
         report("model_eva_label", False, "AIG option should reference 'Eva'")
 
+    aig_match = re.search(r'<select id="selAIGBackend"[^>]*>(.*?)</select>', html, re.DOTALL)
+    aig_values = re.findall(r'value="([^"]+)"', aig_match.group(1)) if aig_match else []
+    report("aig_backend_lmstudio_option", "lmstudio" in aig_values,
+           "missing" if "lmstudio" not in aig_values else "")
+
 
 # ═══════════════════════════════════════════════════════════════════
 #  Section 6: JavaScript Function Routing
@@ -291,6 +296,8 @@ def test_js_routing_functions():
         "dalle3Send": "core/js/dalle3.js",
         "renderEvaResponse": "core/js/options.js",
         "getSystemPrompt": "core/js/options.js",
+        "getLmStudioBaseUrl": "core/js/options.js",
+        "getLmStudioModel": "core/js/options.js",
     }
     for fn, expected_file in required.items():
         if not os.path.isfile(expected_file):

@@ -1935,6 +1935,7 @@ class BridgeHandler(BaseHTTPRequestHandler):
         messages = data.get("messages", [])
         user_message = data.get("user_message", "")
         internal = bool(data.get("internal"))
+        model_for_response = data.get("model", "gpt-4.1")  # frontend-selectable, default gpt-4.1
 
         if not user_message and messages:
             for msg in reversed(messages):
@@ -1963,7 +1964,10 @@ class BridgeHandler(BaseHTTPRequestHandler):
         skip_acp = False
         _acp_route = "default"
 
-        if not (acp_client and acp_client.alive):
+        if model_for_response == "lmstudio":
+            skip_acp = True
+            _acp_route = "lmstudio-no-tools"
+        elif not (acp_client and acp_client.alive):
             skip_acp = True
             _acp_route = "acp-unavailable"
         elif len(msg_words) <= 4 and _re.match(
@@ -2084,6 +2088,68 @@ class BridgeHandler(BaseHTTPRequestHandler):
                 "Answer directly from [Data Retrieved].\n"
             )
 
+        if model_for_response == "lmstudio":
+            lms_base = (data.get("lmstudio_base_url") or "").strip().rstrip("/")
+            lms_model = (data.get("lmstudio_model") or "").strip()
+            if not lms_base:
+                lms_base = "http://localhost:1234/v1"
+            if not lms_model:
+                lms_model = "granite-3.1-8b-instruct"
+
+            parsed = urllib.parse.urlparse(lms_base)
+            host = (parsed.hostname or "").lower()
+            if host not in ("localhost", "127.0.0.1", "::1"):
+                self._json_response(400, {"error": {"message": "lmstudio_base_url must point at localhost"}})
+                return
+
+            eva_system_full = eva_system
+
+            lms_messages = [{"role": "system", "content": eva_system_full}]
+            for msg in messages[-6:]:
+                if msg.get("role") and msg.get("content"):
+                    lms_messages.append({"role": msg["role"], "content": msg["content"]})
+            lms_messages.append({"role": "user", "content": user_message})
+
+            try:
+                import requests as _req
+                lms_resp = _req.post(
+                    lms_base + "/chat/completions",
+                    json={"model": lms_model, "messages": lms_messages, "temperature": 0.7},
+                    timeout=120,
+                )
+                if lms_resp.status_code == 200:
+                    lms_body = lms_resp.json()
+                    response_text = (lms_body.get("choices") or [{}])[0].get("message", {}).get("content", "")
+                    model_used = "aig:lmstudio:" + lms_model
+                else:
+                    response_text = f"LM Studio returned HTTP {lms_resp.status_code}"
+                    model_used = "aig:lmstudio:error"
+            except Exception as _lms_err:
+                response_text = f"LM Studio request failed: {_lms_err}"
+                model_used = "aig:lmstudio:unavailable"
+
+            print(f"[AIG] LM Studio response: {len(response_text)} chars from {lms_model}")
+
+            if response_text and _cognition_enabled and not internal:
+                threading.Thread(target=_post_response_reflection,
+                                 args=(user_message, response_text, model_used),
+                                 daemon=True).start()
+
+            response = {
+                "id": f"aig-{int(time.time())}",
+                "object": "chat.completion",
+                "created": int(time.time()),
+                "model": model_used,
+                "choices": [{
+                    "index": 0,
+                    "message": {"role": "assistant", "content": response_text},
+                    "finish_reason": "stop"
+                }],
+                "usage": {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
+            }
+            self._json_response(200, response)
+            return
+
         # Step 4: Pick the best PAT model for response generation
         # Priority: request body PAT > env var > Copilot CLI OAuth token > ACP fallback
         github_pat = data.get("github_pat", "") or os.environ.get("GITHUB_PAT", "")
@@ -2103,8 +2169,6 @@ class BridgeHandler(BaseHTTPRequestHandler):
                         print("[AIG] Using Copilot CLI OAuth token for GitHub Models API")
             except Exception as _e:
                 print(f"[AIG] Could not read Copilot OAuth: {_e}")
-
-        model_for_response = data.get("model", "gpt-4.1")  # frontend-selectable, default gpt-4.1
 
         # Models available on GitHub Models API (PAT).
         # Models absent from this map must route through ACP.

@@ -173,6 +173,8 @@ async function aigSend() {
         messages: existingMessages,
         user_message: sQuestion,
         model: (document.getElementById('selAIGBackend') || {}).value || 'gpt-4.1',
+        lmstudio_base_url: (typeof getLmStudioBaseUrl === 'function') ? getLmStudioBaseUrl() : '',
+        lmstudio_model: (typeof getLmStudioModel === 'function') ? getLmStudioModel() : '',
         github_pat: (typeof getAuthKey === 'function') ? getAuthKey('GITHUB_PAT') : ''
       })
     });
