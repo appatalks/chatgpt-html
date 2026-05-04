@@ -192,6 +192,8 @@
           <option value="standard">Standard</option>
           <option value="neural">Neural</option>
           <option value="generative">Generative</option>
+          <option value="openai" selected>OpenAI</option>
+          <option value="browser">Browser (offline)</option>
           <option value="bark">Bark</option>
         </select>
 
@@ -295,7 +297,17 @@
               <optgroup label="Fallback">
                 <option value="acp">ACP Bridge (Copilot CLI default)</option>
               </optgroup>
+              <optgroup label="LM Studio (Local)">
+                <option value="lmstudio">LM Studio (configured model)</option>
+              </optgroup>
             </select>
+          </div>
+          <div class="model-opt" id="opt-lmstudio-config">
+            <label for="aigLmStudioBaseUrl">LM Studio base URL:</label>
+            <input type="text" id="aigLmStudioBaseUrl" placeholder="http://localhost:1234/v1" style="width:100%">
+            <label for="aigLmStudioModel" style="margin-top:6px">LM Studio model name:</label>
+            <input type="text" id="aigLmStudioModel" placeholder="granite-3.1-8b-instruct" style="width:100%">
+            <p class="auth-note" style="margin-top:4px">Used when "LM Studio (configured model)" is selected as Eva or cognition backend. Make sure LM Studio's local server is running with this model loaded.</p>
           </div>
           <div id="opt-acpModel" class="model-opt" style="display:none">
             <label for="selACPModel">ACP Model:</label>
@@ -475,15 +487,45 @@
             <input type="text" id="mcpKustoCluster" placeholder="https://kvc-xxx.region.kusto.windows.net" style="font-size:12px">
             <label for="mcpKustoDatabase" style="font-size:12px;margin-top:4px">Default Database:</label>
             <input type="text" id="mcpKustoDatabase" placeholder="(optional)" style="font-size:12px">
+            <button type="button" id="mcpSeedButton" class="auth-toggle" style="margin-top:8px;width:100%;text-align:center" disabled>Seed Eva Schema</button>
+            <div id="mcpSeedStatus" class="mcp-status" aria-live="polite" style="margin-top:8px"></div>
           </div>
         </div>
 
         <div id="mcpStatus" class="mcp-status"></div>
 
         <button type="button" class="auth-save" onclick="applyMCPConfig()">Apply MCP Config</button>
+        <button type="button" id="standaloneFirstRunButton" class="auth-toggle" style="display:none;margin-top:8px;width:100%;text-align:center">Run first-time setup again</button>
         <button type="button" class="auth-toggle" onclick="refreshMCPStatus()" style="margin-top:8px;width:100%;text-align:center">Refresh Status</button>
+
+        <div class="mcp-preset" style="margin-top:12px">
+          <strong>Generated artifacts</strong>
+          <p class="auth-note" style="margin:4px 0 8px">Files Eva creates during a chat (PDFs, CSVs, etc.) are stored on disk and can be deleted at any time.</p>
+          <button type="button" id="mcpPurgeArtifactsButton" class="auth-toggle" style="width:100%;text-align:center">Purge Artifacts</button>
+          <div id="mcpPurgeArtifactsStatus" style="margin-top:6px;font-size:12px;color:var(--muted-fg,#888)"></div>
+        </div>
       </div>
 
+    </div>
+  </div>
+
+  <div class="settingsMenu" id="firstRunModal" role="dialog" aria-modal="true" aria-labelledby="firstRunModalTitle" style="display:none;position:fixed;top:50%;left:50%;transform:translate(-50%, -50%);width:500px;max-width:95vw;max-height:85vh;background:#fff;border-radius:12px;box-shadow:0 8px 32px rgba(0,0,0,0.3);z-index:10000;overflow:hidden;flex-direction:column;color:#333;">
+    <div class="settings-header">
+      <h3 id="firstRunModalTitle">Set Up Eva Memory</h3>
+    </div>
+    <div class="settings-body">
+      <p class="auth-note">Choose the Azure Data Explorer database Eva should use for memory.</p>
+      <div class="auth-field">
+        <label for="firstRunKustoCluster">Cluster URL:</label>
+        <input type="text" id="firstRunKustoCluster" placeholder="https://kvc-xxx.region.kusto.windows.net" autocomplete="off">
+      </div>
+      <div class="auth-field">
+        <label for="firstRunKustoDatabase">Database name:</label>
+        <input type="text" id="firstRunKustoDatabase" placeholder="eva-standalone" autocomplete="off">
+      </div>
+      <div id="firstRunStatus" class="mcp-status" aria-live="polite"></div>
+      <button type="button" class="auth-save" id="firstRunSave" disabled>Save and continue</button>
+      <button type="button" class="auth-toggle" id="firstRunSkip" style="margin-top:8px;width:100%;text-align:center">Skip for now</button>
     </div>
   </div>
 

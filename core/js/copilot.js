@@ -18,7 +18,18 @@ function getCopilotMode(modelValue) {
   return 'models-api';
 }
 
+function isEvaStandalone() {
+  return !!(typeof window !== 'undefined' && window.evaStandalone && window.evaStandalone.isStandalone);
+}
+
+function getStandaloneACPBridgeUrl() {
+  if (!isEvaStandalone()) return '';
+  return (window.evaStandalone.acpBaseUrl || '').trim();
+}
+
 function getACPBridgeUrl() {
+  var standaloneUrl = getStandaloneACPBridgeUrl();
+  if (standaloneUrl) return standaloneUrl;
   var el = document.getElementById('txtACPBridgeUrl');
   if (el && el.value.trim() && el.value.trim() !== 'http://localhost:8888') return el.value.trim();
   var stored = localStorage.getItem('acp_bridge_url');
@@ -36,15 +47,17 @@ async function detectACPBridge() {
   var configured = getACPBridgeUrl();
   candidates.push(configured);
 
-  // Try same host as the page (for when bridge runs on the web server)
-  if (location.hostname && location.hostname !== 'localhost' && location.hostname !== '127.0.0.1') {
-    candidates.push(location.protocol + '//' + location.hostname + ':8888');
-    candidates.push('http://' + location.hostname + ':8888');
-  }
+  if (!isEvaStandalone()) {
+    // Try same host as the page (for when bridge runs on the web server)
+    if (location.hostname && location.hostname !== 'localhost' && location.hostname !== '127.0.0.1') {
+      candidates.push(location.protocol + '//' + location.hostname + ':8888');
+      candidates.push('http://' + location.hostname + ':8888');
+    }
 
-  // Localhost fallback
-  if (candidates.indexOf('http://localhost:8888') < 0) {
-    candidates.push('http://localhost:8888');
+    // Localhost fallback
+    if (candidates.indexOf('http://localhost:8888') < 0) {
+      candidates.push('http://localhost:8888');
+    }
   }
 
   // Deduplicate
@@ -415,6 +428,7 @@ async function applyMCPConfig() {
     var dbEl = document.getElementById('mcpKustoDatabase');
     if (clusterEl && clusterEl.value.trim()) kustoEnv.KUSTO_CLUSTER_URL = clusterEl.value.trim();
     if (dbEl && dbEl.value.trim()) kustoEnv.KUSTO_DATABASE = dbEl.value.trim();
+    if (typeof isEvaStandalone === 'function' && isEvaStandalone()) kustoEnv.KUSTO_DATABASE_LOCKED = '1';
     mcpServers['kusto-mcp-server'] = {
       command: 'python3',
       args: ['tools/kusto_mcp.py'],
@@ -438,12 +452,124 @@ async function applyMCPConfig() {
     if (resp.ok) {
       setStatus('info', 'MCP configured: ' + (data.active_servers || []).join(', '));
       refreshMCPStatus();
+      return { ok: true, data: data, bridgeUrl: bridgeUrl, mcpServers: mcpServers };
     } else {
       setStatus('error', 'MCP config error: ' + (data.error ? data.error.message : 'Unknown'));
+      return { ok: false, data: data, bridgeUrl: bridgeUrl, mcpServers: mcpServers };
     }
   } catch (e) {
     setStatus('error', 'MCP config failed: ' + e.message + ' — Is the ACP bridge running?');
+    return { ok: false, error: e, bridgeUrl: bridgeUrl, mcpServers: mcpServers };
   }
+}
+
+function getKustoSeedValues() {
+  var clusterEl = document.getElementById('mcpKustoCluster');
+  var databaseEl = document.getElementById('mcpKustoDatabase');
+  return {
+    clusterUrl: clusterEl ? clusterEl.value.trim() : '',
+    database: databaseEl ? databaseEl.value.trim() : ''
+  };
+}
+
+function setKustoSeedStatus(type, text) {
+  var statusEl = document.getElementById('mcpSeedStatus');
+  if (statusEl) {
+    statusEl.textContent = text || '';
+    statusEl.setAttribute('data-status', type || 'info');
+  }
+  if (text) setStatus(type === 'error' ? 'error' : 'info', text);
+}
+
+function setArtifactPurgeStatus(type, text) {
+  var statusEl = document.getElementById('mcpPurgeArtifactsStatus');
+  if (statusEl) {
+    statusEl.textContent = text || '';
+    statusEl.setAttribute('data-status', type || 'info');
+  }
+  if (text) setStatus(type === 'error' ? 'error' : 'info', text);
+}
+
+function updateKustoSeedButtonState() {
+  var values = getKustoSeedValues();
+  var button = document.getElementById('mcpSeedButton');
+  if (button) button.disabled = !(values.clusterUrl && values.database);
+}
+
+async function seedEvaSchema(clusterUrl, database, alreadyConfirmed) {
+  clusterUrl = (clusterUrl || '').trim();
+  database = (database || '').trim();
+  if (!clusterUrl || !database) {
+    setKustoSeedStatus('error', 'Cluster URL and database are required before seeding.');
+    return { ok: false, error: 'missing_inputs' };
+  }
+  if (!alreadyConfirmed) {
+    var confirmed = confirm('Seed Eva schema into ' + database + '? This writes starter tables and rows. Running it again can duplicate inline seed rows.');
+    if (!confirmed) return { ok: false, skipped: true };
+  }
+
+  var button = document.getElementById('mcpSeedButton');
+  if (button) button.disabled = true;
+  setKustoSeedStatus('info', 'Seeding Eva schema...');
+
+  try {
+    var bridgeUrl = await detectACPBridge();
+    var response = await fetch(bridgeUrl.replace(/\/+$/, '') + '/v1/kusto/seed', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ cluster_url: clusterUrl, database: database })
+    });
+    var data = await response.json();
+    if (!response.ok || !data.ok) {
+      var errors = (data && data.errors && data.errors.length) ? data.errors.slice(0, 3).join(' ') : (data.error && data.error.message ? data.error.message : 'Unknown seed error');
+      setKustoSeedStatus('error', 'Schema seed failed: ' + errors);
+      return { ok: false, data: data };
+    }
+    var message = 'Schema seed complete: ' + data.applied + ' applied, ' + data.failed + ' failed.';
+    if (data.warning) message += ' ' + data.warning;
+    setKustoSeedStatus('info', message);
+    return { ok: true, data: data };
+  } catch (error) {
+    setKustoSeedStatus('error', 'Schema seed failed: ' + error.message);
+    return { ok: false, error: error };
+  } finally {
+    updateKustoSeedButtonState();
+  }
+}
+
+async function purgeArtifactsFromSettings() {
+  if (!confirm('Delete all generated artifacts? This cannot be undone.')) return { ok: false, skipped: true };
+
+  var button = document.getElementById('mcpPurgeArtifactsButton');
+  if (button) button.disabled = true;
+  setArtifactPurgeStatus('info', 'Purging artifacts...');
+
+  try {
+    var bridgeUrl = await detectACPBridge();
+    var response = await fetch(bridgeUrl.replace(/\/+$/, '') + '/v1/files/purge', {
+      method: 'POST',
+      body: ''
+    });
+    var data = await response.json();
+    if (!response.ok || data.status !== 'ok') {
+      var message = data && data.error && data.error.message ? data.error.message : 'Artifact purge failed';
+      setArtifactPurgeStatus('error', message);
+      return { ok: false, data: data };
+    }
+    var purged = typeof data.purged === 'number' ? data.purged : 0;
+    setArtifactPurgeStatus('info', 'Purged ' + purged + ' artifacts.');
+    return { ok: true, data: data };
+  } catch (error) {
+    setArtifactPurgeStatus('error', 'Artifact purge failed: ' + error.message);
+    return { ok: false, error: error };
+  } finally {
+    if (button) button.disabled = false;
+  }
+}
+
+async function seedEvaSchemaFromSettings() {
+  var values = getKustoSeedValues();
+  return seedEvaSchema(values.clusterUrl, values.database, false);
 }
 
 async function refreshMCPStatus() {
@@ -508,6 +634,17 @@ document.addEventListener('DOMContentLoaded', function() {
     kustoConfig.style.display = kustoToggle.checked ? 'block' : 'none';
     kustoToggle.addEventListener('change', function() {
       kustoConfig.style.display = kustoToggle.checked ? 'block' : 'none';
+      updateKustoSeedButtonState();
     });
   }
+
+  var seedButton = document.getElementById('mcpSeedButton');
+  if (seedButton) seedButton.addEventListener('click', seedEvaSchemaFromSettings);
+  var purgeArtifactsButton = document.getElementById('mcpPurgeArtifactsButton');
+  if (purgeArtifactsButton) purgeArtifactsButton.addEventListener('click', purgeArtifactsFromSettings);
+  var seedCluster = document.getElementById('mcpKustoCluster');
+  var seedDatabase = document.getElementById('mcpKustoDatabase');
+  if (seedCluster) seedCluster.addEventListener('input', updateKustoSeedButtonState);
+  if (seedDatabase) seedDatabase.addEventListener('input', updateKustoSeedButtonState);
+  updateKustoSeedButtonState();
 });

@@ -391,6 +391,8 @@ Current state (2026-04-05):
 | Deploy bridge as systemd service | planned | Use `tools/acp_setup.sh` and `tools/acp_bridge.service` |
 | Move from split setup to single-host ACP | planned | Keep localhost fallback until this is complete |
 | Post-migration validation gate | planned | `/health` ok + AIG raw-query smoke + `tools/test_eva.py` |
+| macOS standalone build (signed + notarized) | planned | Build config exists (`npm run dist:mac` produces unsigned dmg/zip for x64+arm64). Distribution requires Apple Developer ID, hardened runtime, entitlements (likely `com.apple.security.cs.disable-library-validation` for spawning system `python3`), and `@electron/notarize` afterSign hook. Local-dev builds work today; signed distribution deferred. |
+| Windows standalone build | planned | Add `win` target (nsis or portable) to electron-builder config; same Python/Node/Copilot CLI prereqs apply. |
 
 ## Eva (AIG) — Recommended Model
 

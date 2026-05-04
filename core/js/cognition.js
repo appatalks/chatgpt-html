@@ -330,7 +330,10 @@
         messages: msgs,
         user_message: taskMessage || '',
         model: model,
-        github_pat: authPat()
+        lmstudio_base_url: (typeof getLmStudioBaseUrl === 'function') ? getLmStudioBaseUrl() : '',
+        lmstudio_model: (typeof getLmStudioModel === 'function') ? getLmStudioModel() : '',
+        github_pat: authPat(),
+        internal: true
       })
     });
     if (!resp.ok) {

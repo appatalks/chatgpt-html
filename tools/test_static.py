@@ -145,6 +145,32 @@ def test_python_syntax():
             report(f"python_syntax:{py}", False, str(e))
 
 
+def test_artifact_filename_validation():
+    """Generated artifact filenames accept only safe local names."""
+    spec = importlib.util.spec_from_file_location("acp_bridge", "tools/acp_bridge.py")
+    if spec is None or spec.loader is None:
+        report("artifact_name_validator_import", False, "could not load tools/acp_bridge.py")
+        return
+    acp_bridge = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(acp_bridge)
+
+    cases = [
+        ("out.pdf", True),
+        ("a-b_c.1.txt", True),
+        ("../etc/passwd", False),
+        (".hidden", False),
+        (".", False),
+        ("..", False),
+        ("a/b", False),
+        ("", False),
+        ("x" * 129, False),
+        ("x" * 128, True),
+    ]
+    for name, expected in cases:
+        label = name if name else "empty"
+        report(f"artifact_name:{label}", acp_bridge._valid_artifact_name(name) is expected)
+
+
 # ═══════════════════════════════════════════════════════════════════
 #  Section 4: Kusto Ingest CSV Logic (Unit Tests)
 # ═══════════════════════════════════════════════════════════════════
@@ -249,6 +275,11 @@ def test_model_selector():
     else:
         report("model_eva_label", False, "AIG option should reference 'Eva'")
 
+    aig_match = re.search(r'<select id="selAIGBackend"[^>]*>(.*?)</select>', html, re.DOTALL)
+    aig_values = re.findall(r'value="([^"]+)"', aig_match.group(1)) if aig_match else []
+    report("aig_backend_lmstudio_option", "lmstudio" in aig_values,
+           "missing" if "lmstudio" not in aig_values else "")
+
 
 # ═══════════════════════════════════════════════════════════════════
 #  Section 6: JavaScript Function Routing
@@ -265,6 +296,8 @@ def test_js_routing_functions():
         "dalle3Send": "core/js/dalle3.js",
         "renderEvaResponse": "core/js/options.js",
         "getSystemPrompt": "core/js/options.js",
+        "getLmStudioBaseUrl": "core/js/options.js",
+        "getLmStudioModel": "core/js/options.js",
     }
     for fn, expected_file in required.items():
         if not os.path.isfile(expected_file):
@@ -321,7 +354,7 @@ def main():
     sections = [
         ("File Integrity", [test_required_files, test_no_secrets_committed]),
         ("Config Safety", [test_config_example_clean, test_no_hardcoded_keys]),
-        ("Python Integrity", [test_python_syntax]),
+        ("Python Integrity", [test_python_syntax, test_artifact_filename_validation]),
         ("Kusto CSV Logic", [test_csv_quoting_logic]),
         ("HTML Model Selector", [test_model_selector]),
         ("JS Routing Functions", [test_js_routing_functions]),

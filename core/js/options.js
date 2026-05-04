@@ -91,10 +91,24 @@ function saveAuthKeys() {
   });
   // Save ACP Bridge URL separately
   var acpEl = document.getElementById('txtACPBridgeUrl');
-  if (acpEl && acpEl.value.trim()) {
+  if (acpEl && typeof isEvaStandalone === 'function' && isEvaStandalone()) {
+    localStorage.removeItem('acp_bridge_url');
+  } else if (acpEl && acpEl.value.trim()) {
     localStorage.setItem('acp_bridge_url', acpEl.value.trim());
   } else if (acpEl) {
     localStorage.removeItem('acp_bridge_url');
+  }
+  var lmsBaseEl = document.getElementById('aigLmStudioBaseUrl');
+  if (lmsBaseEl && lmsBaseEl.value.trim()) {
+    localStorage.setItem('aig_lmstudio_base_url', lmsBaseEl.value.trim());
+  } else if (lmsBaseEl) {
+    localStorage.removeItem('aig_lmstudio_base_url');
+  }
+  var lmsModelEl = document.getElementById('aigLmStudioModel');
+  if (lmsModelEl && lmsModelEl.value.trim()) {
+    localStorage.setItem('aig_lmstudio_model', lmsModelEl.value.trim());
+  } else if (lmsModelEl) {
+    localStorage.removeItem('aig_lmstudio_model');
   }
   setStatus('info', 'API keys saved to browser storage.');
 }
@@ -117,7 +131,236 @@ function populateAuthFields() {
   // Populate ACP Bridge URL
   var acpEl = document.getElementById('txtACPBridgeUrl');
   if (acpEl) {
-    acpEl.value = localStorage.getItem('acp_bridge_url') || 'http://localhost:8888';
+    acpEl.value = (typeof getACPBridgeUrl === 'function') ? getACPBridgeUrl() : (localStorage.getItem('acp_bridge_url') || 'http://localhost:8888');
+  }
+  var lmsBaseEl = document.getElementById('aigLmStudioBaseUrl');
+  if (lmsBaseEl) {
+    lmsBaseEl.value = (typeof getLmStudioBaseUrl === 'function') ? getLmStudioBaseUrl() : (localStorage.getItem('aig_lmstudio_base_url') || 'http://localhost:1234/v1');
+  }
+  var lmsModelEl = document.getElementById('aigLmStudioModel');
+  if (lmsModelEl) {
+    lmsModelEl.value = (typeof getLmStudioModel === 'function') ? getLmStudioModel() : (localStorage.getItem('aig_lmstudio_model') || 'granite-3.1-8b-instruct');
+  }
+}
+
+function getLmStudioBaseUrl() {
+  var v = (localStorage.getItem('aig_lmstudio_base_url') || '').trim();
+  return v || 'http://localhost:1234/v1';
+}
+
+function getLmStudioModel() {
+  var v = (localStorage.getItem('aig_lmstudio_model') || '').trim();
+  return v || 'granite-3.1-8b-instruct';
+}
+
+function getSafeBridgeBaseUrl() {
+  var fallback = 'http://localhost:8888';
+  var raw = (typeof getACPBridgeUrl === 'function') ? getACPBridgeUrl() : fallback;
+  try {
+    var parsed = new URL(raw || fallback);
+    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+      return fallback;
+    }
+    return (parsed.origin + parsed.pathname).replace(/\/+$/, '');
+  } catch (e) {
+    return fallback;
+  }
+}
+
+function applyStandaloneSimplifications() {
+  if (!(typeof isEvaStandalone === 'function' && isEvaStandalone())) return;
+
+  var selModel = document.getElementById('selModel');
+  if (selModel) {
+    var modelChanged = selModel.value !== 'aig';
+    Array.from(selModel.children).forEach(function(child) {
+      if (child.tagName === 'OPTGROUP') {
+        var hasAigOption = false;
+        Array.from(child.children).forEach(function(option) {
+          if (option.value === 'aig') {
+            hasAigOption = true;
+          } else {
+            option.remove();
+          }
+        });
+        if (!hasAigOption) child.remove();
+      } else if (child.tagName === 'OPTION' && child.value !== 'aig') {
+        child.remove();
+      }
+    });
+
+    selModel.value = 'aig';
+    var modelLabel = document.querySelector('label[for="selModel"]');
+    if (modelLabel) modelLabel.style.display = 'none';
+    selModel.style.display = 'none';
+
+    if (modelChanged) {
+      selModel.dispatchEvent(new Event('change', { bubbles: true }));
+    }
+  }
+
+  var engineSelect = document.getElementById('selEngine');
+  var barkOption = document.querySelector('#selEngine option[value="bark"]');
+  if (engineSelect) {
+    var current = engineSelect.value;
+    var pollyEngine = (current === 'standard' || current === 'neural' || current === 'generative');
+    if (!current || current === 'bark' || pollyEngine) {
+      var hasOpenAIKey = (typeof getAuthKey === 'function') ? !!getAuthKey('OPENAI_API_KEY') : !!window.OPENAI_API_KEY;
+      engineSelect.value = hasOpenAIKey ? 'openai' : 'browser';
+    }
+  }
+  var pollyValues = ['standard', 'neural', 'generative'];
+  pollyValues.forEach(function (val) {
+    var opt = document.querySelector('#selEngine option[value="' + val + '"]');
+    if (opt) opt.remove();
+  });
+  if (barkOption) barkOption.remove();
+}
+
+function applyStandaloneSurface() {
+  applyStandaloneSimplifications();
+}
+
+function getSavedMCPConfig() {
+  try {
+    return JSON.parse(localStorage.getItem('mcp_config') || '{}') || {};
+  } catch (error) {
+    return {};
+  }
+}
+
+function hasSavedStandaloneKustoConfig() {
+  var config = getSavedMCPConfig();
+  var kusto = config['kusto-mcp-server'];
+  var env = kusto && kusto.env ? kusto.env : {};
+  return !!(env.KUSTO_CLUSTER_URL && String(env.KUSTO_CLUSTER_URL).trim());
+}
+
+function setStandaloneFirstRunStatus(text) {
+  var status = document.getElementById('firstRunStatus');
+  if (status) status.textContent = text || '';
+}
+
+function updateStandaloneFirstRunSaveState() {
+  var cluster = document.getElementById('firstRunKustoCluster');
+  var database = document.getElementById('firstRunKustoDatabase');
+  var saveButton = document.getElementById('firstRunSave');
+  if (!saveButton) return;
+  saveButton.disabled = !(
+    cluster && cluster.value.trim() &&
+    database && database.value.trim()
+  );
+}
+
+function showStandaloneFirstRunModal() {
+  if (!(typeof isEvaStandalone === 'function' && isEvaStandalone())) return;
+  var modal = document.getElementById('firstRunModal');
+  if (!modal) return;
+  var overlay = document.getElementById('settingsOverlay');
+  var cluster = document.getElementById('firstRunKustoCluster');
+  var database = document.getElementById('firstRunKustoDatabase');
+  if (cluster) cluster.value = '';
+  if (database) database.value = '';
+  setStandaloneFirstRunStatus('');
+  if (overlay) overlay.classList.add('open');
+  modal.style.display = 'flex';
+  updateStandaloneFirstRunSaveState();
+  setTimeout(function() {
+    if (cluster) cluster.focus();
+  }, 0);
+}
+
+function hideStandaloneFirstRunModal() {
+  var modal = document.getElementById('firstRunModal');
+  if (modal) modal.style.display = 'none';
+  var settingsMenu = document.getElementById('settingsMenu');
+  var overlay = document.getElementById('settingsOverlay');
+  if (overlay && !(settingsMenu && settingsMenu.classList.contains('open'))) {
+    overlay.classList.remove('open');
+  }
+}
+
+function skipStandaloneFirstRun() {
+  localStorage.setItem('eva_standalone_first_run_done', '1');
+  hideStandaloneFirstRunModal();
+}
+
+async function saveStandaloneFirstRunConfig() {
+  if (!(typeof isEvaStandalone === 'function' && isEvaStandalone())) return;
+  var cluster = document.getElementById('firstRunKustoCluster');
+  var database = document.getElementById('firstRunKustoDatabase');
+  var clusterUrl = cluster ? cluster.value.trim() : '';
+  var databaseName = database ? database.value.trim() : '';
+  if (!clusterUrl || !databaseName) return;
+
+  var config = getSavedMCPConfig();
+  config['kusto-mcp-server'] = {
+    command: 'python3',
+    args: ['tools/kusto_mcp.py'],
+    env: {
+      KUSTO_CLUSTER_URL: clusterUrl,
+      KUSTO_DATABASE: databaseName,
+      KUSTO_DATABASE_LOCKED: '1'
+    }
+  };
+  localStorage.setItem('mcp_config', JSON.stringify(config));
+  localStorage.setItem('eva_standalone_first_run_done', '1');
+
+  var kustoCheck = document.getElementById('mcpKusto');
+  var kustoConfig = document.getElementById('mcpKustoConfig');
+  var clusterField = document.getElementById('mcpKustoCluster');
+  var databaseField = document.getElementById('mcpKustoDatabase');
+  if (kustoCheck) kustoCheck.checked = true;
+  if (kustoConfig) kustoConfig.style.display = 'block';
+  if (clusterField) clusterField.value = clusterUrl;
+  if (databaseField) databaseField.value = databaseName;
+  if (typeof updateKustoSeedButtonState === 'function') updateKustoSeedButtonState();
+
+  setStandaloneFirstRunStatus('Configuring Kusto MCP...');
+  var result = { ok: false };
+  if (typeof applyMCPConfig === 'function') {
+    result = await applyMCPConfig();
+  }
+  hideStandaloneFirstRunModal();
+
+  if (result && result.ok) {
+    var shouldSeed = confirm('Seed Eva schema into ' + databaseName + '?');
+    if (shouldSeed && typeof seedEvaSchema === 'function') {
+      await seedEvaSchema(clusterUrl, databaseName, true);
+    }
+  }
+}
+
+function initStandaloneFirstRun() {
+  if (!(typeof isEvaStandalone === 'function' && isEvaStandalone())) return;
+  var rerunButton = document.getElementById('standaloneFirstRunButton');
+  if (rerunButton) {
+    rerunButton.style.display = 'block';
+    rerunButton.addEventListener('click', function() {
+      localStorage.removeItem('eva_standalone_first_run_done');
+      showStandaloneFirstRunModal();
+    });
+  }
+
+  var cluster = document.getElementById('firstRunKustoCluster');
+  var database = document.getElementById('firstRunKustoDatabase');
+  var saveButton = document.getElementById('firstRunSave');
+  var skipButton = document.getElementById('firstRunSkip');
+  if (cluster) cluster.addEventListener('input', updateStandaloneFirstRunSaveState);
+  if (database) database.addEventListener('input', updateStandaloneFirstRunSaveState);
+  if (saveButton) saveButton.addEventListener('click', saveStandaloneFirstRunConfig);
+  if (skipButton) {
+    skipButton.addEventListener('click', skipStandaloneFirstRun);
+  }
+  document.addEventListener('keydown', function(event) {
+    var modal = document.getElementById('firstRunModal');
+    if (event.key === 'Escape' && modal && modal.style.display !== 'none') {
+      skipStandaloneFirstRun();
+    }
+  });
+
+  if (!hasSavedStandaloneKustoConfig() && localStorage.getItem('eva_standalone_first_run_done') !== '1') {
+    showStandaloneFirstRunModal();
   }
 }
 
@@ -329,6 +572,7 @@ function updateModelOptionsForTheme(theme) {
       }
     }
   }
+  applyStandaloneSimplifications();
 }
 
 // Settings Menu Options 
@@ -348,6 +592,9 @@ document.addEventListener('DOMContentLoaded', () => {
   const lcarsChipTop = document.getElementById('lcarsChipTop');
   const monitorTabs = document.getElementById('lcarsMonitorTabs');
   const monitorPanels = document.getElementById('lcarsMonitorPanels');
+
+  applyStandaloneSurface();
+  initStandaloneFirstRun();
 
   function toggleSettings(event) {
     event.stopPropagation();
@@ -540,6 +787,11 @@ document.addEventListener('DOMContentLoaded', () => {
       settingsOverlayEl.classList.remove('open');
     });
   }
+
+  ['aigLmStudioBaseUrl', 'aigLmStudioModel'].forEach(function(id) {
+    var el = document.getElementById(id);
+    if (el) el.addEventListener('change', saveAuthKeys);
+  });
 
   // Init auth, system prompt, and model settings
   loadAuthOverrides();
@@ -774,6 +1026,7 @@ function _detectGenerationIntent() {
 }
 
 function updateButton() {
+  applyStandaloneSimplifications();
     var selModel = document.getElementById("selModel");
     var btnSend = document.getElementById("btnSend");
 
@@ -826,6 +1079,7 @@ function updateButton() {
 function sendData() {
     // Hide Eva welcome MOTD on first send
     hideEvaWelcome();
+  applyStandaloneSimplifications();
 
     // Logic required for initial message
     var selModel = document.getElementById("selModel");
@@ -1532,6 +1786,48 @@ function insertImage() {
 }
 
 // AWS Polly
+// Normalize a chunk of model output (raw markdown or rendered HTML) into a
+// clean plain-text string safe to send to a TTS engine. The previous
+// implementation used `/<\/?[^>]+(>|$)/g`, which would swallow everything
+// from a stray `<` to the end of the string. That occasionally truncated the
+// final sentence of a response (for example when the model emitted a `<3` or
+// any other non-tag `<`), so Auto Speak silently dropped trailing content.
+function sanitizeForSpeech(input) {
+  if (input == null) return '';
+  var t = String(input);
+  // Remove only well-formed HTML tags. Stray `<` characters are preserved.
+  var prev;
+  do {
+    prev = t;
+    t = t.replace(/<\/?[a-zA-Z][^>]*>/g, '');
+  } while (t !== prev);
+  // Decode the handful of HTML entities that show up in rendered chat content.
+  t = t.replace(/&nbsp;/g, ' ')
+       .replace(/&lt;/g, '<')
+       .replace(/&gt;/g, '>')
+       .replace(/&quot;/g, '"')
+       .replace(/&#39;/g, "'")
+       .replace(/&amp;/g, '&');
+  // Strip fenced code blocks (TTS reading source code is rarely useful).
+  t = t.replace(/```[\s\S]*?```/g, ' ');
+  // Drop inline code backticks while keeping the inner text.
+  t = t.replace(/`([^`]+)`/g, '$1');
+  // Markdown emphasis: bold, italic, strikethrough.
+  t = t.replace(/(\*\*|__)(.*?)\1/g, '$2');
+  t = t.replace(/(\*|_)(.*?)\1/g, '$2');
+  t = t.replace(/~~(.*?)~~/g, '$1');
+  // Markdown links: keep the visible text, drop the URL.
+  t = t.replace(/!\[([^\]]*)\]\([^)]*\)/g, '$1');
+  t = t.replace(/\[([^\]]+)\]\([^)]*\)/g, '$1');
+  // Headings, blockquotes, and list bullets at line start.
+  t = t.replace(/^[ \t]*#{1,6}[ \t]+/gm, '');
+  t = t.replace(/^[ \t]*>[ \t]?/gm, '');
+  t = t.replace(/^[ \t]*[-*+][ \t]+/gm, '');
+  // Collapse runs of blank lines so the synthesizer does not pause forever.
+  t = t.replace(/\n{3,}/g, '\n\n');
+  return t.trim();
+}
+
 function speakText() {
   var txtOutputEl = document.getElementById('txtOutput');
   var sText = txtOutputEl ? txtOutputEl.innerHTML : '';
@@ -1550,32 +1846,116 @@ function speakText() {
         VoiceId: ""
     };
 
-    // Let's speak only the response.
-    let text = document.getElementById("txtOutput").innerHTML;
-
-    // Split the text by "Eva:" to get all of Eva's responses.
-    let textArr = text.split('<span class="eva">Eva:');
-
-    // Check if there are Eva's responses.
-    if (textArr.length > 1) {
-        // Take the last response from Eva.
-        let lastResponse = textArr[textArr.length - 1];
-
-        // Further process to remove any HTML tags and get pure text, if necessary.
-        // This step is crucial to avoid sending HTML tags to the speech API.
-        // Use a regular expression to remove HTML tags.
-        let cleanText = lastResponse.replace(/<\/?[^>]+(>|$)/g, "");
-
-        // Set the cleaned last response to the speechParams.Text.
-        speechParams.Text = cleanText.trim();
+    // Prefer the global `lastResponse` populated by aig.js / copilot.js /
+    // gpt-core.js. That string is the clean final response without any
+    // cognition-trace markup, which prevents Auto Speak from reading the
+    // response twice when the trace details block is rendered after it.
+    if (typeof lastResponse === 'string' && lastResponse.trim()) {
+      speechParams.Text = sanitizeForSpeech(lastResponse);
     } else {
-        // Fallback to the entire text if there's no "Eva:" found.
-        // You might want to handle this case differently.
-        speechParams.Text = text;
+      let text = document.getElementById("txtOutput").innerHTML;
+      // Strip any cognition-trace details block first so trace content
+      // (which echoes the implementer/reviewer drafts) does not get spoken.
+      text = text.replace(/<details class="cog-trace"[\s\S]*?<\/details>/g, '');
+      let textArr = text.split('<span class="eva">Eva:');
+      if (textArr.length > 1) {
+        let last = textArr[textArr.length - 1];
+        speechParams.Text = sanitizeForSpeech(last);
+      } else {
+        speechParams.Text = sanitizeForSpeech(text);
+      }
     }
 
     speechParams.VoiceId = document.getElementById("selVoice").value;
     speechParams.Engine = document.getElementById("selEngine").value;
+
+
+    // OpenAI TTS: cloud voice, requires OPENAI_API_KEY. Reliable fallback when
+    // the host has no offline speech engine installed.
+    if (speechParams.Engine === "openai") {
+      var openaiKey = (typeof getAuthKey === 'function') ? getAuthKey('OPENAI_API_KEY') : (window.OPENAI_API_KEY || '');
+      if (!openaiKey) {
+        var resultElO = document.getElementById('result');
+        var msgO = 'OpenAI TTS requires an API key. Set it in Settings > Auth.';
+        if (resultElO) resultElO.textContent = msgO; else console.warn(msgO);
+        return;
+      }
+      // Map Polly voice ids to OpenAI voices so the existing voice dropdown
+      // still drives a sensible choice.
+      var openaiVoiceMap = {
+        Salli: 'nova',
+        Ruth: 'shimmer',
+        Seoyeon: 'nova',
+        Mia: 'alloy',
+        Tatyana: 'shimmer'
+      };
+      var oaVoice = openaiVoiceMap[speechParams.VoiceId] || 'nova';
+      fetch('https://api.openai.com/v1/audio/speech', {
+        method: 'POST',
+        headers: {
+          'Authorization': 'Bearer ' + openaiKey,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          model: 'gpt-4o-mini-tts',
+          voice: oaVoice,
+          input: speechParams.Text,
+          response_format: 'mp3'
+        })
+      }).then(function(resp) {
+        if (!resp.ok) {
+          return resp.text().then(function(t) { throw new Error('OpenAI TTS ' + resp.status + ': ' + t.slice(0, 200)); });
+        }
+        return resp.blob();
+      }).then(function(blob) {
+        var url = URL.createObjectURL(blob);
+        var src = document.getElementById('audioSource');
+        var audio = document.getElementById('audioPlayback');
+        if (src) src.src = url;
+        if (audio) {
+          audio.load();
+          audio.setAttribute('autoplay', 'true');
+          try { audio.play(); } catch (_) {}
+        }
+        var resultEl2 = document.getElementById('result');
+        if (resultEl2) resultEl2.textContent = '';
+      }).catch(function(err) {
+        var resultEl3 = document.getElementById('result');
+        var msg3 = (err && err.message) ? err.message : String(err);
+        if (resultEl3) resultEl3.textContent = msg3; else console.warn('OpenAI TTS error:', msg3);
+      });
+      return;
+    }
+
+
+    // Browser SpeechSynthesis: offline, no credentials. Used by standalone.
+    if (speechParams.Engine === "browser") {
+      if (typeof window.speechSynthesis === 'undefined' || typeof window.SpeechSynthesisUtterance === 'undefined') {
+        var resultEl = document.getElementById('result');
+        var msg = 'Browser TTS not supported in this runtime.';
+        if (resultEl) resultEl.textContent = msg; else console.warn(msg);
+        return;
+      }
+      try { window.speechSynthesis.cancel(); } catch (_) {}
+      var utter = new SpeechSynthesisUtterance(speechParams.Text);
+      // Map the Polly voice id to a BCP-47 language so the browser picks a sensible voice.
+      var voiceLangMap = {
+        Salli: 'en-US',
+        Ruth: 'en-US',
+        Seoyeon: 'ko-KR',
+        Mia: 'es-MX',
+        Tatyana: 'uk-UA'
+      };
+      utter.lang = voiceLangMap[speechParams.VoiceId] || 'en-US';
+      utter.rate = 1.0;
+      utter.pitch = 1.0;
+      try {
+        window.speechSynthesis.speak(utter);
+      } catch (e) {
+        console.warn('SpeechSynthesis error:', e);
+      }
+      return;
+    }
 
 
     // If selEngine is "bark", call barkTTS function
@@ -1702,8 +2082,21 @@ function renderMarkdown(md) {
   md = md.replace(/^##\s+(.*)$/gm, '<h2>$1<\/h2>');
   md = md.replace(/^#\s+(.*)$/gm, '<h1>$1<\/h1>');
 
+  const linkTokens = [];
+  function stashLink(html) {
+    linkTokens.push(html);
+    return `\u0000LINK${linkTokens.length - 1}\u0000`;
+  }
+
   // Links [text](url)
-  md = md.replace(/\[(.+?)\]\((https?:[^\s)]+)\)/g, '<a href="$2" target="_blank" rel="noopener noreferrer">$1<\/a>');
+  md = md.replace(/\[(.+?)\]\((https?:\/\/[^\s)]+)\)/g, (m, text, url) => {
+    return stashLink(`<a href="${url}" target="_blank" rel="noopener noreferrer">${text}<\/a>`);
+  });
+
+  // Bare URLs
+  md = md.replace(/(^|[\s(])(https?:\/\/[^\s)<]+)/g, (m, prefix, url) => {
+    return prefix + stashLink(`<a href="${url}" target="_blank" rel="noopener noreferrer">${url}<\/a>`);
+  });
 
   // Bold and italic
   md = md.replace(/\*\*([^\n*][\s\S]*?)\*\*/g, '<strong>$1<\/strong>');
@@ -1729,6 +2122,10 @@ function renderMarkdown(md) {
     const i = Number(idx);
     const lang = langs[i] ? ` class=\"language-${langs[i]}\"` : '';
     return `<pre><code${lang}>${blocks[i]}<\/code><\/pre>`;
+  });
+
+  md = md.replace(/\u0000LINK(\d+)\u0000/g, (m, idx) => {
+    return linkTokens[Number(idx)] || m;
   });
 
   return md;
@@ -1811,6 +2208,30 @@ async function renderEvaResponse(content, txtOutput) {
   }
 
   var text = content.trim();
+  var artifactNames = [];
+  text = text.replace(/^\s*\[\[EVA_FILE\]\]\s+([A-Za-z0-9._-]{1,128})\s*$/gm, function(fullMatch, filename) {
+    artifactNames.push(filename);
+    return '';
+  });
+  if (artifactNames.length) {
+    text = text.replace(/\n{3,}/g, '\n\n').trim();
+  }
+
+  function appendArtifactLinks() {
+    if (!artifactNames.length) return;
+    var bridgeUrl = getSafeBridgeBaseUrl();
+    var bubbles = txtOutput.querySelectorAll('.chat-bubble.eva-bubble');
+    var bubble = bubbles.length ? bubbles[bubbles.length - 1] : null;
+    if (!bubble) return;
+    artifactNames.forEach(function(filename) {
+      var link = document.createElement('a');
+      link.className = 'eva-artifact-link';
+      link.href = bridgeUrl + '/v1/files/' + encodeURIComponent(filename);
+      link.download = filename;
+      link.textContent = 'Download ' + filename;
+      bubble.appendChild(link);
+    });
+  }
 
   // Detect image placeholders — multiple patterns models use
   var imagePatterns = [
@@ -1930,6 +2351,7 @@ async function renderEvaResponse(content, txtOutput) {
     txtOutput.innerHTML += '<div class="chat-bubble eva-bubble"><span class="eva">Eva:</span> <div class="md">' + html2 + '</div></div>';
   }
 
+  appendArtifactLinks();
   txtOutput.scrollTop = txtOutput.scrollHeight;
 
   // Auto-save session after each response
@@ -2083,13 +2505,29 @@ document.addEventListener('DOMContentLoaded', function() {
 function shiftBreak() {
 document.querySelector("#txtMsg").addEventListener("keydown", function(event) {
   if (event.shiftKey && event.keyCode === 13) {
-    var newLine = document.createElement("br");
+    // Use the browser's native line-break command so contenteditable
+    // gets the proper trailing-br anchor. The previous manual <br>
+    // insert required two presses to visually break the line because
+    // a single trailing <br> at end-of-text is not rendered.
+    event.preventDefault();
+    try {
+      if (document.execCommand && document.execCommand('insertLineBreak')) {
+        return;
+      }
+    } catch (_) {}
     var sel = window.getSelection();
+    if (!sel || !sel.rangeCount) return;
     var range = sel.getRangeAt(0);
     range.deleteContents();
-    range.insertNode(newLine);
-    range.setStartAfter(newLine);
-    event.preventDefault();
+    var br = document.createElement("br");
+    range.insertNode(br);
+    // Anchor br: ensures the cursor falls on a visibly new line.
+    var anchor = document.createElement("br");
+    range.setStartAfter(br);
+    range.insertNode(anchor);
+    range.collapse(true);
+    sel.removeAllRanges();
+    sel.addRange(range);
   }
 });
 
@@ -2116,6 +2554,7 @@ function clearMessages() {
       var key = localStorage.key(i);
       if (key && (key.indexOf('auth_') === 0 || key === 'theme' || key === 'systemPrompt'
           || key === 'lcars_collapsed' || key === 'acp_bridge_url'
+          || key === 'aig_lmstudio_base_url' || key === 'aig_lmstudio_model'
           || key === 'eva_sessions' || key.indexOf('session_') === 0)) {
         keysToKeep.push({ k: key, v: localStorage.getItem(key) });
       }

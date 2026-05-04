@@ -1,0 +1,75 @@
+{
+  "name": "eva-standalone",
+  "version": "0.1.0",
+  "description": "Localhost Electron shell for Eva AI Assistant.",
+  "main": "main.js",
+  "private": true,
+  "scripts": {
+    "start": "electron .",
+    "dist": "electron-builder --linux AppImage",
+    "dist:mac": "electron-builder --mac",
+    "dist:all": "electron-builder --linux AppImage --mac"
+  },
+  "engines": {
+    "node": ">=24"
+  },
+  "devDependencies": {
+    "electron": "^33.0.0",
+    "electron-builder": "^25.0.0"
+  },
+  "_comment": "Electron files stay in standalone/. electron-builder copies the parent web UI and bridge with extraResources into resources/app.",
+  "build": {
+    "appId": "com.appatalks.eva-standalone",
+    "productName": "Eva Standalone",
+    "files": [
+      "package.json",
+      "main.js",
+      "preload.js"
+    ],
+    "extraResources": [
+      {
+        "from": "..",
+        "to": "app",
+        "filter": [
+          "index.html",
+          "README.md",
+          "README-2.md",
+          "config.example.json",
+          "config.local.example.js",
+          "core/**",
+          "tools/acp_bridge.py",
+          "tools/kusto_mcp.py",
+          "tools/eva_seed.kql",
+          "!config.json",
+          "!config.local.js",
+          "!core/external/*.data",
+          "!audio/**",
+          "!tmp/**",
+          "!*.log",
+          "!**/*.log",
+          "!**/.env*",
+          "!standalone/**"
+        ]
+      }
+    ],
+    "linux": {
+      "target": [
+        "AppImage"
+      ],
+      "category": "Utility"
+    },
+    "mac": {
+      "target": [
+        {
+          "target": "dmg",
+          "arch": ["x64", "arm64"]
+        },
+        {
+          "target": "zip",
+          "arch": ["x64", "arm64"]
+        }
+      ],
+      "category": "public.app-category.productivity"
+    }
+  }
+}

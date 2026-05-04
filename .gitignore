@@ -37,6 +37,10 @@ token_cache.*
 
 # Node (if npx runs locally)
 node_modules/
+standalone/node_modules/
+standalone/dist/
+standalone/out/
+*.AppImage
 
 # Local-only agent knowledge for the maintainer (never committed).
 # Holds dev topology, cluster URLs, recurring commands, and agent playbooks

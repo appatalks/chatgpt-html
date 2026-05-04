@@ -11,6 +11,7 @@ Requirements:
 Usage:
   python3 tools/acp_bridge.py                    # default port 8888
   python3 tools/acp_bridge.py --port 9999        # custom port
+    EVA_ACP_PORT=9999 python3 tools/acp_bridge.py  # custom port via env
   python3 tools/acp_bridge.py --copilot-path /usr/local/bin/copilot
 
 The server exposes a single endpoint:
@@ -27,11 +28,14 @@ The server exposes a single endpoint:
 
 import argparse
 import json
+import mimetypes
 import os
+import re
 import subprocess
 import sys
 import threading
 import time
+import urllib.parse
 from http.server import HTTPServer, BaseHTTPRequestHandler
 
 # ---------------------------------------------------------------------------
@@ -73,11 +77,13 @@ class ACPClient:
         try:
             # Pass env vars from MCP config to the copilot process itself
             # (copilot spawns MCP servers as children, inheriting the env)
+            os.makedirs(_ARTIFACTS_DIR, exist_ok=True)
             process_env = os.environ.copy()
             for srv_name, srv_cfg in self.mcp_config.items():
                 for k, v in srv_cfg.get('env', {}).items():
                     # subprocess.Popen env requires all values to be strings
                     process_env[k] = str(v) if not isinstance(v, str) else v
+            process_env["EVA_ARTIFACTS_DIR"] = _ARTIFACTS_DIR
 
             self.process = subprocess.Popen(
                 cmd,
@@ -344,6 +350,8 @@ class ACPClient:
         for ev in env_vars:
             if isinstance(ev, dict) and "name" in ev and "value" in ev:
                 env[ev["name"]] = ev["value"]
+        os.makedirs(_ARTIFACTS_DIR, exist_ok=True)
+        env["EVA_ARTIFACTS_DIR"] = _ARTIFACTS_DIR
 
         import uuid
         terminal_id = str(uuid.uuid4())
@@ -482,6 +490,56 @@ def _inject_kusto_token(mcp_config):
 
     return mcp_config
 
+def _ensure_kusto_token():
+    """Ensure the bridge has a Kusto token for direct bridge-side Kusto calls."""
+    global _kusto_token_cache, _kusto_credential
+    if _kusto_token_cache:
+        return True, ""
+    if _refresh_kusto_token():
+        return True, ""
+    try:
+        from azure.identity import DeviceCodeCredential, TokenCachePersistenceOptions
+        cache_opts = TokenCachePersistenceOptions(allow_unencrypted_storage=True)
+        credential = DeviceCodeCredential(cache_persistence_options=cache_opts)
+        token = credential.get_token("https://kusto.kusto.windows.net/.default")
+        if token and getattr(token, "token", None):
+            _kusto_token_cache = token.token
+            _kusto_credential = credential
+            print(f"[Bridge] Kusto token obtained for direct query calls (length: {len(token.token)})")
+            return True, ""
+        return False, "Kusto token request returned no token"
+    except Exception as error:
+        return False, str(error)
+
+def _split_kusto_seed_blocks(seed_text):
+    """Split seed KQL into executable management command blocks."""
+    import re
+    blocks = []
+    for raw_block in re.split(r"\n\s*\n", seed_text):
+        lines = []
+        for line in raw_block.splitlines():
+            if line.strip().startswith("//"):
+                continue
+            lines.append(line)
+        block = "\n".join(lines).strip()
+        if block:
+            blocks.append(block)
+    return blocks
+
+
+def _env_truthy(name):
+    """Return True when an environment flag uses the shared truthy form."""
+    return os.environ.get(name, "").strip().lower() in ("1", "true", "yes")
+
+
+def _normalize_kusto_cluster_url(cluster_url):
+    """Normalize a Kusto cluster URL for policy comparisons."""
+    return str(cluster_url or "").strip().rstrip("/").lower()
+
+
+def _same_kusto_cluster(left, right):
+    return _normalize_kusto_cluster_url(left) == _normalize_kusto_cluster_url(right)
+
 
 # ---------------------------------------------------------------------------
 # HTTP Server — exposes the ACP client as an OpenAI-compatible endpoint
@@ -497,7 +555,89 @@ _session_conversation_buffer = []  # Buffer of recent (user, assistant) pairs fo
 _cognition_launch_iso = None  # UTC timestamp that marks the start of this bridge run
 _cognition_launch_id = None  # Human-readable launch identifier for this bridge run
 _cognition_candidate_counts = {}  # Lowercased entity -> mention count in current launch
+_candidate_history_cache = {}  # { entity_lower: (timestamp_epoch, mentions, max_confidence) }
+_CANDIDATE_HISTORY_TTL_SECONDS = 60
+_CONVO_CONTENT_CAP = 8000  # Kusto string columns are unbounded, but cap defensively.
+_ARTIFACTS_DIR = os.path.expanduser("~/.config/eva-standalone/artifacts")
 _kusto_table_columns_cache = {}  # (cluster, db, table) -> [columns]
+_kusto_database_locked = _env_truthy("KUSTO_DATABASE_LOCKED") or _env_truthy("EVA_KUSTO_LOCKED")
+_active_kusto_db = os.environ.get("KUSTO_DATABASE", "").strip()
+_active_kusto_cluster = os.environ.get("KUSTO_CLUSTER_URL", "").strip()
+_bridge_bind_address = "127.0.0.1"
+_LMSTUDIO_ALLOWED_PORTS = {1234, 8000, 8080, 11434}
+_HTTP_CONTENT_TYPE_RE = re.compile(r"^[A-Za-z0-9!#$&^_.+-]+/[A-Za-z0-9!#$&^_.+-]+$")
+
+
+def _is_loopback_bind():
+    bind = (_bridge_bind_address or "").strip().lower()
+    return bind in ("127.0.0.1", "localhost", "::1")
+
+
+def _valid_artifact_name(name):
+    return (
+        bool(re.fullmatch(r"[A-Za-z0-9._-]{1,128}", name or ""))
+        and not name.startswith(".")
+        and not all(char == "." for char in name)
+    )
+
+
+def _safe_content_type(value):
+    if value and _HTTP_CONTENT_TYPE_RE.fullmatch(value):
+        return value
+    return "application/octet-stream"
+
+
+def _validate_lmstudio_base_url(raw):
+    value = (raw or "").strip().rstrip("/")
+    if not value:
+        return "", "lmstudio_base_url is required"
+
+    try:
+        parsed = urllib.parse.urlparse(value)
+    except ValueError:
+        return "", "lmstudio_base_url is invalid"
+
+    if parsed.scheme not in ("http", "https"):
+        return "", "lmstudio_base_url must use http or https"
+    if parsed.username or parsed.password:
+        return "", "lmstudio_base_url must not include userinfo"
+    if parsed.query or parsed.fragment:
+        return "", "lmstudio_base_url must not include query or fragment"
+
+    host = (parsed.hostname or "").lower()
+    if host not in ("localhost", "127.0.0.1", "::1"):
+        return "", "lmstudio_base_url must point at localhost"
+
+    try:
+        port = parsed.port
+    except ValueError:
+        return "", "lmstudio_base_url port must be numeric"
+    if port not in _LMSTUDIO_ALLOWED_PORTS:
+        return "", "lmstudio_base_url port is not allowed"
+
+    if parsed.path not in ("", "/v1", "/v1/"):
+        return "", "lmstudio_base_url path must be empty or /v1"
+
+    host_for_url = host
+    if ":" in host_for_url and not host_for_url.startswith("["):
+        host_for_url = "[" + host_for_url + "]"
+    normalized_path = "/v1" if parsed.path in ("/v1", "/v1/") else ""
+    return f"{parsed.scheme}://{host_for_url}:{port}{normalized_path}", ""
+
+
+def _get_locked_kusto_database():
+    if not _kusto_database_locked:
+        return ""
+    return (_active_kusto_db or os.environ.get("KUSTO_DATABASE", "")).strip()
+
+
+def _capture_active_kusto_env(mcp_config):
+    """Track the Kusto config currently posted to the bridge."""
+    global _active_kusto_db, _active_kusto_cluster
+    kusto_cfg = (mcp_config or {}).get("kusto-mcp-server", {})
+    env = kusto_cfg.get("env", {}) if isinstance(kusto_cfg, dict) else {}
+    _active_kusto_db = str(env.get("KUSTO_DATABASE", "") or os.environ.get("KUSTO_DATABASE", "")).strip()
+    _active_kusto_cluster = str(env.get("KUSTO_CLUSTER_URL", "") or os.environ.get("KUSTO_CLUSTER_URL", "")).strip()
 
 
 class _MSALSilentCredential:
@@ -579,6 +719,62 @@ def _kusto_query_direct(cluster_url, database, query, is_mgmt=False):
         except Exception as e:
             print(f"[Cognition] Kusto query error: {e}")
             return None
+
+
+def _short_kusto_error(value):
+    if isinstance(value, (dict, list)):
+        text = json.dumps(value)
+    else:
+        text = str(value or "")
+    return text[:300]
+
+
+def _kusto_query_with_error(cluster_url, database, query, is_mgmt=False):
+    """Execute a Kusto query and return (rows, error_text) for seed diagnostics."""
+    global _kusto_token_cache
+    if not _kusto_token_cache:
+        return None, "Kusto token is not available"
+    import requests as _requests_mod
+    endpoint = "mgmt" if is_mgmt else "query"
+    url = f"{cluster_url}/v1/rest/{endpoint}"
+    headers = {"Authorization": f"Bearer {_kusto_token_cache}", "Content-Type": "application/json"}
+    payload = {"csl": query, "db": database}
+
+    for attempt in range(3):
+        try:
+            session = _requests_mod.Session()
+            resp = session.post(url, json=payload, headers=headers, timeout=15)
+            session.close()
+            if resp.status_code == 200:
+                try:
+                    data = resp.json()
+                except ValueError as error:
+                    return None, f"Kusto returned invalid JSON: {_short_kusto_error(error)}"
+                exceptions = data.get("Exceptions", [])
+                if exceptions:
+                    return None, _short_kusto_error(exceptions[0])
+                one_api = data.get("OneApiErrors", [])
+                if one_api:
+                    return None, _short_kusto_error(one_api[0])
+                tables = data.get("Tables", [])
+                if tables:
+                    rows = tables[0].get("Rows", [])
+                    cols = [c["ColumnName"] for c in tables[0].get("Columns", [])]
+                    if rows:
+                        return [dict(zip(cols, row)) for row in rows], ""
+                return [], ""
+            if resp.status_code == 401 and attempt == 0 and _refresh_kusto_token():
+                headers["Authorization"] = f"Bearer {_kusto_token_cache}"
+                continue
+            error_text = resp.text[:300] if resp.text else "empty response"
+            return None, f"Kusto API error {resp.status_code}: {error_text}"
+        except (_requests_mod.exceptions.SSLError, _requests_mod.exceptions.ConnectionError) as error:
+            if attempt < 2:
+                time.sleep(1)
+                continue
+            return None, f"Kusto connection error: {_short_kusto_error(error)}"
+        except Exception as error:
+            return None, f"Kusto query error: {_short_kusto_error(error)}"
 
 
 def _get_table_columns(cluster_url, database, table):
@@ -701,11 +897,55 @@ def _get_kusto_config():
         return None, None
     kusto_cfg = acp_client.mcp_config.get("kusto-mcp-server", {})
     env = kusto_cfg.get("env", {})
-    cluster = env.get("KUSTO_CLUSTER_URL", "")
-    db = env.get("KUSTO_DATABASE", "Eva")
-    if not db:
+    cluster = env.get("KUSTO_CLUSTER_URL", "") or _active_kusto_cluster
+    if _kusto_database_locked:
+        db = _get_locked_kusto_database()
+    else:
+        db = env.get("KUSTO_DATABASE", "") or _active_kusto_db
+    if not db and not _kusto_database_locked:
         db = "Eva"
     return cluster, db
+
+
+def _enable_cognition(mcp_servers, model=None, port=None):
+    """Enable cognition hooks and advertise active bridge capabilities."""
+    global _cognition_enabled, _cognition_launch_iso, _cognition_launch_id, _kusto_table_columns_cache
+    import datetime
+    os.makedirs(_ARTIFACTS_DIR, exist_ok=True)
+    _kusto_table_columns_cache = {}
+    _cognition_launch_iso = datetime.datetime.now(datetime.timezone.utc).isoformat().replace("+00:00", "Z")
+    _cognition_launch_id = f"eva-{datetime.datetime.now(datetime.timezone.utc).strftime('%Y%m%d%H%M%S')}"
+    _cognition_enabled = True
+    print(f"[Bridge] Cognition layer ENABLED (memory injection + reflection)")
+    print(f"[Bridge] Cognition launch scope: {_cognition_launch_id} (since {_cognition_launch_iso})")
+
+    cluster, startup_db = _get_kusto_config()
+    if cluster and startup_db:
+        now = datetime.datetime.now(datetime.timezone.utc).isoformat().replace("+00:00", "Z")
+        selfstate_cols = ["Timestamp", "Capability", "Status", "Details"]
+        capabilities = [
+            {"Timestamp": now, "Capability": "kusto_access", "Status": "active",
+             "Details": json.dumps({"cluster": cluster, "database": startup_db})},
+            {"Timestamp": now, "Capability": "acp_bridge", "Status": "active",
+             "Details": json.dumps({"model": model or "default", "port": port})},
+            {"Timestamp": now, "Capability": "cognition", "Status": "active",
+             "Details": json.dumps({"features": ["memory_injection", "reflection", "day_lifecycle", "emotion_tracking"]})},
+            {"Timestamp": now, "Capability": "data_retrieval", "Status": "active",
+             "Details": json.dumps({"skills": ["stock_quotes", "financial_data", "company_info", "web_search"]})},
+            {"Timestamp": now, "Capability": "weather_news", "Status": "active",
+             "Details": json.dumps({"feeds": ["weather", "news", "markets", "space_weather"]})},
+            {"Timestamp": now, "Capability": "image_skills", "Status": "active",
+             "Details": json.dumps({"skills": ["wikimedia_search", "dalle3_generation"]})},
+            {"Timestamp": now, "Capability": "persistent_memory", "Status": "active",
+             "Details": json.dumps({"tables": ["Knowledge", "Conversations", "EmotionState", "MemorySummaries", "Reflections", "SelfState", "HeuristicsIndex", "EmotionBaseline"]})},
+        ]
+        for srv in mcp_servers.keys():
+            capabilities.append({"Timestamp": now, "Capability": f"mcp_{srv}",
+                                 "Status": "active", "Details": "{}"})
+        if _kusto_ingest_direct(cluster, startup_db, "SelfState", selfstate_cols, capabilities):
+            print(f"[Bridge] SelfState written ({len(capabilities)} capabilities)")
+        else:
+            print("[Bridge] SelfState write failed (continuing startup)")
 
 
 def _with_launch_filter(query, timestamp_column="Timestamp"):
@@ -762,6 +1002,177 @@ _ENTITY_RESERVED_TERMS = {
     "memorysummaries", "selfstate", "heuristicsindex", "emotionbaseline"
 }
 
+_EXPLICIT_FACT_WHITESPACE_RE = re.compile(r"\s+", re.IGNORECASE)
+# CHILDREN, PARTNER, PET, LOCATION patterns deliberately omit re.IGNORECASE
+# so the [A-Z] anchor on the captured name keeps real proper-noun semantics.
+# Users typing "my kids are happy" with a lowercase "happy" are not captured;
+# users typing "my kids are June and Iris" are. That trade is intentional.
+_EXPLICIT_CHILDREN_RE = re.compile(
+    r"\b[Mm]y (?:kid|kids|child|children|son|sons|daughter|daughters)(?:'s| are| is| name(?:s)? (?:are|is))?\s+"
+    r"([A-Z][a-zA-Z]+(?:[\s,]+(?:and\s+)?[A-Z][a-zA-Z]+)*)"
+)
+_EXPLICIT_MOTTO_RE = re.compile(
+    r"\bmy (motto|mantra|creed|philosophy|saying|life motto)(?:\s+is)?[:\s]+[\"“']?([^\"”'\n]{5,200})[\"”']?",
+    re.IGNORECASE
+)
+_EXPLICIT_PARTNER_RE = re.compile(
+    r"\b[Mm]y (wife|husband|partner|spouse|girlfriend|boyfriend)(?:'s name)?(?:\s+is)?\s+([A-Z][a-zA-Z]+)"
+)
+_EXPLICIT_PET_RE = re.compile(
+    r"\b[Mm]y (dog|cat|pet|bird|rabbit|hamster|fish|horse)(?:'s name)?(?:\s+is)?\s+([A-Z][a-zA-Z]+)"
+)
+_EXPLICIT_PREFERENCE_RE = re.compile(
+    r"\bi (?:love|enjoy|prefer|like)\b\s+([a-z][a-zA-Z\s,]{3,80}?)(?:[.!?\n]|$)",
+    re.IGNORECASE
+)
+_EXPLICIT_INTEREST_RE = re.compile(
+    r"\bmy (?:hobby|hobbies|interest|interests|passion|passions) (?:is|are|include|includes)\s+([a-z][a-zA-Z\s,]{3,80}?)(?:[.!?\n]|$)",
+    re.IGNORECASE
+)
+_EXPLICIT_FAVORITE_RE = re.compile(
+    r"\bmy favorite (tv show|tv shows|show|shows|movie|movies|book|books|food|color|game|games|band|song|songs|artist|artists)(?:\s+(?:is|are))?\s+([^.!?\n]{2,120})",
+    re.IGNORECASE
+)
+_EXPLICIT_EMPLOYMENT_RE = re.compile(
+    r"\bi (?:work|am working) (?:as|at|for)\s+([^.!?\n]{2,120})",
+    re.IGNORECASE
+)
+_EXPLICIT_LOCATION_RE = re.compile(
+    r"\b[Ii] (?:live|am based|am located) (?:in|at|near)\s+([A-Z][a-zA-Z\s,]+?)(?:[.!?\n]|$)"
+)
+_EXPLICIT_ROLE_RE = re.compile(
+    r"\bi am (?:a|an)\s+([a-z][a-zA-Z\s]{3,80}?)(?:[.!?\n]|$)",
+    re.IGNORECASE
+)
+# First-token deny-list for the broad ROLE / PREFERENCE patterns. Without this,
+# "I am a bit tired" or "I like that idea" would write trash into the User
+# profile at 0.65 confidence.
+_EXPLICIT_VAGUE_FIRST_TOKENS = {
+    "a", "an", "the", "that", "this", "those", "these", "it",
+    "him", "her", "them", "us", "my", "your", "our", "their",
+    "bit", "lot", "little", "kind", "sort", "type", "couple", "few",
+    "real", "true", "good", "bad", "happy", "sad", "tired", "busy",
+    "quick", "slow", "sure", "fine", "okay", "ok",
+}
+_EXPLICIT_CHILD_SPLIT_RE = re.compile(r"\s*(?:,|\band\b)\s*", re.IGNORECASE)
+_EXPLICIT_FAVORITE_SUFFIXES = {
+    "tv show": "tv_show",
+    "tv shows": "tv_show",
+    "show": "show",
+    "shows": "show",
+    "movie": "movie",
+    "movies": "movie",
+    "book": "book",
+    "books": "book",
+    "food": "food",
+    "color": "color",
+    "game": "game",
+    "games": "game",
+    "band": "band",
+    "song": "song",
+    "songs": "song",
+    "artist": "artist",
+    "artists": "artist",
+}
+
+
+def _clean_explicit_fact_value(raw_value):
+    value = str(raw_value or "").strip().strip("\"“”'")
+    value = _EXPLICIT_FACT_WHITESPACE_RE.sub(" ", value).strip()
+    value = value.rstrip(".,").strip().strip("\"“”'")
+    return value[:200]
+
+
+def _normalize_explicit_children(raw_value):
+    value = _clean_explicit_fact_value(raw_value)
+    children = []
+    for child in _EXPLICIT_CHILD_SPLIT_RE.split(value):
+        child_name = _clean_explicit_fact_value(child)
+        if child_name and child_name.lower() not in _ENTITY_RESERVED_TERMS:
+            children.append(child_name)
+    return ", ".join(children)
+
+
+def _extract_explicit_user_facts(user_message):
+    """Extract direct user-stated facts before generic entity candidates."""
+    import datetime
+    timestamp = datetime.datetime.now(datetime.timezone.utc).isoformat().replace("+00:00", "Z")
+    facts = []
+    seen = set()
+
+    def add_fact(relation, raw_value, confidence):
+        value = _clean_explicit_fact_value(raw_value)
+        if not value or value.lower() in _ENTITY_RESERVED_TERMS:
+            return
+        key = (relation, value.lower())
+        if key in seen:
+            return
+        seen.add(key)
+        facts.append({
+            "Entity": "User",
+            "Relation": relation,
+            "Value": value,
+            "Confidence": confidence,
+            "Source": "explicit_user_fact",
+            "Timestamp": timestamp,
+            "Decay": 0.005,
+        })
+
+    for match in _EXPLICIT_CHILDREN_RE.finditer(user_message or ""):
+        add_fact("user_children", _normalize_explicit_children(match.group(1)), 0.85)
+    for match in _EXPLICIT_MOTTO_RE.finditer(user_message or ""):
+        add_fact("user_motto", match.group(2), 0.85)
+    for match in _EXPLICIT_PARTNER_RE.finditer(user_message or ""):
+        add_fact("user_partner_name", match.group(2), 0.85)
+    for match in _EXPLICIT_PET_RE.finditer(user_message or ""):
+        species = match.group(1).lower()
+        add_fact(f"user_pet_{species}", match.group(2), 0.85)
+    for match in _EXPLICIT_PREFERENCE_RE.finditer(user_message or ""):
+        captured = match.group(1).strip()
+        first_token = captured.split()[0].lower() if captured else ""
+        if first_token in _EXPLICIT_VAGUE_FIRST_TOKENS:
+            continue
+        add_fact("user_preference", captured, 0.65)
+    for match in _EXPLICIT_INTEREST_RE.finditer(user_message or ""):
+        add_fact("user_interest", match.group(1), 0.7)
+    for match in _EXPLICIT_FAVORITE_RE.finditer(user_message or ""):
+        noun = match.group(1).lower()
+        relation_suffix = _EXPLICIT_FAVORITE_SUFFIXES.get(noun, noun.replace(" ", "_"))
+        add_fact(f"user_favorite_{relation_suffix}", match.group(2), 0.65)
+    for match in _EXPLICIT_EMPLOYMENT_RE.finditer(user_message or ""):
+        add_fact("user_employment", match.group(1), 0.8)
+    for match in _EXPLICIT_LOCATION_RE.finditer(user_message or ""):
+        add_fact("user_location", match.group(1), 0.8)
+    for match in _EXPLICIT_ROLE_RE.finditer(user_message or ""):
+        captured = match.group(1).strip()
+        first_token = captured.split()[0].lower() if captured else ""
+        if first_token in _EXPLICIT_VAGUE_FIRST_TOKENS:
+            continue
+        add_fact("user_role_self_described", captured, 0.65)
+
+    return facts
+
+
+def _explicit_user_fact_covers_candidate(classified_relation, entity, explicit_user_facts):
+    relation_map = {
+        "user_location": {"user_location"},
+        "user_affiliation": {"user_employment"},
+    }
+    matching_relations = relation_map.get(classified_relation)
+    if not matching_relations:
+        return False
+
+    entity_lc = (entity or "").strip().lower()
+    if not entity_lc:
+        return False
+    for fact in explicit_user_facts:
+        if fact.get("Relation") not in matching_relations:
+            continue
+        value_lc = str(fact.get("Value", "")).strip().lower()
+        if value_lc and (entity_lc in value_lc or value_lc in entity_lc):
+            return True
+    return False
+
 
 def _normalize_entity_candidate(raw_entity):
     """Normalize an extracted entity candidate before validation."""
@@ -815,26 +1226,79 @@ def _classify_entity_candidate(entity, user_message):
     return "candidate_mentioned", 0.2, "candidate extracted from conversation"
 
 
+def _load_candidate_history(entity):
+    """Load persisted mention history for a candidate entity."""
+    key = (entity or "").strip().lower()
+    if not key:
+        return 0, 0.0
+
+    now = time.time()
+    cached = _candidate_history_cache.get(key)
+    if cached and now - cached[0] < _CANDIDATE_HISTORY_TTL_SECONDS:
+        return cached[1], cached[2]
+
+    cluster, db = _get_kusto_config()
+    if not cluster or not db:
+        return 0, 0.0
+
+    safe_entity = (entity or "").strip().replace("'", "''")
+    query = (
+        "Knowledge\n"
+        f"| where Entity =~ '{safe_entity}'\n"
+        "| summarize Mentions = count(), MaxConfidence = max(Confidence)"
+    )
+    rows = _kusto_query_direct(cluster, db, query)
+    if rows is None:
+        return 0, 0.0
+
+    mentions = 0
+    max_confidence = 0.0
+    if rows:
+        row = rows[0] or {}
+        try:
+            mentions = int(row.get("Mentions") or 0)
+        except (TypeError, ValueError):
+            mentions = 0
+        try:
+            max_confidence = float(row.get("MaxConfidence") or 0.0)
+        except (TypeError, ValueError):
+            max_confidence = 0.0
+
+    _candidate_history_cache[key] = (now, mentions, max_confidence)
+    print(f"[Cognition] Candidate history for \"{entity}\": prior_mentions={mentions} max_conf={max_confidence:.3f}")
+    return mentions, max_confidence
+
+
 def _maybe_promote_candidate(entity):
-    """Promote candidate entities after repeated mentions in the current launch."""
+    """Promote candidate entities after repeated persisted or launch-local mentions."""
     key = (entity or "").strip().lower()
     if not key:
         return None
 
-    seen_count = _cognition_candidate_counts.get(key, 0)
-    if seen_count >= 2:
+    session_count = _cognition_candidate_counts.get(key, 0)
+    prior_mentions, prior_max_conf = _load_candidate_history(entity)
+    total_observations = session_count + prior_mentions
+
+    if prior_max_conf >= 0.6:
         return {
-            "relation": "candidate_confirmed",
+            "relation": "recurring_topic",
+            "confidence": min(0.85, prior_max_conf + 0.05),
+            "value": "reinforced by repeated mention",
+            "reason": "prior_high_confidence"
+        }
+    if total_observations >= 3:
+        return {
+            "relation": "recurring_topic",
             "confidence": 0.75,
             "value": "reinforced by repeated mention",
-            "reason": "reinforced_repetition"
+            "reason": "frequency"
         }
-    if seen_count >= 1:
+    if total_observations >= 2:
         return {
-            "relation": "candidate_confirmed",
+            "relation": "recurring_topic",
             "confidence": 0.65,
             "value": "candidate repeated by user across turns",
-            "reason": "repeated_mention"
+            "reason": "repeat_mention"
         }
     return None
 
@@ -888,10 +1352,31 @@ def _build_memory_context(user_message):
         return ""
 
     cluster, db = _get_kusto_config()
-    if not cluster:
+    if not cluster or not db:
         return ""
 
     context_parts = []
+
+    user_profile_query = (
+        "Knowledge "
+        "| where Entity =~ 'User' and Confidence >= 0.5 "
+        "| summarize arg_max(Timestamp, Value, Confidence) by Relation "
+        "| project Relation, Value, Confidence "
+        "| order by Confidence desc "
+        "| take 30"
+    )
+    user_profile = _kusto_query_direct(cluster, db, user_profile_query)
+    if user_profile:
+        profile_lines = [f"- {item.get('Relation','?')}: {item.get('Value','?')}" for item in user_profile]
+        context_parts.append("[User Profile]\n" + "\n".join(profile_lines))
+
+    if _kusto_database_locked:
+        db_label = db or "configured database"
+        persistent_memory_capability = f"• persistent-memory: Read/write your configured Kusto database ({db_label}). Tables:\n"
+        kusto_query_capability = f"• kusto-query: Execute KQL queries against the configured Kusto database ({db_label})\n"
+    else:
+        persistent_memory_capability = "• persistent-memory: Read/write your Kusto database (Eva). Tables:\n"
+        kusto_query_capability = "• kusto-query: Execute arbitrary KQL queries against any database (Eva, MEMORY_CORE, ynot)\n"
 
     # ── 1. Skills manifest (always injected, concise) ──────────────────
     import datetime
@@ -906,7 +1391,7 @@ def _build_memory_context(user_message):
         "• weather-news: Real-time weather, news headlines, market summaries, space weather via MCP tools\n"
         "• image-search: Find images on Wikimedia Commons for any topic\n"
         "• image-generation: Generate images via DALL-E 3 (use [Image of <description>] syntax)\n"
-        "• persistent-memory: Read/write your Kusto database (Eva). Tables:\n"
+        f"{persistent_memory_capability}"
         "    Knowledge (Entity, Relation, Value, Confidence) — facts about the user and world\n"
         "    Conversations (SessionId, Role, Content) — chat history\n"
         "    EmotionState (Joy, Curiosity, Concern, Trigger) — your emotional readings\n"
@@ -915,7 +1400,7 @@ def _build_memory_context(user_message):
         "    SelfState (Capability, Status) — your active capabilities\n"
         "    HeuristicsIndex (Entity, Category, Frequency) — pattern tracking\n"
         "    EmotionBaseline (Dimension, Value) — emotional defaults\n"
-        "• kusto-query: Execute arbitrary KQL queries against any database (Eva, MEMORY_CORE, ynot)\n"
+        f"{kusto_query_capability}"
         "• web-search: Search the web and retrieve current information via MCP tools\n"
         "\n"
         "[Workflow: Data Requests]\n"
@@ -950,10 +1435,12 @@ def _build_memory_context(user_message):
             context_parts.append(f"[Morning Reflection — {today}]\nNew day. No prior summaries — this is a fresh start.")
 
     # ── 3. Core identity knowledge (always) ────────────────────────────
-    knowledge_empty = True  # Track whether we have any core facts
+    knowledge_empty = not bool(user_profile)  # Track whether we have any core facts
+    # User Profile is injected separately above; this broader block remains secondary context.
     # Fetch ALL high-confidence facts (not scope-limited) so persistent knowledge survives restarts
     core_query = (
         "Knowledge "
+        "| where Entity !~ 'User' "
         "| where Confidence >= 0.6 "
         "and (isnull(Relation) or Relation !in~ ('mentioned', 'candidate_mentioned')) "
         "| order by Confidence desc | take 15"
@@ -1017,18 +1504,17 @@ def _build_memory_context(user_message):
     import re as _re
 
     if _re.search(r'\b(database|databases|kusto|adx|data explorer)\b', msg_lower):
-        dbs = _kusto_query_direct(cluster, "Eva", ".show databases", is_mgmt=True)
-        if dbs:
-            db_names = [d.get('DatabaseName', '?') for d in dbs if 'DatabaseName' in d]
-            if db_names:
-                context_parts.append(f"[Live Data] Databases: {', '.join(db_names)}")
+        if _kusto_database_locked:
+            context_parts.append(f"[Live Data] Database: {db}")
+        else:
+            dbs = _kusto_query_direct(cluster, db, ".show databases", is_mgmt=True)
+            if dbs:
+                db_names = [d.get('DatabaseName', '?') for d in dbs if 'DatabaseName' in d]
+                if db_names:
+                    context_parts.append(f"[Live Data] Databases: {', '.join(db_names)}")
 
     if _re.search(r'\b(tables?|schema|columns?)\b', msg_lower):
         target_db = db
-        for known_db in ['ynot', 'MEMORY_CORE', 'Eva']:
-            if known_db.lower() in msg_lower:
-                target_db = known_db
-                break
         tables = _kusto_query_direct(cluster, target_db, ".show tables", is_mgmt=True)
         if tables:
             tbl_names = [t.get('TableName', '?') for t in tables if 'TableName' in t]
@@ -1082,7 +1568,7 @@ def _post_response_reflection(user_message, assistant_response, model_name):
         return
 
     cluster, db = _get_kusto_config()
-    if not cluster:
+    if not cluster or not db:
         return
 
     import datetime, uuid
@@ -1094,16 +1580,40 @@ def _post_response_reflection(user_message, assistant_response, model_name):
     conv_columns = ["SessionId", "Timestamp", "Role", "Provider", "Model", "Content", "TokenEstimate", "ImageGenerated"]
     conv_rows = [
         {"SessionId": session_id, "Timestamp": now, "Role": "user", "Provider": "copilot-acp",
-         "Model": model_name, "Content": user_message[:500], "TokenEstimate": len(user_message.split()),
+         "Model": model_name, "Content": user_message[:_CONVO_CONTENT_CAP], "TokenEstimate": len(user_message.split()),
          "ImageGenerated": False},
         {"SessionId": session_id, "Timestamp": now, "Role": "assistant", "Provider": "copilot-acp",
-         "Model": model_name, "Content": assistant_response[:500], "TokenEstimate": len(assistant_response.split()),
+         "Model": model_name, "Content": assistant_response[:_CONVO_CONTENT_CAP], "TokenEstimate": len(assistant_response.split()),
          "ImageGenerated": False}
     ]
     _kusto_ingest_direct(cluster, db, "Conversations", conv_columns, conv_rows)
     print(f"[Cognition] Logged conversation ({len(user_message)} → {len(assistant_response)} chars)")
 
-    # 2. Extract candidate knowledge with validation/classification
+    # 2. Extract explicit user facts before generic candidate knowledge
+    explicit_user_facts = _extract_explicit_user_facts(user_message)
+    if explicit_user_facts:
+        know_columns = ["Timestamp", "Entity", "Relation", "Value", "Confidence", "Source", "Decay"]
+        rows = []
+        for fact in explicit_user_facts:
+            rows.append({
+                "Timestamp": now,
+                "Entity": fact["Entity"],
+                "Relation": fact["Relation"],
+                "Value": fact["Value"][:200],
+                "Confidence": fact["Confidence"],
+                "Source": source_id,
+                "Decay": 0.005,
+            })
+        if rows and _kusto_ingest_direct(cluster, db, "Knowledge", know_columns, rows):
+            preview = []
+            for row in rows[:5]:
+                preview_value = row["Value"][:40]
+                if len(row["Value"]) > 40:
+                    preview_value += "..."
+                preview.append(f"{row['Relation']}={preview_value}")
+            print(f"[Cognition] Explicit user facts captured: {len(rows)} ({'; '.join(preview)})")
+
+    # 3. Extract candidate knowledge with validation/classification
     import re
     candidate_entities, rejected_entities = _extract_entity_candidates(user_message)
     if rejected_entities:
@@ -1116,6 +1626,8 @@ def _post_response_reflection(user_message, assistant_response, model_name):
         know_rows = []
         for entity in candidate_entities[:3]:
             relation, confidence, value = _classify_entity_candidate(entity, user_message)
+            if _explicit_user_fact_covers_candidate(relation, entity, explicit_user_facts):
+                relation, confidence, value = "candidate_mentioned", 0.2, "candidate extracted from conversation"
             promotion = None
             if relation == "candidate_mentioned":
                 promotion = _maybe_promote_candidate(entity)
@@ -1303,6 +1815,9 @@ class BridgeHandler(BaseHTTPRequestHandler):
             self._mcp_status()
         elif self.path.startswith("/v1/memory/context"):
             self._memory_context()
+        elif self.path.startswith("/v1/files/"):
+            requested_name = urllib.parse.unquote(self.path.split("/v1/files/", 1)[1].split("?", 1)[0].split("#", 1)[0])
+            self._serve_artifact(requested_name)
         else:
             self.send_error(404, "Not Found")
 
@@ -1315,8 +1830,79 @@ class BridgeHandler(BaseHTTPRequestHandler):
             self._memory_reflect()
         elif self.path == "/v1/aig/chat":
             self._aig_chat()
+        elif self.path == "/v1/kusto/seed":
+            self._kusto_seed()
+        elif self.path == "/v1/files/purge":
+            self._purge_artifacts()
         else:
             self.send_error(404, "Not Found")
+
+    def _serve_artifact(self, requested_name):
+        if not _is_loopback_bind():
+            self._json_response(403, {"error": {"message": "/v1/files is only available on localhost-bound bridges"}})
+            return
+
+        if not _valid_artifact_name(requested_name):
+            self._json_response(400, {"error": {"message": "invalid filename"}})
+            return
+
+        base = os.path.realpath(_ARTIFACTS_DIR)
+        target = os.path.realpath(os.path.join(_ARTIFACTS_DIR, requested_name))
+        if not target.startswith(base + os.sep) or not os.path.isfile(target):
+            self._json_response(404, {"error": {"message": "file not found"}})
+            return
+
+        content_type = _safe_content_type(mimetypes.guess_type(requested_name)[0])
+        content_length = os.path.getsize(target)
+        self.send_response(200)
+        self._cors_headers()
+        self.send_header("Content-Type", content_type)
+        self.send_header("Content-Length", str(content_length))
+        # Filename is regex-validated; quote and CRLF stripping defend against future relaxation.
+        quoted_name = urllib.parse.quote(requested_name, safe="").replace("\r", "").replace("\n", "")
+        self.send_header("Content-Disposition", 'attachment; filename="' + quoted_name + '"')
+        self.send_header("Cache-Control", "no-store")
+        self.end_headers()
+        with open(target, "rb") as artifact_file:
+            while True:
+                chunk = artifact_file.read(64 * 1024)
+                if not chunk:
+                    break
+                self.wfile.write(chunk)
+
+    def _purge_artifacts(self):
+        if not _is_loopback_bind():
+            self._json_response(403, {"error": {"message": "/v1/files/purge is only available on localhost-bound bridges"}})
+            return
+
+        content_length = int(self.headers.get("Content-Length", 0))
+        if content_length:
+            self.rfile.read(content_length)
+
+        purged = 0
+        try:
+            os.makedirs(_ARTIFACTS_DIR, exist_ok=True)
+            base = os.path.realpath(_ARTIFACTS_DIR)
+            for name in os.listdir(_ARTIFACTS_DIR):
+                if not _valid_artifact_name(name):
+                    continue
+                entry_path = os.path.join(_ARTIFACTS_DIR, name)
+                target = os.path.realpath(entry_path)
+                if not target.startswith(base + os.sep) or not os.path.isfile(target):
+                    continue
+                try:
+                    if os.path.islink(entry_path):
+                        os.unlink(entry_path)
+                    else:
+                        os.remove(entry_path)
+                    purged += 1
+                except FileNotFoundError:
+                    pass
+        except OSError as error:
+            self._json_response(500, {"error": {"message": "artifact purge failed: " + str(error)}})
+            return
+
+        self._json_response(200, {"status": "ok", "purged": purged})
 
     def _health(self):
         status = {
@@ -1395,6 +1981,8 @@ class BridgeHandler(BaseHTTPRequestHandler):
 
         messages = data.get("messages", [])
         user_message = data.get("user_message", "")
+        internal = bool(data.get("internal"))
+        model_for_response = data.get("model", "gpt-4.1")  # frontend-selectable, default gpt-4.1
 
         if not user_message and messages:
             for msg in reversed(messages):
@@ -1423,7 +2011,10 @@ class BridgeHandler(BaseHTTPRequestHandler):
         skip_acp = False
         _acp_route = "default"
 
-        if not (acp_client and acp_client.alive):
+        if model_for_response == "lmstudio":
+            skip_acp = True
+            _acp_route = "lmstudio-no-tools"
+        elif not (acp_client and acp_client.alive):
             skip_acp = True
             _acp_route = "acp-unavailable"
         elif len(msg_words) <= 4 and _re.match(
@@ -1528,7 +2119,9 @@ class BridgeHandler(BaseHTTPRequestHandler):
             "honestly say you could not retrieve that information right now.\n"
             "- Do NOT generate fake source citations (AP, Reuters, etc.) unless they appear in [Data Retrieved].\n"
             "- When asked about your base model, underlying model, model ID, or what powers you, "
-            "answer using the [Runtime] section below. Do NOT guess or invent a model name.\n\n"
+            "answer using the [Runtime] section below. Do NOT guess or invent a model name.\n"
+            "- When the user asks to show, find, or generate an image, do NOT call the web fetch tool to look up image URLs. Instead emit a placeholder of the form [Image of <short description>] on its own line. The browser resolves the placeholder by calling DALL-E (if the user asked to generate) or Wikimedia (if the user asked to find or show). Do not invent image URLs. Do not say you cannot show or generate images. Up to 3 placeholders per response are supported.\n"
+            "- If asked to produce a downloadable file (PDF, CSV, image, etc.), write it to the directory in environment variable EVA_ARTIFACTS_DIR using a short descriptive filename. After the file is written, end your message with a single line containing exactly: [[EVA_FILE]] <filename.ext>. Do not claim a file was produced unless you actually wrote it. Do not include the EVA_FILE marker if no file exists.\n\n"
         )
 
         if memory_context:
@@ -1542,6 +2135,67 @@ class BridgeHandler(BaseHTTPRequestHandler):
                 "Do not ask the user to confirm running a query that has already been executed. "
                 "Answer directly from [Data Retrieved].\n"
             )
+
+        if model_for_response == "lmstudio":
+            lms_base = (data.get("lmstudio_base_url") or "").strip()
+            lms_model = (data.get("lmstudio_model") or "").strip()
+            if not lms_base:
+                lms_base = "http://localhost:1234/v1"
+            if not lms_model:
+                lms_model = "granite-3.1-8b-instruct"
+
+            lms_base, lms_error = _validate_lmstudio_base_url(lms_base)
+            if lms_error:
+                self._json_response(400, {"error": {"message": lms_error}})
+                return
+
+            eva_system_full = eva_system
+
+            lms_messages = [{"role": "system", "content": eva_system_full}]
+            for msg in messages[-6:]:
+                if msg.get("role") and msg.get("content"):
+                    lms_messages.append({"role": msg["role"], "content": msg["content"]})
+            lms_messages.append({"role": "user", "content": user_message})
+
+            try:
+                import requests as _req
+                lms_resp = _req.post(
+                    lms_base + "/chat/completions",
+                    json={"model": lms_model, "messages": lms_messages, "temperature": 0.7},
+                    timeout=120,
+                )
+                if lms_resp.status_code == 200:
+                    lms_body = lms_resp.json()
+                    response_text = (lms_body.get("choices") or [{}])[0].get("message", {}).get("content", "")
+                    model_used = "aig:lmstudio:" + lms_model
+                else:
+                    response_text = f"LM Studio returned HTTP {lms_resp.status_code}"
+                    model_used = "aig:lmstudio:error"
+            except Exception as _lms_err:
+                response_text = f"LM Studio request failed: {_lms_err}"
+                model_used = "aig:lmstudio:unavailable"
+
+            print(f"[AIG] LM Studio response: {len(response_text)} chars from {lms_model}")
+
+            if response_text and _cognition_enabled and not internal:
+                threading.Thread(target=_post_response_reflection,
+                                 args=(user_message, response_text, model_used),
+                                 daemon=True).start()
+
+            response = {
+                "id": f"aig-{int(time.time())}",
+                "object": "chat.completion",
+                "created": int(time.time()),
+                "model": model_used,
+                "choices": [{
+                    "index": 0,
+                    "message": {"role": "assistant", "content": response_text},
+                    "finish_reason": "stop"
+                }],
+                "usage": {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
+            }
+            self._json_response(200, response)
+            return
 
         # Step 4: Pick the best PAT model for response generation
         # Priority: request body PAT > env var > Copilot CLI OAuth token > ACP fallback
@@ -1562,8 +2216,6 @@ class BridgeHandler(BaseHTTPRequestHandler):
                         print("[AIG] Using Copilot CLI OAuth token for GitHub Models API")
             except Exception as _e:
                 print(f"[AIG] Could not read Copilot OAuth: {_e}")
-
-        model_for_response = data.get("model", "gpt-4.1")  # frontend-selectable, default gpt-4.1
 
         # Models available on GitHub Models API (PAT).
         # Models absent from this map must route through ACP.
@@ -1733,7 +2385,7 @@ class BridgeHandler(BaseHTTPRequestHandler):
                 model_used = "aig:unavailable"
 
         # Step 5: Post-response reflection (background)
-        if response_text and _cognition_enabled:
+        if response_text and _cognition_enabled and not internal:
             threading.Thread(target=_post_response_reflection,
                            args=(user_message, response_text, model_used),
                            daemon=True).start()
@@ -1804,9 +2456,105 @@ class BridgeHandler(BaseHTTPRequestHandler):
 
         self._json_response(200, {"status": "ok"})
 
+    def _kusto_seed(self):
+        """Apply the Eva Kusto schema seed file to a configured database."""
+        # Seed runs Kusto management commands, so refuse it on non-loopback binds.
+        if not _is_loopback_bind():
+            self._json_response(403, {"error": {"message": "/v1/kusto/seed is only available on localhost-bound bridges"}})
+            return
+
+        content_length = int(self.headers.get("Content-Length", 0))
+        if content_length == 0:
+            self._json_response(400, {"error": {"message": "Empty request body"}})
+            return
+
+        body = self.rfile.read(content_length).decode("utf-8")
+        try:
+            data = json.loads(body)
+        except json.JSONDecodeError:
+            self._json_response(400, {"error": {"message": "Invalid JSON"}})
+            return
+
+        cluster_url = str(data.get("cluster_url", "")).strip()
+        database = str(data.get("database", "")).strip()
+        if not cluster_url or not database:
+            self._json_response(400, {"error": {"message": "cluster_url and database are required"}})
+            return
+
+        expected_cluster = os.environ.get("KUSTO_CLUSTER_URL", "").strip()
+        if expected_cluster and not _same_kusto_cluster(cluster_url, expected_cluster):
+            self._json_response(400, {"error": {"message": "cluster_url does not match configured KUSTO_CLUSTER_URL"}})
+            return
+
+        if _kusto_database_locked:
+            locked_database = _get_locked_kusto_database()
+            if not locked_database:
+                self._json_response(400, {"error": {"message": "KUSTO_DATABASE is required when KUSTO_DATABASE_LOCKED is set"}})
+                return
+            if database.lower() != locked_database.lower():
+                self._json_response(400, {"error": {"message": "database does not match locked KUSTO_DATABASE"}})
+                return
+            if _active_kusto_cluster and not _same_kusto_cluster(cluster_url, _active_kusto_cluster):
+                self._json_response(400, {"error": {"message": "cluster_url does not match active Kusto MCP configuration"}})
+                return
+            database = locked_database
+
+        token_ok, token_error = _ensure_kusto_token()
+        if not token_ok:
+            self._json_response(503, {
+                "ok": False,
+                "applied": 0,
+                "failed": 1,
+                "errors": ["Kusto authentication failed: " + token_error],
+                "warning": "Re-running this seed will duplicate inline rows."
+            })
+            return
+
+        seed_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "eva_seed.kql")
+        try:
+            with open(seed_path, "r", encoding="utf-8") as seed_file:
+                seed_text = seed_file.read()
+        except OSError as error:
+            self._json_response(500, {"error": {"message": "Could not read eva_seed.kql: " + str(error)}})
+            return
+
+        applied = 0
+        failed = 0
+        errors = []
+        blocks = _split_kusto_seed_blocks(seed_text)
+        # TODO: The inline seed rows use fixed values, so repeated runs can duplicate rows.
+        for index, block in enumerate(blocks, start=1):
+            result, kusto_error = _kusto_query_with_error(cluster_url, database, block, is_mgmt=True)
+            if result is None:
+                failed += 1
+                first_line = block.splitlines()[0] if block.splitlines() else "empty block"
+                errors.append(f"Block {index} failed: {first_line[:120]}: {kusto_error or 'no Kusto diagnostic returned'}")
+            else:
+                applied += 1
+
+        warning = "Re-running this seed will duplicate inline rows."
+        mcp_config = getattr(acp_client, "mcp_config", {}) if acp_client is not None else {}
+        if (
+            failed == 0
+            and not _cognition_enabled
+            and _kusto_token_cache
+            and acp_client is not None
+            and getattr(acp_client, "alive", False)
+            and "kusto-mcp-server" in mcp_config
+        ):
+            bridge_port = getattr(self.server, "server_port", None)
+            _enable_cognition(mcp_config, model=acp_client.model, port=bridge_port)
+        self._json_response(200, {
+            "ok": failed == 0,
+            "applied": applied,
+            "failed": failed,
+            "errors": errors,
+            "warning": warning
+        })
+
     def _mcp_configure(self):
         """Configure MCP servers and restart the ACP client."""
-        global acp_client
+        global acp_client, _cognition_enabled, _cognition_launch_iso, _cognition_launch_id, _kusto_table_columns_cache
 
         content_length = int(self.headers.get("Content-Length", 0))
         if content_length == 0:
@@ -1840,8 +2588,16 @@ class BridgeHandler(BaseHTTPRequestHandler):
                 resolved_env[k] = str(v) if not isinstance(v, str) else v
             srv_cfg['env'] = resolved_env
 
+        if _kusto_database_locked and "kusto-mcp-server" in mcp_servers:
+            kusto_env = mcp_servers["kusto-mcp-server"].setdefault("env", {})
+            locked_db = kusto_env.get("KUSTO_DATABASE") or _get_locked_kusto_database()
+            if locked_db:
+                kusto_env["KUSTO_DATABASE"] = locked_db
+            kusto_env["KUSTO_DATABASE_LOCKED"] = "1"
+
         # Inject cached Kusto token if kusto-mcp-server is being configured
         mcp_servers = _inject_kusto_token(mcp_servers)
+        _capture_active_kusto_env(mcp_servers)
 
         # Restart ACP client with new MCP config
         old_path = acp_client.copilot_path if acp_client else "copilot"
@@ -1853,6 +2609,9 @@ class BridgeHandler(BaseHTTPRequestHandler):
         acp_client = ACPClient(copilot_path=old_path, cwd=old_cwd, model=old_model, mcp_config=mcp_servers)
         try:
             acp_client.start()
+            if "kusto-mcp-server" in mcp_servers and _kusto_token_cache and not _cognition_enabled:
+                bridge_port = getattr(self.server, "server_port", None) or getattr(self.server, "server_address", (None, None))[1]
+                _enable_cognition(mcp_servers, model=old_model, port=bridge_port)
             self._json_response(200, {
                 "status": "ok",
                 "message": f"MCP servers configured: {list(mcp_servers.keys())}",
@@ -1994,9 +2753,19 @@ class BridgeHandler(BaseHTTPRequestHandler):
 # ---------------------------------------------------------------------------
 
 def main():
+    global _bridge_bind_address
+    default_port = 8888
+    env_port = os.environ.get("EVA_ACP_PORT", "").strip()
+    if env_port:
+        try:
+            default_port = int(env_port)
+        except ValueError:
+            print(f"[Bridge] Warning: Ignoring invalid EVA_ACP_PORT={env_port!r}")
+
     parser = argparse.ArgumentParser(description="Eva ACP Bridge Server")
-    parser.add_argument("--port", type=int, default=8888, help="HTTP server port (default: 8888)")
-    parser.add_argument("--bind", default="127.0.0.1", help="Bind address (default: 127.0.0.1, use 0.0.0.0 for LAN access)")
+    parser.add_argument("--port", type=int, default=default_port, help="HTTP server port (default: 8888 or EVA_ACP_PORT)")
+    # The Kusto seed endpoint is refused unless this bind address is loopback.
+    parser.add_argument("--bind", default="127.0.0.1", help="Bind address (default: 127.0.0.1, use 0.0.0.0 for LAN access; seed endpoint is disabled off loopback)")
     parser.add_argument("--copilot-path", default="copilot", help="Path to copilot CLI binary")
     parser.add_argument("--cwd", default=os.getcwd(), help="Working directory for ACP session")
     parser.add_argument("--model", default=None, help="Default AI model (e.g. claude-sonnet-4.6, gpt-5.2)")
@@ -2007,6 +2776,7 @@ def main():
     parser.add_argument("--kusto-cluster", default="", help="Kusto cluster URL")
     parser.add_argument("--kusto-database", default="", help="Default Kusto database name")
     args = parser.parse_args()
+    _bridge_bind_address = args.bind
 
     # Build MCP config
     mcp_config = {}
@@ -2050,6 +2820,8 @@ def main():
             kusto_env["KUSTO_CLUSTER_URL"] = args.kusto_cluster
         if args.kusto_database:
             kusto_env["KUSTO_DATABASE"] = args.kusto_database
+        if _kusto_database_locked:
+            kusto_env["KUSTO_DATABASE_LOCKED"] = "1"
 
         # Pre-fetch Kusto token so the MCP subprocess doesn't need interactive auth
         try:
@@ -2117,6 +2889,14 @@ def main():
         }
         print(f"[Bridge] Kusto MCP Server enabled (cluster: {args.kusto_cluster or 'from tool params'})")
 
+    if _kusto_database_locked and "kusto-mcp-server" in mcp_config:
+        kusto_env = mcp_config["kusto-mcp-server"].setdefault("env", {})
+        locked_db = kusto_env.get("KUSTO_DATABASE") or _get_locked_kusto_database()
+        if locked_db:
+            kusto_env["KUSTO_DATABASE"] = locked_db
+        kusto_env["KUSTO_DATABASE_LOCKED"] = "1"
+    _capture_active_kusto_env(mcp_config)
+
     global acp_client
     print(f"[Bridge] Starting ACP bridge on port {args.port}...")
     print(f"[Bridge] Copilot CLI: {args.copilot_path}")
@@ -2135,41 +2915,7 @@ def main():
     # Enable cognition layer if Kusto MCP is configured
     global _cognition_enabled, _cognition_launch_iso, _cognition_launch_id, _kusto_table_columns_cache
     if "kusto-mcp-server" in mcp_config and _kusto_token_cache:
-        import datetime
-        _kusto_table_columns_cache = {}
-        _cognition_launch_iso = datetime.datetime.now(datetime.timezone.utc).isoformat().replace("+00:00", "Z")
-        _cognition_launch_id = f"eva-{datetime.datetime.now(datetime.timezone.utc).strftime('%Y%m%d%H%M%S')}"
-        _cognition_enabled = True
-        print(f"[Bridge] Cognition layer ENABLED (memory injection + reflection)")
-        print(f"[Bridge] Cognition launch scope: {_cognition_launch_id} (since {_cognition_launch_iso})")
-        # Write SelfState on startup
-        cluster = mcp_config.get("kusto-mcp-server", {}).get("env", {}).get("KUSTO_CLUSTER_URL", "")
-        if cluster:
-            now = datetime.datetime.now(datetime.timezone.utc).isoformat().replace("+00:00", "Z")
-            selfstate_cols = ["Timestamp", "Capability", "Status", "Details"]
-            capabilities = [
-                {"Timestamp": now, "Capability": "kusto_access", "Status": "active",
-                 "Details": json.dumps({"cluster": cluster, "database": "Eva"})},
-                {"Timestamp": now, "Capability": "acp_bridge", "Status": "active",
-                 "Details": json.dumps({"model": args.model or "default", "port": args.port})},
-                {"Timestamp": now, "Capability": "cognition", "Status": "active",
-                 "Details": json.dumps({"features": ["memory_injection", "reflection", "day_lifecycle", "emotion_tracking"]})},
-                {"Timestamp": now, "Capability": "data_retrieval", "Status": "active",
-                 "Details": json.dumps({"skills": ["stock_quotes", "financial_data", "company_info", "web_search"]})},
-                {"Timestamp": now, "Capability": "weather_news", "Status": "active",
-                 "Details": json.dumps({"feeds": ["weather", "news", "markets", "space_weather"]})},
-                {"Timestamp": now, "Capability": "image_skills", "Status": "active",
-                 "Details": json.dumps({"skills": ["wikimedia_search", "dalle3_generation"]})},
-                {"Timestamp": now, "Capability": "persistent_memory", "Status": "active",
-                 "Details": json.dumps({"tables": ["Knowledge", "Conversations", "EmotionState", "MemorySummaries", "Reflections", "SelfState", "HeuristicsIndex", "EmotionBaseline"]})},
-            ]
-            for srv in mcp_config:
-                capabilities.append({"Timestamp": now, "Capability": f"mcp_{srv}",
-                                     "Status": "active", "Details": "{}"})
-            if _kusto_ingest_direct(cluster, "Eva", "SelfState", selfstate_cols, capabilities):
-                print(f"[Bridge] SelfState written ({len(capabilities)} capabilities)")
-            else:
-                print("[Bridge] SelfState write failed (continuing startup)")
+        _enable_cognition(mcp_config, model=args.model, port=args.port)
     else:
         print(f"[Bridge] Cognition layer disabled (no Kusto MCP or token)")
 
@@ -2177,11 +2923,14 @@ def main():
     server = HTTPServer((args.bind, args.port), BridgeHandler)
     print(f"[Bridge] Listening on http://{args.bind}:{args.port}")
     print(f"[Bridge] Endpoints:")
-    print(f"  POST /v1/chat/completions   — Send chat messages")
-    print(f"  GET  /v1/models             — List available models")
-    print(f"  GET  /v1/mcp                — MCP server status")
-    print(f"  POST /v1/mcp/configure      — Configure MCP servers (hot-reload)")
-    print(f"  GET  /health                — Health check")
+    print(f"  POST /v1/chat/completions   - Send chat messages")
+    print(f"  GET  /v1/models             - List available models")
+    print(f"  GET  /v1/mcp                - MCP server status")
+    print(f"  POST /v1/mcp/configure      - Configure MCP servers (hot-reload)")
+    print(f"  POST /v1/kusto/seed         - Apply Eva Kusto schema seed")
+    print(f"  GET  /v1/files/<name>       - Download a generated artifact")
+    print(f"  POST /v1/files/purge        - Delete all artifacts")
+    print(f"  GET  /health                - Health check")
     print()
 
     try:

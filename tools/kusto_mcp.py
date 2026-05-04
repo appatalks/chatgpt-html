@@ -61,7 +61,7 @@ class KustoMCPServer:
                     },
                     "database": {
                         "type": "string",
-                        "description": "Database name to query. Uses KUSTO_DATABASE env if not provided."
+                        "description": "Database name to query. Uses KUSTO_DATABASE env if not provided. When KUSTO_DATABASE_LOCKED is set, this argument is ignored and KUSTO_DATABASE is used."
                     },
                     "cluster_url": {
                         "type": "string",
@@ -79,7 +79,7 @@ class KustoMCPServer:
                 "properties": {
                     "database": {
                         "type": "string",
-                        "description": "Database name. Uses KUSTO_DATABASE env if not provided."
+                        "description": "Database name. Uses KUSTO_DATABASE env if not provided. When KUSTO_DATABASE_LOCKED is set, this argument is ignored and KUSTO_DATABASE is used."
                     },
                     "cluster_url": {
                         "type": "string",
@@ -100,7 +100,7 @@ class KustoMCPServer:
                     },
                     "database": {
                         "type": "string",
-                        "description": "Database name. Uses KUSTO_DATABASE env if not provided."
+                        "description": "Database name. Uses KUSTO_DATABASE env if not provided. When KUSTO_DATABASE_LOCKED is set, this argument is ignored and KUSTO_DATABASE is used."
                     },
                     "cluster_url": {
                         "type": "string",
@@ -126,7 +126,7 @@ class KustoMCPServer:
                     },
                     "database": {
                         "type": "string",
-                        "description": "Database name. Uses KUSTO_DATABASE env if not provided."
+                        "description": "Database name. Uses KUSTO_DATABASE env if not provided. When KUSTO_DATABASE_LOCKED is set, this argument is ignored and KUSTO_DATABASE is used."
                     },
                     "cluster_url": {
                         "type": "string",
@@ -153,7 +153,7 @@ class KustoMCPServer:
                     },
                     "database": {
                         "type": "string",
-                        "description": "Database name. Uses KUSTO_DATABASE env if not provided."
+                        "description": "Database name. Uses KUSTO_DATABASE env if not provided. When KUSTO_DATABASE_LOCKED is set, this argument is ignored and KUSTO_DATABASE is used."
                     },
                     "cluster_url": {
                         "type": "string",
@@ -224,6 +224,8 @@ class KustoMCPServer:
     def __init__(self):
         self.cluster_url = os.environ.get("KUSTO_CLUSTER_URL", "")
         self.default_database = os.environ.get("KUSTO_DATABASE", "")
+        database_locked = os.environ.get("KUSTO_DATABASE_LOCKED", "").strip().lower()
+        self.database_locked = database_locked in ("1", "true", "yes")
         self._credential = None
         self._token = None
         self._lock = threading.Lock()
@@ -349,7 +351,18 @@ class KustoMCPServer:
 
     def _resolve_database(self, args):
         """Resolve database name from args or environment."""
+        if self.database_locked:
+            return self.default_database
         return args.get("database", "") or self.default_database
+
+    def _resolve_eva_database(self, args):
+        """Resolve Eva tool database while preserving locked mode."""
+        database = self._resolve_database(args)
+        if database:
+            return database, None
+        if self.database_locked:
+            return "", "Error: database name required. Set KUSTO_DATABASE in locked mode."
+        return "Eva", None
 
     def _kusto_query(self, cluster_url, database, query, is_mgmt=False):
         """Execute a Kusto query and return formatted results."""
@@ -435,6 +448,10 @@ class KustoMCPServer:
             return f"Error: {str(e)}"
 
     def _tool_list_databases(self, args):
+        if self.database_locked:
+            if not self.default_database:
+                return "Error: database name required. Set KUSTO_DATABASE in locked mode."
+            return "DatabaseName\n------------\n" + self.default_database
         cluster_url, err = self._resolve_cluster(args)
         if err:
             return err
@@ -573,7 +590,9 @@ class KustoMCPServer:
         cluster_url, err = self._resolve_cluster(args)
         if err:
             return err
-        database = self._resolve_database(args) or "Eva"
+        database, err = self._resolve_eva_database(args)
+        if err:
+            return err
         entity = args.get("entity", "")
         if not entity:
             return "Error: 'entity' parameter is required."
@@ -590,7 +609,9 @@ class KustoMCPServer:
         cluster_url, err = self._resolve_cluster(args)
         if err:
             return err
-        database = self._resolve_database(args) or "Eva"
+        database, err = self._resolve_eva_database(args)
+        if err:
+            return err
         # Get latest emotion state
         current = self._kusto_query(cluster_url, database, "EmotionState | order by Timestamp desc | take 1")
         # Get baseline
@@ -602,7 +623,9 @@ class KustoMCPServer:
         cluster_url, err = self._resolve_cluster(args)
         if err:
             return err
-        database = self._resolve_database(args) or "Eva"
+        database, err = self._resolve_eva_database(args)
+        if err:
+            return err
         try:
             limit = int(args.get("limit", 5))
         except (TypeError, ValueError):
@@ -614,7 +637,9 @@ class KustoMCPServer:
         cluster_url, err = self._resolve_cluster(args)
         if err:
             return err
-        database = self._resolve_database(args) or "Eva"
+        database, err = self._resolve_eva_database(args)
+        if err:
+            return err
         try:
             limit = int(args.get("limit", 5))
         except (TypeError, ValueError):
@@ -638,6 +663,8 @@ class KustoMCPServer:
         self._log("Kusto MCP Server starting...")
         self._log(f"Cluster: {self.cluster_url or '(not set — will use tool parameter)'}")
         self._log(f"Database: {self.default_database or '(not set — will use tool parameter)'}")
+        if self.database_locked:
+            self._log(f"Database locked to: {self.default_database or '(not set)'}")
 
         for line in sys.stdin:
             line = line.strip()

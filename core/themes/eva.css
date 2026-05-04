@@ -866,6 +866,18 @@ body.theme-eva #txtOutput {
   scroll-padding-bottom: 56px;
   padding-bottom: 56px;
 }
+/* ── Cognition badge — top-right of chat surface in Eva theme ─
+   The base style pins the badge at bottom: 56px / right: 10px,
+   which collides with the send button. Move it to the top of the
+   chat container so it's visible without overlapping input. */
+body.theme-eva .cog-badge[data-active="true"] {
+  bottom: auto;
+  top: 12px;
+  right: 16px;
+  background: rgba(153, 102, 255, 0.14);
+  color: var(--eva-accent, #c4b5fd);
+  border-color: rgba(153, 102, 255, 0.5);
+}
 /* ── Responsive ─────────────────────────────────────────────── */
 @media (max-width: 599px) {
   body.theme-eva { grid-template-columns: 1fr; padding: 0; }
