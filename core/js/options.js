@@ -153,6 +153,20 @@ function getLmStudioModel() {
   return v || 'granite-3.1-8b-instruct';
 }
 
+function getSafeBridgeBaseUrl() {
+  var fallback = 'http://localhost:8888';
+  var raw = (typeof getACPBridgeUrl === 'function') ? getACPBridgeUrl() : fallback;
+  try {
+    var parsed = new URL(raw || fallback);
+    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+      return fallback;
+    }
+    return (parsed.origin + parsed.pathname).replace(/\/+$/, '');
+  } catch (e) {
+    return fallback;
+  }
+}
+
 function applyStandaloneSimplifications() {
   if (!(typeof isEvaStandalone === 'function' && isEvaStandalone())) return;
 
@@ -1782,14 +1796,18 @@ function sanitizeForSpeech(input) {
   if (input == null) return '';
   var t = String(input);
   // Remove only well-formed HTML tags. Stray `<` characters are preserved.
-  t = t.replace(/<\/?[a-zA-Z][^>]*>/g, '');
+  var prev;
+  do {
+    prev = t;
+    t = t.replace(/<\/?[a-zA-Z][^>]*>/g, '');
+  } while (t !== prev);
   // Decode the handful of HTML entities that show up in rendered chat content.
   t = t.replace(/&nbsp;/g, ' ')
-       .replace(/&amp;/g, '&')
        .replace(/&lt;/g, '<')
        .replace(/&gt;/g, '>')
        .replace(/&quot;/g, '"')
-       .replace(/&#39;/g, "'");
+       .replace(/&#39;/g, "'")
+       .replace(/&amp;/g, '&');
   // Strip fenced code blocks (TTS reading source code is rarely useful).
   t = t.replace(/```[\s\S]*?```/g, ' ');
   // Drop inline code backticks while keeping the inner text.
@@ -2201,8 +2219,7 @@ async function renderEvaResponse(content, txtOutput) {
 
   function appendArtifactLinks() {
     if (!artifactNames.length) return;
-    var bridgeUrl = (typeof getACPBridgeUrl === 'function') ? getACPBridgeUrl() : 'http://localhost:8888';
-    bridgeUrl = bridgeUrl.replace(/\/+$/, '');
+    var bridgeUrl = getSafeBridgeBaseUrl();
     var bubbles = txtOutput.querySelectorAll('.chat-bubble.eva-bubble');
     var bubble = bubbles.length ? bubbles[bubbles.length - 1] : null;
     if (!bubble) return;

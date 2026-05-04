@@ -564,6 +564,8 @@ _kusto_database_locked = _env_truthy("KUSTO_DATABASE_LOCKED") or _env_truthy("EV
 _active_kusto_db = os.environ.get("KUSTO_DATABASE", "").strip()
 _active_kusto_cluster = os.environ.get("KUSTO_CLUSTER_URL", "").strip()
 _bridge_bind_address = "127.0.0.1"
+_LMSTUDIO_ALLOWED_PORTS = {1234, 8000, 8080, 11434}
+_HTTP_CONTENT_TYPE_RE = re.compile(r"^[A-Za-z0-9!#$&^_.+-]+/[A-Za-z0-9!#$&^_.+-]+$")
 
 
 def _is_loopback_bind():
@@ -577,6 +579,50 @@ def _valid_artifact_name(name):
         and not name.startswith(".")
         and not all(char == "." for char in name)
     )
+
+
+def _safe_content_type(value):
+    if value and _HTTP_CONTENT_TYPE_RE.fullmatch(value):
+        return value
+    return "application/octet-stream"
+
+
+def _validate_lmstudio_base_url(raw):
+    value = (raw or "").strip().rstrip("/")
+    if not value:
+        return "", "lmstudio_base_url is required"
+
+    try:
+        parsed = urllib.parse.urlparse(value)
+    except ValueError:
+        return "", "lmstudio_base_url is invalid"
+
+    if parsed.scheme not in ("http", "https"):
+        return "", "lmstudio_base_url must use http or https"
+    if parsed.username or parsed.password:
+        return "", "lmstudio_base_url must not include userinfo"
+    if parsed.query or parsed.fragment:
+        return "", "lmstudio_base_url must not include query or fragment"
+
+    host = (parsed.hostname or "").lower()
+    if host not in ("localhost", "127.0.0.1", "::1"):
+        return "", "lmstudio_base_url must point at localhost"
+
+    try:
+        port = parsed.port
+    except ValueError:
+        return "", "lmstudio_base_url port must be numeric"
+    if port not in _LMSTUDIO_ALLOWED_PORTS:
+        return "", "lmstudio_base_url port is not allowed"
+
+    if parsed.path not in ("", "/v1", "/v1/"):
+        return "", "lmstudio_base_url path must be empty or /v1"
+
+    host_for_url = host
+    if ":" in host_for_url and not host_for_url.startswith("["):
+        host_for_url = "[" + host_for_url + "]"
+    normalized_path = "/v1" if parsed.path in ("/v1", "/v1/") else ""
+    return f"{parsed.scheme}://{host_for_url}:{port}{normalized_path}", ""
 
 
 def _get_locked_kusto_database():
@@ -1806,14 +1852,15 @@ class BridgeHandler(BaseHTTPRequestHandler):
             self._json_response(404, {"error": {"message": "file not found"}})
             return
 
-        content_type = mimetypes.guess_type(requested_name)[0] or "application/octet-stream"
+        content_type = _safe_content_type(mimetypes.guess_type(requested_name)[0])
         content_length = os.path.getsize(target)
         self.send_response(200)
         self._cors_headers()
         self.send_header("Content-Type", content_type)
         self.send_header("Content-Length", str(content_length))
-        # filename is regex-validated; quote defends against future relaxation
-        self.send_header("Content-Disposition", 'attachment; filename="' + urllib.parse.quote(requested_name, safe="") + '"')
+        # Filename is regex-validated; quote and CRLF stripping defend against future relaxation.
+        quoted_name = urllib.parse.quote(requested_name, safe="").replace("\r", "").replace("\n", "")
+        self.send_header("Content-Disposition", 'attachment; filename="' + quoted_name + '"')
         self.send_header("Cache-Control", "no-store")
         self.end_headers()
         with open(target, "rb") as artifact_file:
@@ -2090,17 +2137,16 @@ class BridgeHandler(BaseHTTPRequestHandler):
             )
 
         if model_for_response == "lmstudio":
-            lms_base = (data.get("lmstudio_base_url") or "").strip().rstrip("/")
+            lms_base = (data.get("lmstudio_base_url") or "").strip()
             lms_model = (data.get("lmstudio_model") or "").strip()
             if not lms_base:
                 lms_base = "http://localhost:1234/v1"
             if not lms_model:
                 lms_model = "granite-3.1-8b-instruct"
 
-            parsed = urllib.parse.urlparse(lms_base)
-            host = (parsed.hostname or "").lower()
-            if host not in ("localhost", "127.0.0.1", "::1"):
-                self._json_response(400, {"error": {"message": "lmstudio_base_url must point at localhost"}})
+            lms_base, lms_error = _validate_lmstudio_base_url(lms_base)
+            if lms_error:
+                self._json_response(400, {"error": {"message": lms_error}})
                 return
 
             eva_system_full = eva_system
