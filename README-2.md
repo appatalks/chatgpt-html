@@ -376,6 +376,19 @@ sudo ./tools/acp_setup.sh
 - Auto-starts on boot, restarts on failure
 - Bridge auto-detected by browser on same host
 
+### Standalone (Electron AppImage)
+
+A bundled desktop build that ships the web UI and the ACP bridge together. The Electron shell allocates a free localhost port, starts the bridge, and injects the URL into the renderer via `window.evaStandalone`.
+
+```bash
+cd standalone
+npm install
+npm run dist
+./dist/'Eva Standalone-0.1.0.AppImage'
+```
+
+Host prerequisites: Node.js 24+, Python 3.12+, Copilot CLI authenticated. The AppImage hides Bark and the AWS Polly engines from the Settings panel and locks the Kusto database to the value configured in first-run setup. Build details and runtime notes are in [standalone/README.md](standalone/README.md).
+
 ### ACP Infrastructure Roadmap (tracking)
 
 Current state (2026-04-05):
