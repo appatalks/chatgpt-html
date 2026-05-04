@@ -7,6 +7,28 @@ Detailed architecture, dependencies, and implementation notes for Eva AI Assista
 > intelligent cross-model orchestration. All other models work standalone, but AIG is the
 > way Eva was designed to be used.
 
+## Providers
+
+| Provider | Models |
+|---|---|
+| Eva (AIG) | Multi-agent orchestration over GitHub Models, ACP, and LM Studio |
+| OpenAI | GPT-4o, o1, o3-mini, GPT-5-mini |
+| GitHub Copilot (PAT) | GPT-4.1, GPT-5, o4-mini, GPT-4o, DeepSeek-R1 |
+| GitHub Copilot (ACP) | Claude, Gemini 3 Pro, GPT-5.x via Copilot CLI |
+| Google Gemini | Gemini 2.0 Flash Thinking |
+| LM Studio | Any local OpenAI-compatible model |
+| DALL-E 3 | Image generation |
+
+## Highlights
+
+- Multi-agent AIG with planner, implementer, and reviewer
+- MCP tool access (Kusto, GitHub, Azure) hot-reloadable at runtime
+- Persistent memory and emotion tracking via Azure Data Explorer
+- Inline image search (Wikimedia) and generation (DALL-E 3)
+- TTS: OpenAI (default), browser, Bark, Amazon Polly
+- LCARS and Eva themes
+- Standalone Electron AppImage with bundled bridge
+
 ## Architecture
 
 ```
@@ -670,3 +692,6 @@ python3 tools/test_static.py
 # Full integration tests (requires running bridge)
 python3 tools/test_eva.py --verbose
 ```
+
+---
+Based on [CodeProject](https://www.codeproject.com/Articles/5350454/Chat-GPT-in-JavaScript). Heavily extended.
