@@ -571,6 +571,14 @@ def _is_loopback_bind():
     return bind in ("127.0.0.1", "localhost", "::1")
 
 
+def _valid_artifact_name(name):
+    return (
+        bool(re.fullmatch(r"[A-Za-z0-9._-]{1,128}", name or ""))
+        and not name.startswith(".")
+        and not all(char == "." for char in name)
+    )
+
+
 def _get_locked_kusto_database():
     if not _kusto_database_locked:
         return ""
@@ -1762,7 +1770,7 @@ class BridgeHandler(BaseHTTPRequestHandler):
         elif self.path.startswith("/v1/memory/context"):
             self._memory_context()
         elif self.path.startswith("/v1/files/"):
-            requested_name = urllib.parse.unquote(self.path.split("/v1/files/", 1)[1].split("?", 1)[0])
+            requested_name = urllib.parse.unquote(self.path.split("/v1/files/", 1)[1].split("?", 1)[0].split("#", 1)[0])
             self._serve_artifact(requested_name)
         else:
             self.send_error(404, "Not Found")
@@ -1783,19 +1791,12 @@ class BridgeHandler(BaseHTTPRequestHandler):
         else:
             self.send_error(404, "Not Found")
 
-    def _valid_artifact_name(self, name):
-        return (
-            bool(re.fullmatch(r"[A-Za-z0-9._-]{1,128}", name or ""))
-            and not name.startswith(".")
-            and not all(char == "." for char in name)
-        )
-
     def _serve_artifact(self, requested_name):
         if not _is_loopback_bind():
             self._json_response(403, {"error": {"message": "/v1/files is only available on localhost-bound bridges"}})
             return
 
-        if not self._valid_artifact_name(requested_name):
+        if not _valid_artifact_name(requested_name):
             self._json_response(400, {"error": {"message": "invalid filename"}})
             return
 
@@ -1811,7 +1812,8 @@ class BridgeHandler(BaseHTTPRequestHandler):
         self._cors_headers()
         self.send_header("Content-Type", content_type)
         self.send_header("Content-Length", str(content_length))
-        self.send_header("Content-Disposition", 'attachment; filename="' + requested_name + '"')
+        # filename is regex-validated; quote defends against future relaxation
+        self.send_header("Content-Disposition", 'attachment; filename="' + urllib.parse.quote(requested_name, safe="") + '"')
         self.send_header("Cache-Control", "no-store")
         self.end_headers()
         with open(target, "rb") as artifact_file:
@@ -1835,13 +1837,17 @@ class BridgeHandler(BaseHTTPRequestHandler):
             os.makedirs(_ARTIFACTS_DIR, exist_ok=True)
             base = os.path.realpath(_ARTIFACTS_DIR)
             for name in os.listdir(_ARTIFACTS_DIR):
-                if not self._valid_artifact_name(name):
+                if not _valid_artifact_name(name):
                     continue
-                target = os.path.realpath(os.path.join(_ARTIFACTS_DIR, name))
+                entry_path = os.path.join(_ARTIFACTS_DIR, name)
+                target = os.path.realpath(entry_path)
                 if not target.startswith(base + os.sep) or not os.path.isfile(target):
                     continue
                 try:
-                    os.remove(target)
+                    if os.path.islink(entry_path):
+                        os.unlink(entry_path)
+                    else:
+                        os.remove(entry_path)
                     purged += 1
                 except FileNotFoundError:
                     pass
