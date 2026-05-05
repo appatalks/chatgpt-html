@@ -36,6 +36,7 @@ import sys
 import threading
 import time
 import urllib.parse
+import uuid
 from http.server import HTTPServer, BaseHTTPRequestHandler
 
 # ---------------------------------------------------------------------------
@@ -566,6 +567,13 @@ _active_kusto_cluster = os.environ.get("KUSTO_CLUSTER_URL", "").strip()
 _bridge_bind_address = "127.0.0.1"
 _LMSTUDIO_ALLOWED_PORTS = {1234, 8000, 8080, 11434}
 _HTTP_CONTENT_TYPE_RE = re.compile(r"^[A-Za-z0-9!#$&^_.+-]+/[A-Za-z0-9!#$&^_.+-]+$")
+_GOAL_CATEGORIES = {"self_improvement", "knowledge_curation", "relational"}
+_GOAL_STATUSES = {"active", "paused", "done", "dropped"}
+_GOAL_COLUMNS = ["GoalId", "Title", "Description", "Category", "Status", "Priority", "RelatedTopics", "CreatedAt", "UpdatedAt"]
+_GOALS_LATEST_QUERY = (
+    "Goals | summarize arg_max(UpdatedAt, *) by GoalId "
+    "| project GoalId, Title, Description, Category, Status, Priority, RelatedTopics, CreatedAt, UpdatedAt"
+)
 
 
 def _is_loopback_bind():
@@ -937,7 +945,7 @@ def _enable_cognition(mcp_servers, model=None, port=None):
             {"Timestamp": now, "Capability": "image_skills", "Status": "active",
              "Details": json.dumps({"skills": ["wikimedia_search", "dalle3_generation"]})},
             {"Timestamp": now, "Capability": "persistent_memory", "Status": "active",
-             "Details": json.dumps({"tables": ["Knowledge", "Conversations", "EmotionState", "MemorySummaries", "Reflections", "SelfState", "HeuristicsIndex", "EmotionBaseline"]})},
+               "Details": json.dumps({"tables": ["Knowledge", "Conversations", "EmotionState", "MemorySummaries", "Reflections", "Goals", "SelfState", "HeuristicsIndex", "EmotionBaseline"]})},
         ]
         for srv in mcp_servers.keys():
             capabilities.append({"Timestamp": now, "Capability": f"mcp_{srv}",
@@ -998,7 +1006,7 @@ _ENTITY_RESERVED_TERMS = {
     "run", "show", "query", "timestamp", "schema", "table", "tables", "database", "databases",
     "count", "sum", "average", "filter", "where", "join", "project", "distinct", "take", "top",
     "execute", "save", "remember", "store", "write", "reply", "respond", "answer",
-    "kusto", "adx", "conversation", "conversations", "knowledge", "emotionstate", "reflections",
+    "kusto", "adx", "conversation", "conversations", "knowledge", "emotionstate", "reflections", "goals",
     "memorysummaries", "selfstate", "heuristicsindex", "emotionbaseline"
 }
 
@@ -1397,6 +1405,7 @@ def _build_memory_context(user_message):
         "    EmotionState (Joy, Curiosity, Concern, Trigger) — your emotional readings\n"
         "    MemorySummaries (Period, Summary) — compressed session summaries\n"
         "    Reflections (Timestamp, Trigger, Observation, ActionTaken, Effectiveness) — your self-reflections\n"
+        "    Goals (GoalId, Title, Status, Priority) - persistent intentions\n"
         "    SelfState (Capability, Status) — your active capabilities\n"
         "    HeuristicsIndex (Entity, Category, Frequency) — pattern tracking\n"
         "    EmotionBaseline (Dimension, Value) — emotional defaults\n"
@@ -1451,6 +1460,12 @@ def _build_memory_context(user_message):
         mem_lines = [f"  {k.get('Entity','?')} — {k.get('Relation','?')}: {k.get('Value','?')}"
                      for k in core_knowledge]
         context_parts.append("[Memory — Core Facts]\n" + "\n".join(mem_lines))
+
+    goals_query = _GOALS_LATEST_QUERY + " | where Status == 'active' | order by Priority desc, UpdatedAt desc | take 10"
+    goals = _kusto_query_direct(cluster, db, goals_query)
+    if goals:
+        goal_lines = [f"  [{g.get('Category','?')}] {g.get('Title','?')}: {g.get('Description','?')}" for g in goals]
+        context_parts.append("[Active Goals]\nThese are your persistent intentions. Honor them across sessions.\n" + "\n".join(goal_lines))
 
     # ── 3b. Init conversation — empty Knowledge triggers introduction ──
     if knowledge_empty:
@@ -1542,7 +1557,7 @@ def _build_memory_context(user_message):
             context_parts.append(f"[Live Data] Emotion history:\n{emo_text}")
 
     known_tables = ['Conversations', 'Knowledge', 'MemorySummaries', 'HeuristicsIndex',
-                    'SelfState', 'Reflections', 'EmotionState', 'EmotionBaseline']
+                    'SelfState', 'Reflections', 'Goals', 'EmotionState', 'EmotionBaseline']
     for tbl in known_tables:
         if tbl.lower() in msg_lower and not any('Tables in' in p for p in context_parts):
             if tbl == 'Knowledge':
@@ -1798,7 +1813,7 @@ class BridgeHandler(BaseHTTPRequestHandler):
 
     def _cors_headers(self):
         self.send_header("Access-Control-Allow-Origin", "*")
-        self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+        self.send_header("Access-Control-Allow-Methods", "GET, POST, PATCH, DELETE, OPTIONS")
         self.send_header("Access-Control-Allow-Headers", "Content-Type, Authorization")
 
     def do_OPTIONS(self):
@@ -1807,35 +1822,306 @@ class BridgeHandler(BaseHTTPRequestHandler):
         self.end_headers()
 
     def do_GET(self):
-        if self.path == "/health":
+        parsed_path = urllib.parse.urlparse(self.path).path
+        if parsed_path == "/health":
             self._health()
-        elif self.path == "/v1/models":
+        elif parsed_path == "/v1/models":
             self._models()
-        elif self.path == "/v1/mcp":
+        elif parsed_path == "/v1/mcp":
             self._mcp_status()
-        elif self.path.startswith("/v1/memory/context"):
+        elif parsed_path == "/v1/goals":
+            self._goals_list()
+        elif parsed_path == "/v1/memory/context":
             self._memory_context()
-        elif self.path.startswith("/v1/files/"):
-            requested_name = urllib.parse.unquote(self.path.split("/v1/files/", 1)[1].split("?", 1)[0].split("#", 1)[0])
+        elif parsed_path.startswith("/v1/files/"):
+            requested_name = urllib.parse.unquote(parsed_path.split("/v1/files/", 1)[1])
             self._serve_artifact(requested_name)
         else:
             self.send_error(404, "Not Found")
 
     def do_POST(self):
-        if self.path == "/v1/chat/completions":
+        parsed_path = urllib.parse.urlparse(self.path).path
+        if parsed_path == "/v1/chat/completions":
             self._chat_completions()
-        elif self.path == "/v1/mcp/configure":
+        elif parsed_path == "/v1/mcp/configure":
             self._mcp_configure()
-        elif self.path == "/v1/memory/reflect":
+        elif parsed_path == "/v1/memory/reflect":
             self._memory_reflect()
-        elif self.path == "/v1/aig/chat":
+        elif parsed_path == "/v1/aig/chat":
             self._aig_chat()
-        elif self.path == "/v1/kusto/seed":
+        elif parsed_path == "/v1/kusto/seed":
             self._kusto_seed()
-        elif self.path == "/v1/files/purge":
+        elif parsed_path == "/v1/goals":
+            self._goals_create()
+        elif parsed_path == "/v1/files/purge":
             self._purge_artifacts()
         else:
             self.send_error(404, "Not Found")
+
+    def do_PATCH(self):
+        parsed_path = urllib.parse.urlparse(self.path).path
+        if parsed_path.startswith("/v1/goals/"):
+            self._goals_patch(urllib.parse.unquote(parsed_path.split("/v1/goals/", 1)[1]))
+        else:
+            self.send_error(404, "Not Found")
+
+    def do_DELETE(self):
+        parsed_path = urllib.parse.urlparse(self.path).path
+        if parsed_path.startswith("/v1/goals/"):
+            self._goals_delete(urllib.parse.unquote(parsed_path.split("/v1/goals/", 1)[1]))
+        else:
+            self.send_error(404, "Not Found")
+
+    def _read_json_body(self):
+        try:
+            content_length = int(self.headers.get("Content-Length", 0))
+        except ValueError:
+            return None, "Invalid Content-Length"
+        if content_length == 0:
+            return None, "Empty request body"
+        try:
+            body = self.rfile.read(content_length).decode("utf-8")
+        except UnicodeDecodeError:
+            return None, "Request body must be UTF-8 JSON"
+        try:
+            data = json.loads(body)
+        except json.JSONDecodeError:
+            return None, "Invalid JSON"
+        return data, ""
+
+    def _goals_kusto_context(self):
+        cluster, db = _get_kusto_config()
+        if not cluster or not db:
+            self._json_response(503, {"error": {"message": "Kusto cluster or database not configured for the bridge"}})
+            return None, None, False
+        token_ok, token_error = _ensure_kusto_token()
+        if not token_ok:
+            message = "Kusto token unavailable"
+            if token_error:
+                # Clamp and single-line the upstream error so MSAL/device-code detail does not
+                # leak verbatim to clients. Full text is still printed to bridge stderr.
+                clean = " ".join(str(token_error).split())[:160]
+                if clean:
+                    message += ": " + clean
+                print(f"[Bridge] Kusto token error (full): {token_error}", file=sys.stderr)
+            self._json_response(503, {"error": {"message": message}})
+            return None, None, False
+        return cluster, db, True
+
+    def _validate_goal_id(self, goal_id):
+        goal_id = str(goal_id or "").strip()
+        if not re.fullmatch(r"[A-Za-z0-9-]{1,128}", goal_id):
+            return "", "goal_id is invalid"
+        return goal_id, ""
+
+    def _goal_string_field(self, data, key, max_len, required=False):
+        value = data.get(key, "")
+        if value is None:
+            value = ""
+        if not isinstance(value, str):
+            return "", key + " must be a string"
+        value = value.strip()
+        if required and not value:
+            return "", key + " is required"
+        if len(value) > max_len:
+            return "", key + " must be " + str(max_len) + " characters or fewer"
+        return value, ""
+
+    def _validate_goal_payload(self, data, creating):
+        if not isinstance(data, dict):
+            return None, "Request body must be an object"
+        allowed = {"title", "description", "category", "priority", "relatedTopics"}
+        if not creating:
+            allowed.add("status")
+        unknown = sorted(set(data.keys()) - allowed)
+        if unknown:
+            return None, "Unsupported field(s): " + ", ".join(unknown)
+        if creating:
+            for field in ("title", "category", "priority"):
+                if field not in data:
+                    return None, field + " is required"
+        elif not data:
+            return None, "At least one field is required"
+
+        row = {}
+        if creating or "title" in data:
+            title, error = self._goal_string_field(data, "title", 200, required=True)
+            if error:
+                return None, error
+            row["Title"] = title
+        if creating or "description" in data:
+            description, error = self._goal_string_field(data, "description", 2000, required=False)
+            if error:
+                return None, error
+            row["Description"] = description
+        if creating or "category" in data:
+            category, error = self._goal_string_field(data, "category", 64, required=True)
+            if error:
+                return None, error
+            if category not in _GOAL_CATEGORIES:
+                return None, "category must be one of self_improvement, knowledge_curation, relational"
+            row["Category"] = category
+        if creating or "priority" in data:
+            priority = data.get("priority")
+            if isinstance(priority, bool) or not isinstance(priority, int):
+                return None, "priority must be an integer"
+            if priority < 0 or priority > 100:
+                return None, "priority must be between 0 and 100"
+            row["Priority"] = priority
+        if "status" in data:
+            status, error = self._goal_string_field(data, "status", 32, required=True)
+            if error:
+                return None, error
+            if status not in _GOAL_STATUSES:
+                return None, "status must be one of active, paused, done, dropped"
+            row["Status"] = status
+        if creating or "relatedTopics" in data:
+            topics, error = self._goal_string_field(data, "relatedTopics", 1000, required=False)
+            if error:
+                return None, error
+            row["RelatedTopics"] = topics
+        return row, ""
+
+    def _goal_now(self):
+        import datetime
+        return datetime.datetime.now(datetime.timezone.utc).isoformat(timespec="seconds").replace("+00:00", "Z")
+
+    def _goal_latest_by_id(self, cluster, db, goal_id):
+        safe_goal_id = goal_id.replace("'", "''")
+        query = _GOALS_LATEST_QUERY + f" | where GoalId == '{safe_goal_id}' | take 1"
+        rows = _kusto_query_direct(cluster, db, query)
+        if rows is None:
+            return None, "Goals query failed"
+        if not rows:
+            return {}, ""
+        return rows[0], ""
+
+    def _goal_row_from_current(self, current, goal_id, now):
+        row = {col: current.get(col, "") for col in _GOAL_COLUMNS}
+        row["GoalId"] = goal_id
+        if not row.get("CreatedAt"):
+            row["CreatedAt"] = now
+        if not row.get("Status"):
+            row["Status"] = "active"
+        try:
+            row["Priority"] = int(row.get("Priority", 0) or 0)
+        except (TypeError, ValueError):
+            row["Priority"] = 0
+        return row
+
+    def _write_goal_row(self, cluster, db, row):
+        return _kusto_ingest_direct(cluster, db, "Goals", _GOAL_COLUMNS, [row])
+
+    def _goals_list(self):
+        cluster, db, ok = self._goals_kusto_context()
+        if not ok:
+            return
+        query = _GOALS_LATEST_QUERY + " | order by Priority desc, UpdatedAt desc"
+        goals = _kusto_query_direct(cluster, db, query)
+        if goals is None:
+            self._json_response(500, {"error": {"message": "Goals query failed"}})
+            return
+        self._json_response(200, {"goals": goals})
+
+    def _goals_create(self):
+        if not _is_loopback_bind():
+            self._json_response(403, {"error": {"message": "goals mutations are restricted to loopback bind"}})
+            return
+
+        cluster, db, ok = self._goals_kusto_context()
+        if not ok:
+            return
+        data, error = self._read_json_body()
+        if error:
+            self._json_response(400, {"error": {"message": error}})
+            return
+        fields, error = self._validate_goal_payload(data, creating=True)
+        if error:
+            self._json_response(400, {"error": {"message": error}})
+            return
+
+        now = self._goal_now()
+        row = {
+            "GoalId": str(uuid.uuid4()),
+            "Title": fields.get("Title", ""),
+            "Description": fields.get("Description", ""),
+            "Category": fields.get("Category", ""),
+            "Status": "active",
+            "Priority": fields.get("Priority", 0),
+            "RelatedTopics": fields.get("RelatedTopics", ""),
+            "CreatedAt": now,
+            "UpdatedAt": now,
+        }
+        if not self._write_goal_row(cluster, db, row):
+            self._json_response(500, {"error": {"message": "Goal write failed"}})
+            return
+        self._json_response(201, {"goal": row})
+
+    def _goals_patch(self, raw_goal_id):
+        if not _is_loopback_bind():
+            self._json_response(403, {"error": {"message": "goals mutations are restricted to loopback bind"}})
+            return
+
+        cluster, db, ok = self._goals_kusto_context()
+        if not ok:
+            return
+        goal_id, error = self._validate_goal_id(raw_goal_id)
+        if error:
+            self._json_response(400, {"error": {"message": error}})
+            return
+        data, error = self._read_json_body()
+        if error:
+            self._json_response(400, {"error": {"message": error}})
+            return
+        fields, error = self._validate_goal_payload(data, creating=False)
+        if error:
+            self._json_response(400, {"error": {"message": error}})
+            return
+        current, error = self._goal_latest_by_id(cluster, db, goal_id)
+        if error:
+            self._json_response(500, {"error": {"message": error}})
+            return
+        if not current:
+            self._json_response(404, {"error": {"message": "Goal not found"}})
+            return
+
+        now = self._goal_now()
+        row = self._goal_row_from_current(current, goal_id, now)
+        row.update(fields)
+        row["UpdatedAt"] = now
+        if not self._write_goal_row(cluster, db, row):
+            self._json_response(500, {"error": {"message": "Goal write failed"}})
+            return
+        self._json_response(200, {"goal": row})
+
+    def _goals_delete(self, raw_goal_id):
+        if not _is_loopback_bind():
+            self._json_response(403, {"error": {"message": "goals mutations are restricted to loopback bind"}})
+            return
+
+        cluster, db, ok = self._goals_kusto_context()
+        if not ok:
+            return
+        goal_id, error = self._validate_goal_id(raw_goal_id)
+        if error:
+            self._json_response(400, {"error": {"message": error}})
+            return
+        current, error = self._goal_latest_by_id(cluster, db, goal_id)
+        if error:
+            self._json_response(500, {"error": {"message": error}})
+            return
+        if not current:
+            self._json_response(404, {"error": {"message": "Goal not found"}})
+            return
+
+        now = self._goal_now()
+        row = self._goal_row_from_current(current, goal_id, now)
+        row["Status"] = "dropped"
+        row["UpdatedAt"] = now
+        if not self._write_goal_row(cluster, db, row):
+            self._json_response(500, {"error": {"message": "Goal write failed"}})
+            return
+        self._json_response(200, {"goal": row, "status": "dropped"})
 
     def _serve_artifact(self, requested_name):
         if not _is_loopback_bind():
@@ -2061,7 +2347,7 @@ class BridgeHandler(BaseHTTPRequestHandler):
             r'\b(latest|recent|rows?|records?)\b',
             msg_lower
         )) and bool(_re.search(
-            r'\b(table|reflections|conversations|knowledge|selfstate|emotionstate|memorysummaries|heuristicsindex|emotionbaseline)\b',
+            r'\b(table|reflections|goals|conversations|knowledge|selfstate|emotionstate|memorysummaries|heuristicsindex|emotionbaseline)\b',
             msg_lower
         )) and needs_acp_tools
 
@@ -2927,6 +3213,10 @@ def main():
     print(f"  GET  /v1/models             - List available models")
     print(f"  GET  /v1/mcp                - MCP server status")
     print(f"  POST /v1/mcp/configure      - Configure MCP servers (hot-reload)")
+    print(f"  GET  /v1/goals              - List Kusto-backed goals")
+    print(f"  POST /v1/goals              - Create a Kusto-backed goal")
+    print(f"  PATCH /v1/goals/<id>        - Update a Kusto-backed goal")
+    print(f"  DELETE /v1/goals/<id>       - Soft-delete a Kusto-backed goal")
     print(f"  POST /v1/kusto/seed         - Apply Eva Kusto schema seed")
     print(f"  GET  /v1/files/<name>       - Download a generated artifact")
     print(f"  POST /v1/files/purge        - Delete all artifacts")

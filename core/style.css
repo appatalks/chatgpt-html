@@ -233,6 +233,26 @@ body {
     body.theme-lcars .mcp-status { background: rgba(0,0,0,0.3); color: #d0defa; }
     body.theme-lcars .mcp-badge { background: var(--ld-alpha-blue); }
 
+    /* Goals tab */
+    .goals-toolbar { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; }
+    .goals-toolbar .auth-save { width: auto; margin-top: 0; }
+    .goals-list { display: grid; gap: 8px; }
+    .goal-row { border: 1px solid #ddd; border-radius: 8px; padding: 10px 12px; background: #f9f9f9; text-align: left; }
+    .goal-row-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; }
+    .goal-title { font-weight: 700; color: #333; overflow-wrap: anywhere; }
+    .goal-meta { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; font-size: 12px; color: #666; }
+    .goal-badge { display: inline-flex; align-items: center; padding: 2px 7px; border-radius: 999px; background: #e7f0ff; color: #0d47a1; font-weight: 600; }
+    .goal-description { margin-top: 7px; font-size: 13px; line-height: 1.4; color: #444; white-space: pre-wrap; overflow-wrap: anywhere; }
+    .goal-actions { display: flex; gap: 6px; flex-shrink: 0; }
+    .goal-actions .auth-toggle { padding: 4px 8px; }
+    .goals-grid { display: grid; grid-template-columns: 1fr 120px; gap: 10px; }
+    .goals-form-actions { display: flex; gap: 8px; margin-top: 10px; }
+    .goals-form-actions .auth-save { width: auto; margin-top: 0; }
+    body.theme-lcars .goal-row { background: rgba(255,255,255,0.05); border-color: rgba(255,255,255,0.15); }
+    body.theme-lcars .goal-title { color: #eef5ff; }
+    body.theme-lcars .goal-meta, body.theme-lcars .goal-description { color: #d0defa; }
+    body.theme-lcars .goal-badge { background: var(--ld-alpha-blue); color: #fff; }
+
     .auth-save {
       margin-top: 16px;
       padding: 10px 20px;

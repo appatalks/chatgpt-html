@@ -174,6 +174,7 @@
       <button class="settings-tab" data-stab="models" role="tab">Models</button>
       <button class="settings-tab" data-stab="auth" role="tab">Auth</button>
       <button class="settings-tab" data-stab="prompts" role="tab">Prompts</button>
+      <button class="settings-tab" data-stab="goals" role="tab">Goals</button>
       <button class="settings-tab" data-stab="mcp" role="tab">MCP</button>
     </div>
     <div class="settings-body">
@@ -213,6 +214,7 @@
         <div class="auth-note" style="margin:0">
           <strong>About</strong><br>
           Eva AI Assistant <span id="evaAppVersion">v5.2.1</span><br>
+          <span>Active goals: <span id="evaActiveGoalsCount">0</span></span><br>
           <span id="evaStandaloneVersion" style="display:none"></span>
         </div>
       </div>
@@ -466,6 +468,57 @@
         <label for="txtSystemPrompt">System / Developer Prompt:</label>
         <textarea id="txtSystemPrompt" rows="8" placeholder="Enter custom system instructions..."></textarea>
         <p class="prompt-hint">This prompt is sent as the system/developer message to the AI. Select a preset above or write your own.</p>
+      </div>
+
+      <!-- Goals Tab -->
+      <div class="settings-panel" data-stab="goals">
+        <div class="goals-toolbar">
+          <button type="button" class="auth-save" id="goalsNewButton">New goal</button>
+          <button type="button" class="auth-toggle" id="goalsRefreshButton">Refresh</button>
+        </div>
+
+        <div id="goalsStatus" class="mcp-status" aria-live="polite"></div>
+
+        <div id="goalsForm" class="mcp-preset goals-form" style="display:none">
+          <input type="hidden" id="goalEditId">
+          <div class="auth-field">
+            <label for="goalTitle">Title:</label>
+            <input type="text" id="goalTitle" maxlength="200" autocomplete="off">
+          </div>
+          <div class="auth-field">
+            <label for="goalDescription">Description:</label>
+            <textarea id="goalDescription" rows="4" maxlength="2000"></textarea>
+          </div>
+          <div class="goals-grid">
+            <div>
+              <label for="goalCategory">Category:</label>
+              <select id="goalCategory">
+                <option value="self_improvement">Self improvement</option>
+                <option value="knowledge_curation">Knowledge curation</option>
+                <option value="relational">Relational</option>
+              </select>
+            </div>
+            <div>
+              <label for="goalPriority">Priority:</label>
+              <input type="number" id="goalPriority" min="0" max="100" step="1" value="50">
+            </div>
+          </div>
+          <div id="goalStatusField" class="auth-field" style="display:none">
+            <label for="goalStatusSelect">Status:</label>
+            <select id="goalStatusSelect">
+              <option value="active">Active</option>
+              <option value="paused">Paused</option>
+              <option value="done">Done</option>
+              <option value="dropped">Dropped</option>
+            </select>
+          </div>
+          <div class="goals-form-actions">
+            <button type="button" class="auth-save" id="goalsSaveButton">Save goal</button>
+            <button type="button" class="auth-toggle" id="goalsCancelButton">Cancel</button>
+          </div>
+        </div>
+
+        <div id="goalsList" class="goals-list"></div>
       </div>
 
       <!-- MCP Tab -->

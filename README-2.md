@@ -298,7 +298,13 @@ Options:
 | `/v1/models` | GET | — | Available models list |
 | `/v1/mcp` | GET | — | Active MCP servers and presets (secrets redacted) |
 | `/v1/mcp/configure` | POST | `{"mcp_servers":{...}}` | Restarts copilot with new MCP config |
+| `/v1/goals` | GET | none | List Kusto-backed goals, any status |
+| `/v1/goals` | POST | `{"title":"...", "description":"...", "category":"relational", "priority":50, "relatedTopics":"..."}` | Create an active goal |
+| `/v1/goals/<goal_id>` | PATCH | Any subset of goal fields | Update a goal by appending a latest Kusto row |
+| `/v1/goals/<goal_id>` | DELETE | none | Soft-delete a goal by setting status to `dropped` |
 | `/health` | GET | — | Status, session ID, model, MCP servers |
+
+POST/PATCH/DELETE require loopback bind; GET is read-only on any bind.
 
 ### Security
 
@@ -324,6 +330,7 @@ Custom MCP server implementing the [Model Context Protocol](https://modelcontext
 | `eva_recall_knowledge` | `entity`, `limit?` | Recall facts about an entity |
 | `eva_get_emotion_state` | — | Get Eva's current emotion + baseline |
 | `eva_get_recent_reflections` | `limit?` | Get Eva's self-reflections |
+| `eva_get_active_goals` | `category?`, `limit?` | Get active long-term goals |
 
 ### Authentication
 
@@ -335,7 +342,7 @@ Token cache: `~/.azure/msal_token_cache.json` (persists across restarts, ~90 day
 
 ## Settings Panel
 
-Five tabs in a modal overlay:
+Six tabs in a modal overlay:
 
 | Tab | Contents |
 |---|---|
@@ -343,6 +350,7 @@ Five tabs in a modal overlay:
 | **Models** | Model selector (grouped by provider), temperature, max tokens, reasoning effort, AIG backend selector, ACP model selector, and the **Cognitive Layer** controls (toggle, three role-specific model selectors, max review cycles, editable per-agent system prompts, debug trace) |
 | **Auth** | API key inputs with show/hide toggles, ACP bridge URL. Keys stored in localStorage, override config.json |
 | **Prompts** | Personality presets (Default/Concise/Advanced/Terminal/Custom), editable system prompt textarea |
+| **Goals** | Kusto-backed goals list, create form, edit controls, and soft-delete action through bridge endpoints |
 | **MCP** | Azure MCP, GitHub MCP, Kusto MCP toggles with config fields. Apply/refresh buttons |
 
 ## Image Handling
@@ -593,9 +601,14 @@ Injected into every AIG request as a structured system prompt section:
 | `[Workflow: Memory]` | Always | Instructions for recall |
 | `[Morning Reflection]` | First msg of day | `MemorySummaries` (latest 3) |
 | `[Memory — Core Facts]` | Always | `Knowledge` where Confidence ≥ 0.6 (top 10) |
+| `[Active Goals]` | Always when present | `Goals` where Status is `active` (top 10) |
 | `[Emotion State]` | Always | Latest `EmotionState` row |
 | `[Memory — Relevant]` | On keyword match | `Knowledge` matching user words |
 | `[Live Data]` | On intent detection | Various tables, queried on-demand |
+
+### Goals
+
+Goals are persistent intentions stored in the Kusto `Goals` table. The bridge injects active goals into `_build_memory_context` after core facts so they influence prompting across sessions. Add or edit them from Settings > Goals, which calls the bridge `/v1/goals` endpoints; writes stay outside MCP so the user approves each change.
 
 ### Post-Response Reflection (`_post_response_reflection`)
 

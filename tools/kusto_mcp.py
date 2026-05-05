@@ -203,6 +203,23 @@ class KustoMCPServer:
             }
         },
         {
+            "name": "eva_get_active_goals",
+            "description": "Get Eva's currently active long-term goals from the Goals table. These are persistent intentions that should influence her behavior across sessions.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "category": {
+                        "type": "string",
+                        "description": "Optional filter: self_improvement | knowledge_curation | relational"
+                    },
+                    "limit": {
+                        "type": "integer",
+                        "description": "Max goals to return (default 20)"
+                    }
+                }
+            }
+        },
+        {
             "name": "eva_get_memory_summary",
             "description": "Get the latest memory summaries from the MemorySummaries table — periodic summaries of conversations and learned information.",
             "inputSchema": {
@@ -440,6 +457,8 @@ class KustoMCPServer:
                 return self._tool_eva_get_emotion_state(args)
             elif name == "eva_get_recent_reflections":
                 return self._tool_eva_get_recent_reflections(args)
+            elif name == "eva_get_active_goals":
+                return self._tool_eva_get_active_goals(args)
             elif name == "eva_get_memory_summary":
                 return self._tool_eva_get_memory_summary(args)
             else:
@@ -523,7 +542,7 @@ class KustoMCPServer:
 
         # Allowed tables for write operations (safety guard)
         allowed_tables = {"Knowledge", "Conversations", "EmotionState", "EmotionBaseline",
-                          "HeuristicsIndex", "MemorySummaries", "SelfState", "Reflections"}
+                  "HeuristicsIndex", "MemorySummaries", "SelfState", "Reflections", "Goals"}
         if table not in allowed_tables:
             return f"Error: Table '{table}' is not in the allowed write list: {', '.join(sorted(allowed_tables))}"
 
@@ -631,6 +650,29 @@ class KustoMCPServer:
         except (TypeError, ValueError):
             limit = 5
         return self._kusto_query(cluster_url, database, f"Reflections | order by Timestamp desc | take {limit}")
+
+    def _tool_eva_get_active_goals(self, args):
+        """Get active long-term goals."""
+        cluster_url, err = self._resolve_cluster(args)
+        if err:
+            return err
+        database, err = self._resolve_eva_database(args)
+        if err:
+            return err
+        try:
+            limit = int(args.get("limit", 20))
+        except (TypeError, ValueError):
+            limit = 20
+        category = str(args.get("category", "") or "").strip()
+        allowed_categories = {"self_improvement", "knowledge_curation", "relational"}
+        if category and category not in allowed_categories:
+            return "Error: category must be one of self_improvement, knowledge_curation, relational."
+        query = "Goals | summarize arg_max(UpdatedAt, *) by GoalId | where Status == 'active'"
+        if category:
+            safe_category = category.replace("'", "''")
+            query += f" | where Category == '{safe_category}'"
+        query += f" | order by Priority desc, UpdatedAt desc | take {limit}"
+        return self._kusto_query(cluster_url, database, query)
 
     def _tool_eva_get_memory_summary(self, args):
         """Get memory summaries."""

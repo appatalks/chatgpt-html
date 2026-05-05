@@ -327,7 +327,7 @@ def test_seed_file():
 
     # Must contain table creation commands
     required_tables = ["SelfState", "Knowledge", "Conversations", "EmotionState",
-                       "HeuristicsIndex", "MemorySummaries", "Reflections", "EmotionBaseline"]
+                       "HeuristicsIndex", "MemorySummaries", "Reflections", "Goals", "EmotionBaseline"]
     for tbl in required_tables:
         if f".create-merge table {tbl}" in content or f".create table {tbl}" in content:
             report(f"seed_table:{tbl}", True)
@@ -340,6 +340,31 @@ def test_seed_file():
             report("seed_no_secrets", False, f"pattern {pattern} found")
             return
     report("seed_no_secrets", True)
+
+
+def test_goals_static_contract():
+    """Goals schema and MCP read contract are wired."""
+    seed_path = "tools/eva_seed.kql"
+    mcp_path = "tools/kusto_mcp.py"
+    if not os.path.isfile(seed_path):
+        report("goals_seed_file", None, "tools/eva_seed.kql not found")
+        return
+    if not os.path.isfile(mcp_path):
+        report("goals_mcp_file", None, "tools/kusto_mcp.py not found")
+        return
+
+    with open(seed_path) as f:
+        seed = f.read()
+    with open(mcp_path) as f:
+        mcp = f.read()
+
+    report("goals_seed_table", ".create-merge table Goals" in seed,
+           "missing Goals table" if ".create-merge table Goals" not in seed else "")
+    allowed_match = re.search(r"allowed_tables\s*=\s*\{[^}]*\"Goals\"", mcp, re.DOTALL)
+    report("goals_allowed_tables", allowed_match is not None,
+           "Goals missing from allowed_tables" if allowed_match is None else "")
+    report("goals_active_tool_method", "def _tool_eva_get_active_goals" in mcp,
+           "missing _tool_eva_get_active_goals" if "def _tool_eva_get_active_goals" not in mcp else "")
 
 
 # ═══════════════════════════════════════════════════════════════════
@@ -359,6 +384,7 @@ def main():
         ("HTML Model Selector", [test_model_selector]),
         ("JS Routing Functions", [test_js_routing_functions]),
         ("Seed File", [test_seed_file]),
+        ("Goals Static Contract", [test_goals_static_contract]),
     ]
 
     for name, tests in sections:

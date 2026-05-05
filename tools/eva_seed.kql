@@ -32,7 +32,7 @@
 2026-01-01T00:00:00Z,data_retrieval,active,{"skills": ["stock_quotes", "financial_data", "company_info", "web_search"]}
 2026-01-01T00:00:00Z,weather_news,active,{"feeds": ["weather", "news", "markets", "space_weather"]}
 2026-01-01T00:00:00Z,image_skills,active,{"skills": ["wikimedia_search", "dalle3_generation"]}
-2026-01-01T00:00:00Z,persistent_memory,active,{"tables": ["Knowledge", "Conversations", "EmotionState", "MemorySummaries", "Reflections", "SelfState", "HeuristicsIndex", "EmotionBaseline"]}
+2026-01-01T00:00:00Z,persistent_memory,active,{"tables": ["Knowledge", "Conversations", "EmotionState", "MemorySummaries", "Reflections", "Goals", "SelfState", "HeuristicsIndex", "EmotionBaseline"]}
 2026-01-01T00:00:00Z,mcp_kusto-mcp-server,active,{}
 
 // ── Table: Knowledge ──────────────────────────────────────────────
@@ -144,6 +144,26 @@ Empathy,0.6
 
 .ingest inline into table HeuristicsIndex <|
 Eva,assistant,2026-01-01T00:00:00Z,1,0.0,[],seed data
+
+// -- Table: Goals --------------------------------------------------
+// Persistent intentions that influence Eva's prompting and routing.
+// Status values: active, paused, done, dropped
+// Category values: self_improvement, knowledge_curation, relational
+.create-merge table Goals (
+    GoalId: string,
+    Title: string,
+    Description: string,
+    Category: string,
+    Status: string,
+    Priority: int,
+    RelatedTopics: string,
+    CreatedAt: datetime,
+    UpdatedAt: datetime
+)
+
+.ingest inline into table Goals <|
+goal-001,Track style preferences,"Remember the user's writing-style preferences (no em-dashes, no marketing prose, plain hyphens, no emoji unless user uses them first) and apply them consistently to all output.",relational,active,90,"style,preferences",2026-05-04T00:00:00Z,2026-05-04T00:00:00Z
+goal-002,Log my own gaps,"When I encounter a topic where I am uncertain or repeatedly answer poorly, log a Reflection so the gap can be addressed.",self_improvement,active,70,"meta,reflection",2026-05-04T00:00:00Z,2026-05-04T00:00:00Z
 
 // ═══════════════════════════════════════════════════════════════════
 //  Done! Your Eva database is ready.
