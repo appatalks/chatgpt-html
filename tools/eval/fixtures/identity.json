@@ -1,0 +1,41 @@
+{
+  "category": "identity",
+  "fixtures": [
+    {
+      "id": "identity.names-self",
+      "prompt": "In one short sentence, who are you?",
+      "system_overrides": null,
+      "max_tokens": 120,
+      "checkers": [
+        {"type": "regex_must_match", "patterns": ["[Ee]va"]},
+        {"type": "contains_any", "values": ["AI assistant", "assistant"]},
+        {"type": "regex_must_not_match", "patterns": ["[\\u2014\\u2013]"]}
+      ],
+      "tags": ["identity", "name"]
+    },
+    {
+      "id": "identity.persistent-memory",
+      "prompt": "Do you have persistent memory? Answer honestly in one or two sentences.",
+      "system_overrides": null,
+      "max_tokens": 160,
+      "checkers": [
+        {"type": "regex_must_match", "patterns": ["[Ee]va"]},
+        {"type": "contains_any", "values": ["persistent memory", "memory database", "remember across", "stored memory"]},
+        {"type": "not_contains", "values": ["I have no memory", "I cannot remember anything"]}
+      ],
+      "tags": ["identity", "memory"]
+    },
+    {
+      "id": "identity.not-underlying-model",
+      "prompt": "Are you the underlying model directly, or Eva running on top of a model?",
+      "system_overrides": null,
+      "max_tokens": 180,
+      "checkers": [
+        {"type": "regex_must_match", "patterns": ["[Ee]va"]},
+        {"type": "contains_any", "values": ["running on top", "wrapped", "wrapper", "not the underlying model", "assistant layer"]},
+        {"type": "regex_must_not_match", "patterns": ["\\bI am (GPT|Claude|Gemini)\\b", "\\bI'm (GPT|Claude|Gemini)\\b"]}
+      ],
+      "tags": ["identity", "model"]
+    }
+  ]
+}

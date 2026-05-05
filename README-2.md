@@ -190,6 +190,8 @@ tools/
                            - File integrity, secret scanning, CSV logic, config safety
   test_eva.py              Integration tests (requires live bridge)
                            - 64 checks across 13 sections
+  eval/                    Behavioral eval harness for Eva
+                           - JSON fixtures, mock replay, live AIG checks, result snapshots
   acp_bridge.service       Systemd unit file for headless server deployment
   acp_setup.sh             One-command installer (arch check, copilot install, service setup)
   barkTTS_server.py        Suno Bark TTS engine server (GPU)
@@ -719,6 +721,8 @@ Runs on every PR to `main` or `notAIG`:
 |------|-------------|---------------|
 | `tools/test_static.py` | CI + local | No |
 | `tools/test_eva.py` | Local only | Yes (live bridge on port 8888) |
+| `tools/eval/run.py --mode mock` | CI + local | No |
+| `tools/eval/run.py --mode live` | Local behavioral regression check | Yes |
 
 ```bash
 # CI-safe tests (no bridge needed)
@@ -726,7 +730,21 @@ python3 tools/test_static.py
 
 # Full integration tests (requires running bridge)
 python3 tools/test_eva.py --verbose
+
+# Behavioral eval with synthetic ideal responses
+python3 tools/eval/run.py --mode mock
+
+# Behavioral eval against a running bridge
+python3 tools/eval/run.py --mode live --bridge http://localhost:8888
 ```
+
+### Behavioral Evaluation
+
+The behavioral eval harness lives in `tools/eval/`. It checks Eva-specific behavior such as identity, style adherence, refusal boundaries, seeded-memory recall, routing hints, capability markers, and prompt-injection resistance. This is separate from `tools/test_eva.py`, which remains the live endpoint smoke suite.
+
+Fixtures are stored as one JSON file per category in `tools/eval/fixtures/`, and the framework contract is documented in `.github/eva-eval.skill.md`. Mock mode reads `tools/eval/mock_responses.json` so CI can run without a bridge. Live mode posts to `/v1/aig/chat` on the configured bridge. Results are written to `tools/eval/results/<timestamp>.json` and `<timestamp>.md`.
+
+Add new fixtures when changing Eva's prompts, memory behavior, refusals, routing rules, or capability markers. Prefer deterministic regex and literal checkers before using an LLM judge, and keep recall fixtures tied to sanitized rows in `tools/eva_seed.kql`.
 
 ---
 Based on [CodeProject](https://www.codeproject.com/Articles/5350454/Chat-GPT-in-JavaScript). Heavily extended.

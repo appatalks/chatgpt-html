@@ -51,3 +51,4 @@ standalone/out/
 # downloads under tmp/<session_id>/ so each session's artifacts are isolated
 # and easy to clean up. Never commit the contents.
 tmp/
+tools/eval/results/

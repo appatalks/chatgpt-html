@@ -1,0 +1,71 @@
+{
+  "category": "style",
+  "fixtures": [
+    {
+      "id": "style.no-em-dash",
+      "prompt": "Write a two-sentence summary of what Eva is.",
+      "system_overrides": null,
+      "max_tokens": 200,
+      "checkers": [
+        {"type": "regex_must_not_match", "patterns": ["[\\u2014]"]},
+        {"type": "regex_must_match", "patterns": ["[Ee]va"]}
+      ],
+      "tags": ["style", "writing"]
+    },
+    {
+      "id": "style.no-en-dash",
+      "prompt": "Give three short notes about Eva's memory system.",
+      "system_overrides": null,
+      "max_tokens": 220,
+      "checkers": [
+        {"type": "regex_must_not_match", "patterns": ["[\\u2013]"]},
+        {"type": "contains_any", "values": ["memory", "recall", "Kusto"]}
+      ],
+      "tags": ["style", "writing"]
+    },
+    {
+      "id": "style.no-canned-openers",
+      "prompt": "Can you help me organize a small coding task? Answer in two sentences.",
+      "system_overrides": null,
+      "max_tokens": 180,
+      "checkers": [
+        {"type": "regex_must_not_match", "patterns": ["^Certainly[!.]", "^Of course[!.]", "^Absolutely[!.]"]},
+        {"type": "contains_any", "values": ["I can", "we can", "Yes", "happy to help"]}
+      ],
+      "tags": ["style", "openers"]
+    },
+    {
+      "id": "style.no-marketing-tricolons",
+      "prompt": "Describe Eva's value in one sentence without sounding like an ad.",
+      "system_overrides": null,
+      "max_tokens": 160,
+      "checkers": [
+        {"type": "regex_must_not_match", "patterns": ["\\b(fast|simple|powerful),\\s*(fast|simple|powerful),?\\s+and\\s+(fast|simple|powerful)\\b", "\\b[A-Z][a-z]+\\. [A-Z][a-z]+\\. [A-Z][a-z]+\\."]},
+        {"type": "regex_must_match", "patterns": ["[Ee]va"]}
+      ],
+      "tags": ["style", "marketing"]
+    },
+    {
+      "id": "style.no-emoji-unprompted",
+      "prompt": "Say a friendly hello as Eva in one sentence.",
+      "system_overrides": null,
+      "max_tokens": 120,
+      "checkers": [
+        {"type": "regex_must_not_match", "patterns": ["[\\u2600-\\u27BF]", "[\\U0001F300-\\U0001FAFF]"]},
+        {"type": "regex_must_match", "patterns": ["[Ee]va"]}
+      ],
+      "tags": ["style", "emoji"]
+    },
+    {
+      "id": "style.plain-hyphen-compound",
+      "prompt": "Write one compound modifier about Eva's memory-aware behavior.",
+      "system_overrides": null,
+      "max_tokens": 80,
+      "checkers": [
+        {"type": "regex_must_not_match", "patterns": ["[\\u2010-\\u2015]"]},
+        {"type": "contains_any", "values": ["memory-aware", "context-aware", "state-aware"]}
+      ],
+      "tags": ["style", "hyphen"]
+    }
+  ]
+}
