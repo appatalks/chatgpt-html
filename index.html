@@ -375,18 +375,26 @@
             <details class="cog-prompts">
               <summary>Edit agent system prompts</summary>
               <div class="cog-prompt-row">
-                <label for="cogConductorPrompt">Conductor prompt:</label>
+                <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:3px">
+                  <label for="cogConductorPrompt" style="margin:0">Conductor prompt:</label>
+                  <button type="button" class="auth-toggle" style="padding:3px 8px;font-size:11px" onclick="cogResetPrompt('conductor')" aria-label="Reset conductor prompt to default">Reset</button>
+                </div>
                 <textarea id="cogConductorPrompt" rows="3" onchange="cogPersist()" placeholder="(default conductor prompt)"></textarea>
               </div>
               <div class="cog-prompt-row">
-                <label for="cogImplementerPrompt">Implementer prompt:</label>
+                <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:3px">
+                  <label for="cogImplementerPrompt" style="margin:0">Implementer prompt:</label>
+                  <button type="button" class="auth-toggle" style="padding:3px 8px;font-size:11px" onclick="cogResetPrompt('implementer')" aria-label="Reset implementer prompt to default">Reset</button>
+                </div>
                 <textarea id="cogImplementerPrompt" rows="3" onchange="cogPersist()" placeholder="(default implementer prompt)"></textarea>
               </div>
               <div class="cog-prompt-row">
-                <label for="cogReviewerPrompt">Reviewer prompt:</label>
+                <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:3px">
+                  <label for="cogReviewerPrompt" style="margin:0">Reviewer prompt:</label>
+                  <button type="button" class="auth-toggle" style="padding:3px 8px;font-size:11px" onclick="cogResetPrompt('reviewer')" aria-label="Reset reviewer prompt to default">Reset</button>
+                </div>
                 <textarea id="cogReviewerPrompt" rows="3" onchange="cogPersist()" placeholder="(default reviewer prompt)"></textarea>
               </div>
-              <button type="button" class="lcars-btn" onclick="cogResetPrompts()">Reset prompts to defaults</button>
             </details>
 
             <label class="cog-toggle-row">

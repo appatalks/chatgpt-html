@@ -526,6 +526,13 @@
     return parts.join('');
   }
 
+  global.EvaCognition = global.EvaCognition || {};
+  global.EvaCognition.DEFAULT_PROMPTS = {
+    conductor: DEFAULT_PROMPTS.conductor,
+    implementer: DEFAULT_PROMPTS.implementer,
+    reviewer: DEFAULT_PROMPTS.reviewer
+  };
+
   global.Cognition = {
     run: run,
     isEnabled: isEnabled,

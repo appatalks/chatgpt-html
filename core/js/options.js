@@ -1156,6 +1156,28 @@ function _cogPopulateModelSelect(targetId) {
   });
 }
 
+var COG_PROMPT_FIELDS = {
+  conductor: { id: 'cogConductorPrompt', key: 'cogConductorPrompt', cfgKey: 'conductorPrompt' },
+  implementer: { id: 'cogImplementerPrompt', key: 'cogImplementerPrompt', cfgKey: 'implementerPrompt' },
+  reviewer: { id: 'cogReviewerPrompt', key: 'cogReviewerPrompt', cfgKey: 'reviewerPrompt' }
+};
+
+function _cogPromptDefault(role) {
+  var defaults = (window.EvaCognition && window.EvaCognition.DEFAULT_PROMPTS) ||
+    ((typeof Cognition !== 'undefined' && Cognition.DEFAULT_PROMPTS) ? Cognition.DEFAULT_PROMPTS : {});
+  return defaults[role] || '';
+}
+
+function _cogStoredPromptOrDefault(role) {
+  var field = COG_PROMPT_FIELDS[role];
+  if (!field) return '';
+  try {
+    var stored = localStorage.getItem(field.key);
+    if (stored) return stored;
+  } catch (_) {}
+  return _cogPromptDefault(role);
+}
+
 function cogInit() {
   if (typeof Cognition === 'undefined') return;
   ['cogConductorModel', 'cogImplementerModel', 'cogReviewerModel']
@@ -1168,17 +1190,9 @@ function cogInit() {
   if ($('cogImplementerModel'))  $('cogImplementerModel').value   = cfg.implementerModel;
   if ($('cogReviewerModel'))     $('cogReviewerModel').value      = cfg.reviewerModel;
   if ($('cogMaxCycles'))         $('cogMaxCycles').value          = String(cfg.maxCycles);
-  // Only seed prompt textareas when the user has stored a custom value;
-  // otherwise leave them empty so the placeholder shows the defaults are
-  // active.
-  var stored = {
-    conductor: localStorage.getItem('cogConductorPrompt'),
-    implementer: localStorage.getItem('cogImplementerPrompt'),
-    reviewer: localStorage.getItem('cogReviewerPrompt')
-  };
-  if ($('cogConductorPrompt'))   $('cogConductorPrompt').value   = stored.conductor   || '';
-  if ($('cogImplementerPrompt')) $('cogImplementerPrompt').value = stored.implementer || '';
-  if ($('cogReviewerPrompt'))    $('cogReviewerPrompt').value    = stored.reviewer    || '';
+  if ($('cogConductorPrompt'))   $('cogConductorPrompt').value   = _cogStoredPromptOrDefault('conductor');
+  if ($('cogImplementerPrompt')) $('cogImplementerPrompt').value = _cogStoredPromptOrDefault('implementer');
+  if ($('cogReviewerPrompt'))    $('cogReviewerPrompt').value    = _cogStoredPromptOrDefault('reviewer');
   cogUpdateBadge();
 }
 
@@ -1191,11 +1205,18 @@ function cogPersist() {
     conductorModel:    $('cogConductorModel')   ? $('cogConductorModel').value   : '',
     implementerModel:  $('cogImplementerModel') ? $('cogImplementerModel').value : '',
     reviewerModel:     $('cogReviewerModel')    ? $('cogReviewerModel').value    : '',
-    maxCycles:         $('cogMaxCycles')        ? $('cogMaxCycles').value        : '1',
-    conductorPrompt:   $('cogConductorPrompt')  ? $('cogConductorPrompt').value  : '',
-    implementerPrompt: $('cogImplementerPrompt')? $('cogImplementerPrompt').value: '',
-    reviewerPrompt:    $('cogReviewerPrompt')   ? $('cogReviewerPrompt').value   : ''
+    maxCycles:         $('cogMaxCycles')        ? $('cogMaxCycles').value        : '1'
   };
+  Object.keys(COG_PROMPT_FIELDS).forEach(function (role) {
+    var field = COG_PROMPT_FIELDS[role];
+    var el = $(field.id);
+    if (!el) return;
+    if (el.value === _cogPromptDefault(role)) {
+      try { localStorage.removeItem(field.key); } catch (_) {}
+      return;
+    }
+    partial[field.cfgKey] = el.value;
+  });
   Cognition.setCfg(partial);
   cogUpdateBadge();
 }
@@ -1209,12 +1230,28 @@ function cogUpdateBadge() {
   badge.textContent = on ? 'Cognition: on' : 'Cognition: off';
 }
 
-function cogResetPrompts() {
-  ['cogConductorPrompt','cogImplementerPrompt','cogReviewerPrompt'].forEach(function (id) {
-    try { localStorage.removeItem(id); } catch (_) {}
-    var el = document.getElementById(id);
-    if (el) el.value = '';
-  });
+function _cogApplyDefaultPrompt(role) {
+  var field = COG_PROMPT_FIELDS[role];
+  if (!field) return false;
+  try { localStorage.removeItem(field.key); } catch (_) {}
+  var el = document.getElementById(field.id);
+  if (!el) return false;
+  el.value = _cogPromptDefault(role);
+  return true;
+}
+
+function _cogNotifyPromptChange(role) {
+  var field = COG_PROMPT_FIELDS[role];
+  var el = field ? document.getElementById(field.id) : null;
+  if (typeof cogPersist === 'function') {
+    cogPersist();
+  } else if (el) {
+    el.dispatchEvent(new Event('change', { bubbles: true }));
+  }
+}
+
+function cogResetPrompt(role) {
+  if (_cogApplyDefaultPrompt(role)) _cogNotifyPromptChange(role);
 }
 
 // --- Monitors: Token, Network, Session ---
