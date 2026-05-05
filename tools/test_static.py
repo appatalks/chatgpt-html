@@ -327,7 +327,8 @@ def test_seed_file():
 
     # Must contain table creation commands
     required_tables = ["SelfState", "Knowledge", "Conversations", "EmotionState",
-                       "HeuristicsIndex", "MemorySummaries", "Reflections", "Goals", "EmotionBaseline"]
+                       "HeuristicsIndex", "MemorySummaries", "Reflections", "Goals", "EmotionBaseline",
+                       "BackgroundProposals", "BackgroundActivity"]
     for tbl in required_tables:
         if f".create-merge table {tbl}" in content or f".create table {tbl}" in content:
             report(f"seed_table:{tbl}", True)
@@ -365,6 +366,36 @@ def test_goals_static_contract():
            "Goals missing from allowed_tables" if allowed_match is None else "")
     report("goals_active_tool_method", "def _tool_eva_get_active_goals" in mcp,
            "missing _tool_eva_get_active_goals" if "def _tool_eva_get_active_goals" not in mcp else "")
+
+
+def test_background_static_contract():
+    """Background proposal schema and bridge routes are wired."""
+    seed_path = "tools/eva_seed.kql"
+    bridge_path = "tools/acp_bridge.py"
+    if not os.path.isfile(seed_path):
+        report("background_seed_file", None, "tools/eva_seed.kql not found")
+        return
+    if not os.path.isfile(bridge_path):
+        report("background_bridge_file", None, "tools/acp_bridge.py not found")
+        return
+
+    with open(seed_path) as f:
+        seed = f.read()
+    with open(bridge_path) as f:
+        bridge = f.read()
+
+    for table_name in ("BackgroundProposals", "BackgroundActivity"):
+        report(f"background_seed_table:{table_name}", f".create-merge table {table_name}" in seed,
+               f"missing {table_name} table" if f".create-merge table {table_name}" not in seed else "")
+    for endpoint in ("/v1/background/status", "/v1/background/proposals", "/v1/background/activity"):
+        report(f"background_bridge_endpoint:{endpoint}", endpoint in bridge,
+               f"missing {endpoint}" if endpoint not in bridge else "")
+    proposals_loopback = re.search(r"def _background_proposals\(self\):.*?_is_loopback_bind\(\)", bridge, re.DOTALL)
+    activity_loopback = re.search(r"def _background_activity\(self\):.*?_is_loopback_bind\(\)", bridge, re.DOTALL)
+    report("background_proposals_loopback_read", proposals_loopback is not None,
+           "background proposals read endpoint must check loopback bind" if proposals_loopback is None else "")
+    report("background_activity_loopback_read", activity_loopback is not None,
+           "background activity read endpoint must check loopback bind" if activity_loopback is None else "")
 
 
 def test_eval_contract():
@@ -448,6 +479,7 @@ def main():
         ("JS Routing Functions", [test_js_routing_functions]),
         ("Seed File", [test_seed_file]),
         ("Goals Static Contract", [test_goals_static_contract]),
+        ("Background Static Contract", [test_background_static_contract]),
         ("Behavioral Eval", [test_eval_contract]),
     ]
 

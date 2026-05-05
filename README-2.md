@@ -184,7 +184,8 @@ tools/
                            - DeviceCodeCredential with persistent token cache
                            - Accepts pre-fetched token via KUSTO_ACCESS_TOKEN env
   eva_seed.kql             Sanitized database seed (public-safe)
-                           - Creates all 8 Eva tables with sample data
+                           - Creates all 10 Eva tables with sample data
+                           - Includes background proposal and activity tables
                            - Run in Kusto Web Explorer to bootstrap a new instance
   test_static.py           CI-safe static tests (no bridge needed)
                            - File integrity, secret scanning, CSV logic, config safety
@@ -304,9 +305,21 @@ Options:
 | `/v1/goals` | POST | `{"title":"...", "description":"...", "category":"relational", "priority":50, "relatedTopics":"..."}` | Create an active goal |
 | `/v1/goals/<goal_id>` | PATCH | Any subset of goal fields | Update a goal by appending a latest Kusto row |
 | `/v1/goals/<goal_id>` | DELETE | none | Soft-delete a goal by setting status to `dropped` |
+| `/v1/background/status` | GET | none | Background loop status, interval, last tick, last error |
+| `/v1/background/proposals` | GET | `?status=pending` | Latest memory-consolidation proposals (loopback bind only) |
+| `/v1/background/activity` | GET | none | Latest 50 background tick activity rows (loopback bind only) |
+| `/v1/background/control` | POST | `{"enabled":true, "intervalSeconds":7200, "runNow":false}` | Update loop controls or queue a manual run |
+| `/v1/background/proposals/<proposal_id>/approve` | POST | none | Apply a pending MemorySummaries proposal |
+| `/v1/background/proposals/<proposal_id>/reject` | POST | none | Reject a pending proposal |
 | `/health` | GET | — | Status, session ID, model, MCP servers |
 
-POST/PATCH/DELETE require loopback bind; GET is read-only on any bind.
+Goals mutations, Kusto seed, file purge, background mutation endpoints, and background proposal/activity reads require loopback bind. Background status remains readable on any bind.
+
+### Background Memory Consolidation
+
+When cognition and Kusto are configured, the ACP bridge starts an internal background loop. It wakes every two hours by default, pauses if user activity happened in the last 120 seconds, and records each tick in `BackgroundActivity`.
+
+The first shipping job is memory consolidation. It reads recent `Conversations`, builds a deterministic summary without calling an external model, and writes a pending row to `BackgroundProposals`. The loop never writes `MemorySummaries` directly. A human reviews proposals in Settings -> Background. Approval first appends an `applying` proposal row, writes the proposed payload to `MemorySummaries`, then appends `applied`; if the canonical write fails, the proposal stays `applying` so approve can be retried safely. Rejection appends a `rejected` proposal row. Control, approve, reject, proposals, and activity endpoints are loopback-only.
 
 ### Security
 
@@ -344,7 +357,7 @@ Token cache: `~/.azure/msal_token_cache.json` (persists across restarts, ~90 day
 
 ## Settings Panel
 
-Six tabs in a modal overlay:
+Seven tabs in a modal overlay:
 
 | Tab | Contents |
 |---|---|
@@ -353,6 +366,7 @@ Six tabs in a modal overlay:
 | **Auth** | API key inputs with show/hide toggles, ACP bridge URL. Keys stored in localStorage, override config.json |
 | **Prompts** | Personality presets (Default/Concise/Advanced/Terminal/Custom), editable system prompt textarea |
 | **Goals** | Kusto-backed goals list, create form, edit controls, and soft-delete action through bridge endpoints |
+| **Background** | Bridge background loop status, enable and interval controls, run-once action, proposal approval/rejection, recent activity |
 | **MCP** | Azure MCP, GitHub MCP, Kusto MCP toggles with config fields. Apply/refresh buttons |
 
 ## Image Handling

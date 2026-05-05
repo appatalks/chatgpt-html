@@ -112,6 +112,7 @@ function saveAuthKeys() {
   }
   if (typeof _acpBridgeCache !== 'undefined') _acpBridgeCache = null;
   if (typeof loadGoals === 'function') loadGoals(true);
+  if (typeof loadBackgroundData === 'function') loadBackgroundData(true);
   setStatus('info', 'API keys saved to browser storage.');
 }
 
@@ -169,9 +170,7 @@ function getSafeBridgeBaseUrl() {
   }
 }
 
-var _goalsState = { goals: [], loading: false, emptyMessage: '' };
-
-async function getGoalsBridgeUrl() {
+async function getSettingsBridgeUrl() {
   if (typeof detectACPBridge === 'function') {
     return await detectACPBridge();
   }
@@ -179,6 +178,12 @@ async function getGoalsBridgeUrl() {
     return getACPBridgeUrl();
   }
   return 'http://localhost:8888';
+}
+
+var _goalsState = { goals: [], loading: false, emptyMessage: '' };
+
+async function getGoalsBridgeUrl() {
+  return await getSettingsBridgeUrl();
 }
 
 function getGoalField(goal, primary, alternate) {
@@ -465,6 +470,296 @@ function initGoals() {
   if (cancelButton) cancelButton.addEventListener('click', closeGoalForm);
   renderGoalsList();
   loadGoals(true);
+}
+
+var _backgroundState = { status: null, proposals: [], activity: [], loading: false, error: '' };
+
+async function backgroundBridgeRequest(path, options) {
+  var bridgeUrl = await getSettingsBridgeUrl();
+  var response = await fetch(bridgeUrl.replace(/\/+$/, '') + path, options || {});
+  var text = await response.text();
+  var data = {};
+  if (text) {
+    try { data = JSON.parse(text); } catch (_) { data = { message: text }; }
+  }
+  if (!response.ok) {
+    var message = data && data.error && data.error.message ? data.error.message : (data.message || ('HTTP ' + response.status));
+    var error = new Error(message);
+    error.status = response.status;
+    error.data = data;
+    throw error;
+  }
+  return data;
+}
+
+function getBackgroundField(row, primary, alternate) {
+  if (!row) return '';
+  if (row[primary] !== undefined && row[primary] !== null) return row[primary];
+  if (alternate && row[alternate] !== undefined && row[alternate] !== null) return row[alternate];
+  return '';
+}
+
+function getBackgroundPayload(proposal) {
+  var payload = getBackgroundField(proposal, 'Payload', 'payload');
+  if (!payload) return {};
+  if (typeof payload === 'string') {
+    try { return JSON.parse(payload); } catch (_) { return {}; }
+  }
+  return typeof payload === 'object' ? payload : {};
+}
+
+function renderBackgroundStatus() {
+  var statusEl = document.getElementById('backgroundStatus');
+  if (!statusEl) return;
+  var status = _backgroundState.status || null;
+  if (!status) {
+    statusEl.textContent = _backgroundState.error || 'Background status unavailable.';
+    statusEl.setAttribute('data-status', _backgroundState.error ? 'warn' : 'info');
+    return;
+  }
+  var lastError = _backgroundState.error || status.lastError || 'none';
+  var parts = [
+    'Running: ' + (status.running ? 'yes' : 'no'),
+    'Enabled: ' + (status.enabled ? 'yes' : 'no'),
+    'Interval: ' + (status.intervalSeconds || 0) + 's',
+    'Last tick: ' + (status.lastTick ? formatGoalDate(status.lastTick) : '-'),
+    'Last error: ' + lastError
+  ];
+  statusEl.textContent = parts.join(' | ');
+  statusEl.setAttribute('data-status', lastError === 'none' ? 'info' : 'warn');
+
+  var enabledEl = document.getElementById('backgroundEnabled');
+  var intervalEl = document.getElementById('backgroundIntervalSeconds');
+  if (enabledEl) enabledEl.checked = !!status.enabled;
+  if (intervalEl && status.intervalSeconds) intervalEl.value = String(status.intervalSeconds);
+}
+
+function renderBackgroundProposals() {
+  var listEl = document.getElementById('backgroundProposals');
+  if (!listEl) return;
+  listEl.innerHTML = '';
+  if (_backgroundState.error && !_backgroundState.proposals.length) {
+    var errorEl = document.createElement('div');
+    errorEl.className = 'auth-note';
+    errorEl.textContent = _backgroundState.error;
+    listEl.appendChild(errorEl);
+    return;
+  }
+  if (!_backgroundState.proposals.length) {
+    var emptyEl = document.createElement('div');
+    emptyEl.className = 'auth-note';
+    emptyEl.textContent = 'No pending proposals.';
+    listEl.appendChild(emptyEl);
+    return;
+  }
+
+  _backgroundState.proposals.forEach(function(proposal) {
+    var proposalId = String(getBackgroundField(proposal, 'ProposalId', 'proposalId') || '');
+    var status = String(getBackgroundField(proposal, 'Status', 'status') || 'pending');
+    var createdAt = getBackgroundField(proposal, 'CreatedAt', 'createdAt');
+    var notes = String(getBackgroundField(proposal, 'Notes', 'notes') || '');
+    var windowStart = getBackgroundField(proposal, 'SourceWindowStart', 'sourceWindowStart');
+    var windowEnd = getBackgroundField(proposal, 'SourceWindowEnd', 'sourceWindowEnd');
+    var payload = getBackgroundPayload(proposal);
+    var summary = String(payload.Summary || payload.summary || 'No summary text.');
+
+    var row = document.createElement('div');
+    row.className = 'background-row';
+
+    var head = document.createElement('div');
+    head.className = 'background-row-head';
+    var title = document.createElement('div');
+    title.className = 'background-title';
+    title.textContent = 'Memory summary proposal';
+    head.appendChild(title);
+
+    var actions = document.createElement('div');
+    actions.className = 'background-actions';
+    if (status.toLowerCase() === 'pending') {
+      var approveButton = document.createElement('button');
+      approveButton.type = 'button';
+      approveButton.className = 'auth-save background-inline-button';
+      approveButton.textContent = 'Approve';
+      approveButton.addEventListener('click', function() { reviewBackgroundProposal(proposalId, 'approve'); });
+      actions.appendChild(approveButton);
+      var rejectButton = document.createElement('button');
+      rejectButton.type = 'button';
+      rejectButton.className = 'auth-toggle';
+      rejectButton.textContent = 'Reject';
+      rejectButton.addEventListener('click', function() { reviewBackgroundProposal(proposalId, 'reject'); });
+      actions.appendChild(rejectButton);
+    }
+    head.appendChild(actions);
+    row.appendChild(head);
+
+    var meta = document.createElement('div');
+    meta.className = 'background-meta';
+    ['Status: ' + status, 'Created: ' + formatGoalDate(createdAt), 'Proposal: ' + proposalId].forEach(function(text) {
+      var item = document.createElement('span');
+      item.textContent = text;
+      meta.appendChild(item);
+    });
+    row.appendChild(meta);
+
+    var source = document.createElement('div');
+    source.className = 'background-meta';
+    source.textContent = 'Source window: ' + formatGoalDate(windowStart) + ' to ' + formatGoalDate(windowEnd);
+    row.appendChild(source);
+
+    var summaryEl = document.createElement('div');
+    summaryEl.className = 'background-description';
+    summaryEl.textContent = summary;
+    row.appendChild(summaryEl);
+    if (notes) {
+      var notesEl = document.createElement('div');
+      notesEl.className = 'background-note';
+      notesEl.textContent = notes;
+      row.appendChild(notesEl);
+    }
+    listEl.appendChild(row);
+  });
+}
+
+function renderBackgroundActivity() {
+  var listEl = document.getElementById('backgroundActivity');
+  if (!listEl) return;
+  listEl.innerHTML = '';
+  if (!_backgroundState.activity.length) {
+    var emptyEl = document.createElement('div');
+    emptyEl.className = 'auth-note';
+    emptyEl.textContent = 'No background activity yet.';
+    listEl.appendChild(emptyEl);
+    return;
+  }
+  _backgroundState.activity.forEach(function(activity) {
+    var row = document.createElement('div');
+    row.className = 'background-row background-activity-row';
+    var status = String(getBackgroundField(activity, 'Status', 'status') || '');
+    var startedAt = getBackgroundField(activity, 'StartedAt', 'startedAt');
+    var proposalCount = getBackgroundField(activity, 'ProposalCount', 'proposalCount');
+    var notes = String(getBackgroundField(activity, 'Notes', 'notes') || '');
+    var title = document.createElement('div');
+    title.className = 'background-title';
+    title.textContent = status || 'activity';
+    row.appendChild(title);
+    var meta = document.createElement('div');
+    meta.className = 'background-meta';
+    meta.textContent = formatGoalDate(startedAt) + ' | Proposals: ' + (proposalCount === '' ? 0 : proposalCount);
+    row.appendChild(meta);
+    if (notes) {
+      var notesEl = document.createElement('div');
+      notesEl.className = 'background-note';
+      notesEl.textContent = notes;
+      row.appendChild(notesEl);
+    }
+    listEl.appendChild(row);
+  });
+}
+
+function renderBackgroundAll() {
+  renderBackgroundStatus();
+  renderBackgroundProposals();
+  renderBackgroundActivity();
+}
+
+async function loadBackgroundData(quiet) {
+  if (_backgroundState.loading) return;
+  _backgroundState.loading = true;
+  _backgroundState.error = '';
+  if (!quiet) {
+    _backgroundState.status = null;
+    renderBackgroundStatus();
+  }
+  try {
+    var options = { method: 'GET' };
+    if (typeof AbortSignal !== 'undefined' && AbortSignal.timeout) {
+      options.signal = AbortSignal.timeout(3000);
+    }
+    _backgroundState.status = await backgroundBridgeRequest('/v1/background/status', options);
+    try {
+      var proposalData = await backgroundBridgeRequest('/v1/background/proposals?status=pending', options);
+      var activityData = await backgroundBridgeRequest('/v1/background/activity', options);
+      _backgroundState.proposals = Array.isArray(proposalData.proposals) ? proposalData.proposals : [];
+      _backgroundState.activity = Array.isArray(activityData.activity) ? activityData.activity : [];
+    } catch (listError) {
+      _backgroundState.proposals = [];
+      _backgroundState.activity = [];
+      _backgroundState.error = listError.message || 'Background lists are not available right now.';
+    }
+  } catch (error) {
+    _backgroundState.status = null;
+    _backgroundState.proposals = [];
+    _backgroundState.activity = [];
+    _backgroundState.error = error.message || 'Background loop is not available right now.';
+    if (!quiet) setStatus('warn', _backgroundState.error);
+  } finally {
+    _backgroundState.loading = false;
+    renderBackgroundAll();
+  }
+}
+
+async function saveBackgroundControls(runNow) {
+  var enabledEl = document.getElementById('backgroundEnabled');
+  var intervalEl = document.getElementById('backgroundIntervalSeconds');
+  var saveButton = document.getElementById('backgroundSaveButton');
+  var runButton = document.getElementById('backgroundRunNowButton');
+  var intervalValue = intervalEl ? parseInt(intervalEl.value, 10) : 7200;
+  if (!Number.isInteger(intervalValue) || intervalValue < 900 || intervalValue > 86400) {
+    _backgroundState.error = 'Interval must be between 900 and 86400 seconds.';
+    renderBackgroundStatus();
+    setStatus('error', _backgroundState.error);
+    return;
+  }
+  if (saveButton) saveButton.disabled = true;
+  if (runButton) runButton.disabled = true;
+  try {
+    var data = await backgroundBridgeRequest('/v1/background/control', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        enabled: enabledEl ? !!enabledEl.checked : true,
+        intervalSeconds: intervalValue,
+        runNow: !!runNow
+      })
+    });
+    _backgroundState.status = data;
+    _backgroundState.error = '';
+    renderBackgroundStatus();
+    await loadBackgroundData(true);
+    setStatus('info', runNow ? 'Background run queued.' : 'Background controls saved.');
+  } catch (error) {
+    _backgroundState.error = error.message || 'Background control update failed.';
+    renderBackgroundStatus();
+    setStatus('error', _backgroundState.error);
+  } finally {
+    if (saveButton) saveButton.disabled = false;
+    if (runButton) runButton.disabled = false;
+  }
+}
+
+async function reviewBackgroundProposal(proposalId, action) {
+  if (!proposalId) return;
+  if (action === 'approve' && !confirm('Apply this proposal to MemorySummaries?')) return;
+  try {
+    await backgroundBridgeRequest('/v1/background/proposals/' + encodeURIComponent(proposalId) + '/' + action, { method: 'POST' });
+    await loadBackgroundData(true);
+    setStatus('info', action === 'approve' ? 'Proposal applied.' : 'Proposal rejected.');
+  } catch (error) {
+    _backgroundState.error = error.message || 'Proposal review failed.';
+    renderBackgroundAll();
+    setStatus('error', _backgroundState.error);
+  }
+}
+
+function initBackground() {
+  var saveButton = document.getElementById('backgroundSaveButton');
+  var runButton = document.getElementById('backgroundRunNowButton');
+  var refreshButton = document.getElementById('backgroundRefreshButton');
+  if (saveButton) saveButton.addEventListener('click', function() { saveBackgroundControls(false); });
+  if (runButton) runButton.addEventListener('click', function() { saveBackgroundControls(true); });
+  if (refreshButton) refreshButton.addEventListener('click', function() { loadBackgroundData(false); });
+  renderBackgroundAll();
+  loadBackgroundData(true);
 }
 
 function applyStandaloneSimplifications() {
@@ -913,6 +1208,7 @@ document.addEventListener('DOMContentLoaded', () => {
       settingsMenu.classList.add('open');
       if (overlay) overlay.classList.add('open');
       populateAuthFields();
+      if (typeof loadBackgroundData === 'function') loadBackgroundData(true);
     }
   }
 
@@ -1020,6 +1316,7 @@ document.addEventListener('DOMContentLoaded', () => {
       settingsMenu.classList.add('open');
       if (overlay) overlay.classList.add('open');
       populateAuthFields();
+      if (typeof loadBackgroundData === 'function') loadBackgroundData(true);
     }
     if (tabName) {
       setTimeout(function() {
@@ -1072,6 +1369,7 @@ document.addEventListener('DOMContentLoaded', () => {
         p.classList.toggle('active', p.getAttribute('data-stab') === target);
       });
       if (target === 'goals' && typeof loadGoals === 'function') loadGoals(false);
+      if (target === 'background' && typeof loadBackgroundData === 'function') loadBackgroundData(false);
     });
   });
 
@@ -1107,6 +1405,7 @@ document.addEventListener('DOMContentLoaded', () => {
   onModelSettingsChange();
   if (typeof cogInit === 'function') cogInit();
   if (typeof initGoals === 'function') initGoals();
+  if (typeof initBackground === 'function') initBackground();
 
   // Initialize status panel with any pending config/init notes
   setStatus('info', document.getElementById('idText') && document.getElementById('idText').textContent ? document.getElementById('idText').textContent : '');

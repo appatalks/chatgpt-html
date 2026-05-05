@@ -175,6 +175,7 @@
       <button class="settings-tab" data-stab="auth" role="tab">Auth</button>
       <button class="settings-tab" data-stab="prompts" role="tab">Prompts</button>
       <button class="settings-tab" data-stab="goals" role="tab">Goals</button>
+      <button class="settings-tab" data-stab="background" role="tab">Background</button>
       <button class="settings-tab" data-stab="mcp" role="tab">MCP</button>
     </div>
     <div class="settings-body">
@@ -519,6 +520,33 @@
         </div>
 
         <div id="goalsList" class="goals-list"></div>
+      </div>
+
+      <!-- Background Tab -->
+      <div class="settings-panel" data-stab="background">
+        <div id="backgroundStatus" class="mcp-status" aria-live="polite"></div>
+
+        <div class="mcp-preset background-controls">
+          <label class="background-toggle-row">
+            <input type="checkbox" id="backgroundEnabled">
+            <strong>Enable background loop</strong>
+          </label>
+          <div class="auth-field">
+            <label for="backgroundIntervalSeconds">Interval seconds:</label>
+            <input type="number" id="backgroundIntervalSeconds" min="900" max="86400" step="300" value="7200">
+          </div>
+          <div class="background-actions">
+            <button type="button" class="auth-save" id="backgroundSaveButton">Save controls</button>
+            <button type="button" class="auth-toggle" id="backgroundRunNowButton">Run once</button>
+            <button type="button" class="auth-toggle" id="backgroundRefreshButton">Refresh</button>
+          </div>
+        </div>
+
+        <h4 class="settings-subhead">Pending proposals</h4>
+        <div id="backgroundProposals" class="background-list"></div>
+
+        <h4 class="settings-subhead">Recent activity</h4>
+        <div id="backgroundActivity" class="background-list"></div>
       </div>
 
       <!-- MCP Tab -->

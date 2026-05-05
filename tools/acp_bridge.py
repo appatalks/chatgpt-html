@@ -27,6 +27,7 @@ The server exposes a single endpoint:
 """
 
 import argparse
+import datetime
 import json
 import mimetypes
 import os
@@ -567,6 +568,11 @@ _active_kusto_cluster = os.environ.get("KUSTO_CLUSTER_URL", "").strip()
 _bridge_bind_address = "127.0.0.1"
 _LMSTUDIO_ALLOWED_PORTS = {1234, 8000, 8080, 11434}
 _HTTP_CONTENT_TYPE_RE = re.compile(r"^[A-Za-z0-9!#$&^_.+-]+/[A-Za-z0-9!#$&^_.+-]+$")
+_MEMORY_TABLES = [
+    "Knowledge", "Conversations", "EmotionState", "MemorySummaries", "Reflections",
+    "Goals", "SelfState", "HeuristicsIndex", "EmotionBaseline", "BackgroundProposals",
+    "BackgroundActivity",
+]
 _GOAL_CATEGORIES = {"self_improvement", "knowledge_curation", "relational"}
 _GOAL_STATUSES = {"active", "paused", "done", "dropped"}
 _GOAL_COLUMNS = ["GoalId", "Title", "Description", "Category", "Status", "Priority", "RelatedTopics", "CreatedAt", "UpdatedAt"]
@@ -574,6 +580,32 @@ _GOALS_LATEST_QUERY = (
     "Goals | summarize arg_max(UpdatedAt, *) by GoalId "
     "| project GoalId, Title, Description, Category, Status, Priority, RelatedTopics, CreatedAt, UpdatedAt"
 )
+_BG_JOB_TYPE = "memory_consolidation"
+_BG_TARGET_TABLE = "MemorySummaries"
+_BG_PROPOSAL_STATUSES = {"pending", "approved", "rejected", "applying", "applied", "failed"}
+_BG_ACTIVITY_STATUSES = {"succeeded", "failed", "paused", "skipped"}
+_BG_PROPOSAL_COLUMNS = [
+    "ProposalId", "CreatedAt", "JobType", "TargetTable", "Payload", "Status",
+    "SourceWindowStart", "SourceWindowEnd", "Notes", "ReviewedAt", "ReviewedBy",
+]
+_BG_ACTIVITY_COLUMNS = [
+    "TickId", "StartedAt", "EndedAt", "JobType", "Status", "ProposalCount", "TokenEstimate", "Notes",
+]
+_BG_PROPOSALS_LATEST_QUERY = (
+    "BackgroundProposals "
+    "| extend _SortAt = coalesce(ReviewedAt, CreatedAt) "
+    "| summarize arg_max(_SortAt, *) by ProposalId "
+    "| project-away _SortAt"
+)
+_bg_loop_thread = None
+_bg_loop_stop = threading.Event()
+_bg_loop_enabled = True
+_bg_loop_interval_seconds = 7200
+_bg_last_tick_iso = ""
+_bg_last_error = ""
+_bg_last_activity = {}
+_last_user_activity_ts = 0.0
+_bg_tick_lock = threading.Lock()
 
 
 def _is_loopback_bind():
@@ -945,7 +977,7 @@ def _enable_cognition(mcp_servers, model=None, port=None):
             {"Timestamp": now, "Capability": "image_skills", "Status": "active",
              "Details": json.dumps({"skills": ["wikimedia_search", "dalle3_generation"]})},
             {"Timestamp": now, "Capability": "persistent_memory", "Status": "active",
-               "Details": json.dumps({"tables": ["Knowledge", "Conversations", "EmotionState", "MemorySummaries", "Reflections", "Goals", "SelfState", "HeuristicsIndex", "EmotionBaseline"]})},
+                    "Details": json.dumps({"tables": _MEMORY_TABLES})},
         ]
         for srv in mcp_servers.keys():
             capabilities.append({"Timestamp": now, "Capability": f"mcp_{srv}",
@@ -954,6 +986,8 @@ def _enable_cognition(mcp_servers, model=None, port=None):
             print(f"[Bridge] SelfState written ({len(capabilities)} capabilities)")
         else:
             print("[Bridge] SelfState write failed (continuing startup)")
+    if _bg_loop_enabled:
+        _start_bg_loop()
 
 
 def _with_launch_filter(query, timestamp_column="Timestamp"):
@@ -1007,7 +1041,8 @@ _ENTITY_RESERVED_TERMS = {
     "count", "sum", "average", "filter", "where", "join", "project", "distinct", "take", "top",
     "execute", "save", "remember", "store", "write", "reply", "respond", "answer",
     "kusto", "adx", "conversation", "conversations", "knowledge", "emotionstate", "reflections", "goals",
-    "memorysummaries", "selfstate", "heuristicsindex", "emotionbaseline"
+    "memorysummaries", "selfstate", "heuristicsindex", "emotionbaseline", "backgroundproposals",
+    "backgroundactivity"
 }
 
 _EXPLICIT_FACT_WHITESPACE_RE = re.compile(r"\s+", re.IGNORECASE)
@@ -1409,6 +1444,8 @@ def _build_memory_context(user_message):
         "    SelfState (Capability, Status) — your active capabilities\n"
         "    HeuristicsIndex (Entity, Category, Frequency) — pattern tracking\n"
         "    EmotionBaseline (Dimension, Value) — emotional defaults\n"
+        "    BackgroundProposals (ProposalId, Status, Payload) - human-reviewed memory proposals\n"
+        "    BackgroundActivity (TickId, Status, ProposalCount) - background loop activity\n"
         f"{kusto_query_capability}"
         "• web-search: Search the web and retrieve current information via MCP tools\n"
         "\n"
@@ -1556,8 +1593,19 @@ def _build_memory_context(user_message):
                 for e in emotions[:5])
             context_parts.append(f"[Live Data] Emotion history:\n{emo_text}")
 
-    known_tables = ['Conversations', 'Knowledge', 'MemorySummaries', 'HeuristicsIndex',
-                    'SelfState', 'Reflections', 'Goals', 'EmotionState', 'EmotionBaseline']
+    knowledge_scope = _knowledge_scope_clause()
+    known_table_time_columns = {
+        'Conversations': 'Timestamp',
+        'MemorySummaries': 'Timestamp',
+        'HeuristicsIndex': 'LastSeen',
+        'SelfState': 'Timestamp',
+        'Reflections': 'Timestamp',
+        'Goals': 'UpdatedAt',
+        'EmotionState': 'Timestamp',
+        'BackgroundProposals': 'CreatedAt',
+        'BackgroundActivity': 'StartedAt',
+    }
+    known_tables = list(_MEMORY_TABLES)
     for tbl in known_tables:
         if tbl.lower() in msg_lower and not any('Tables in' in p for p in context_parts):
             if tbl == 'Knowledge':
@@ -1565,7 +1613,11 @@ def _build_memory_context(user_message):
                     continue
                 sample_query = f"Knowledge | where {knowledge_scope} | take 5"
             else:
-                sample_query = _with_launch_filter(f"{tbl} | order by Timestamp desc | take 5")
+                time_column = known_table_time_columns.get(tbl)
+                if time_column:
+                    sample_query = _with_launch_filter(f"{tbl} | order by {time_column} desc | take 5", time_column)
+                else:
+                    sample_query = f"{tbl} | take 5"
             sample = _kusto_query_direct(cluster, db, sample_query)
             if sample:
                 sample_text = "\n".join(f"  {str(row)[:150]}" for row in sample[:5])
@@ -1759,6 +1811,328 @@ def _post_response_reflection(user_message, assistant_response, model_name):
         _session_conversation_buffer = _session_conversation_buffer[-10:]
 
 
+def _utc_now():
+    return datetime.datetime.now(datetime.timezone.utc)
+
+
+def _to_utc_iso(value):
+    if isinstance(value, datetime.datetime):
+        active_value = value
+    else:
+        active_value = _utc_now()
+    if active_value.tzinfo is None:
+        active_value = active_value.replace(tzinfo=datetime.timezone.utc)
+    return active_value.astimezone(datetime.timezone.utc).isoformat(timespec="seconds").replace("+00:00", "Z")
+
+
+def _parse_kusto_datetime(value):
+    if isinstance(value, datetime.datetime):
+        parsed_value = value
+    else:
+        text = str(value or "").strip()
+        if not text:
+            return None
+        text = re.sub(r"(\.\d{6})\d+", r"\1", text)
+        if text.endswith("Z"):
+            text = text[:-1] + "+00:00"
+        try:
+            parsed_value = datetime.datetime.fromisoformat(text)
+        except ValueError:
+            return None
+    if parsed_value.tzinfo is None:
+        parsed_value = parsed_value.replace(tzinfo=datetime.timezone.utc)
+    return parsed_value.astimezone(datetime.timezone.utc)
+
+
+def _safe_kusto_string(value):
+    return str(value or "").replace("'", "''")
+
+
+def _mark_user_activity():
+    global _last_user_activity_ts
+    _last_user_activity_ts = time.time()
+
+
+def _background_status_dict():
+    running = bool(_bg_loop_thread and _bg_loop_thread.is_alive())
+    return {
+        "enabled": _bg_loop_enabled,
+        "intervalSeconds": _bg_loop_interval_seconds,
+        "lastTick": _bg_last_tick_iso,
+        "lastError": _bg_last_error,
+        "lastActivity": _bg_last_activity,
+        "running": running,
+    }
+
+
+def _background_kusto_context():
+    cluster, database = _get_kusto_config()
+    if not cluster or not database:
+        return None, None, "Kusto cluster or database not configured for the bridge"
+    token_ok, token_error = _ensure_kusto_token()
+    if not token_ok:
+        message = "Kusto token unavailable"
+        clean_error = " ".join(str(token_error or "").split())[:160]
+        if clean_error:
+            message += ": " + clean_error
+        return None, None, message
+    return cluster, database, ""
+
+
+def _set_background_activity(row, error_text=""):
+    global _bg_last_activity, _bg_last_tick_iso, _bg_last_error
+    _bg_last_activity = dict(row or {})
+    if row and row.get("StartedAt"):
+        _bg_last_tick_iso = row.get("StartedAt")
+    _bg_last_error = error_text or ""
+
+
+def _record_background_activity(cluster, database, tick_id, started_at, ended_at, status, proposal_count, token_estimate, notes):
+    row = {
+        "TickId": tick_id,
+        "StartedAt": _to_utc_iso(started_at),
+        "EndedAt": _to_utc_iso(ended_at),
+        "JobType": _BG_JOB_TYPE,
+        "Status": status,
+        "ProposalCount": int(proposal_count or 0),
+        "TokenEstimate": int(token_estimate or 0),
+        "Notes": str(notes or "")[:500],
+    }
+    wrote = False
+    if cluster and database and _kusto_token_cache:
+        wrote = _kusto_ingest_direct(cluster, database, "BackgroundActivity", _BG_ACTIVITY_COLUMNS, [row])
+    error_text = row["Notes"] if status == "failed" else ""
+    if status == "failed" and not wrote:
+        error_text = (error_text + "; activity write failed").strip("; ")
+    _set_background_activity(row, error_text)
+    return wrote
+
+
+def _background_source_window(cluster, database, window_end):
+    fallback_start = window_end - datetime.timedelta(seconds=7200)
+    latest_summary = None
+    rows = _kusto_query_direct(cluster, database, "MemorySummaries | summarize LastTimestamp=max(Timestamp)")
+    if rows:
+        latest_summary = _parse_kusto_datetime(rows[0].get("LastTimestamp"))
+    window_start = fallback_start
+    if latest_summary and latest_summary > window_start:
+        window_start = latest_summary
+    if window_start > window_end:
+        window_start = window_end
+    return window_start, window_end
+
+
+def _background_conversations_query(window_start, window_end):
+    active_start = window_start
+    launch_start = _parse_kusto_datetime(_cognition_launch_iso)
+    if launch_start and launch_start > active_start:
+        active_start = launch_start
+    start_iso = _to_utc_iso(active_start)
+    end_iso = _to_utc_iso(window_end)
+    return (
+        "Conversations\n"
+        f"| where Timestamp >= datetime('{start_iso}') and Timestamp <= datetime('{end_iso}')\n"
+        "| order by Timestamp asc\n"
+        "| take 200\n"
+        "| project Timestamp, Role, Provider, Model, Content, TokenEstimate"
+    )
+
+
+def _query_background_conversations(cluster, database, window_start, window_end):
+    return _kusto_query_direct(cluster, database, _background_conversations_query(window_start, window_end))
+
+
+def _background_summary_topics(user_rows):
+    stop_words = set(_ENTITY_IGNORE_WORDS) | set(_ENTITY_RESERVED_TERMS) | {"assistant", "user", "eva", "message", "messages"}
+    topic_counts = {}
+    topic_labels = {}
+    for conversation_row in user_rows:
+        content = str(conversation_row.get("Content", "") or "")
+        for match_text in re.findall(r"\b[A-Za-z][A-Za-z_-]{2,}\b", content):
+            key = match_text.lower().strip("_-")
+            if len(key) < 4 or key in stop_words:
+                continue
+            topic_counts[key] = topic_counts.get(key, 0) + 1
+            topic_labels.setdefault(key, match_text.strip("_-"))
+    ranked_topics = sorted(topic_counts.items(), key=lambda item: (-item[1], item[0]))[:8]
+    return [topic_labels.get(topic_key, topic_key) for topic_key, _ in ranked_topics]
+
+
+def _build_background_summary(conversation_rows):
+    user_rows = [row for row in conversation_rows if str(row.get("Role", "")).lower() == "user"]
+    assistant_rows = [row for row in conversation_rows if str(row.get("Role", "")).lower() == "assistant"]
+    topics = _background_summary_topics(user_rows)
+    topics_text = ", ".join(topics) if topics else "general conversation"
+    if assistant_rows:
+        assistant_text = f"Assistant actions: responded in {len(assistant_rows)} turn(s) with guidance, answers, or implementation detail."
+    else:
+        assistant_text = "Assistant actions: no assistant response rows were present in the source window."
+    summary = (
+        f"Background consolidation for {len(conversation_rows)} conversation row(s) "
+        f"({len(user_rows)} user, {len(assistant_rows)} assistant). "
+        f"User topics/entities: {topics_text}. {assistant_text}"
+    )
+    return summary[:800]
+
+
+def _write_background_proposal(cluster, database, proposal_row):
+    return _kusto_ingest_direct(cluster, database, "BackgroundProposals", _BG_PROPOSAL_COLUMNS, [proposal_row])
+
+
+def _background_memory_summary_exists(cluster, database, summary_row):
+    timestamp = _parse_kusto_datetime(summary_row.get("Timestamp"))
+    if not timestamp:
+        return False, "Proposal payload Timestamp must be a valid datetime"
+    timestamp_iso = _to_utc_iso(timestamp)
+    query = (
+        "MemorySummaries\n"
+        f"| where Period == '{_safe_kusto_string(summary_row.get('Period'))}'\n"
+        f"| where Timestamp == datetime('{timestamp_iso}')\n"
+        f"| where Summary == '{_safe_kusto_string(summary_row.get('Summary'))}'\n"
+        "| take 1"
+    )
+    rows = _kusto_query_direct(cluster, database, query)
+    if rows is None:
+        return False, "MemorySummaries lookup failed"
+    return bool(rows), ""
+
+
+def _run_background_tick(trigger="scheduled"):
+    trigger = "manual" if trigger == "manual" else "scheduled"
+    acquired = _bg_tick_lock.acquire(blocking=False)
+    tick_id = "bg-" + str(uuid.uuid4())
+    started_at = _utc_now()
+    if not acquired:
+        cluster, database, _ = _background_kusto_context()
+        _record_background_activity(
+            cluster, database, tick_id, started_at, _utc_now(), "skipped", 0, 0,
+            f"{trigger} background tick already running"
+        )
+        return
+
+    cluster = None
+    database = None
+    note_prefix = f"{trigger} background tick: "
+    try:
+        cluster, database, context_error = _background_kusto_context()
+        if context_error:
+            _record_background_activity(cluster, database, tick_id, started_at, _utc_now(), "failed", 0, 0, note_prefix + context_error)
+            return
+
+        if trigger != "manual" and time.time() - _last_user_activity_ts < 120:
+            _record_background_activity(cluster, database, tick_id, started_at, _utc_now(), "paused", 0, 0, note_prefix + "recent user activity")
+            return
+
+        window_end = _utc_now()
+        window_start, window_end = _background_source_window(cluster, database, window_end)
+        conversation_rows = _query_background_conversations(cluster, database, window_start, window_end)
+        if conversation_rows is None:
+            _record_background_activity(cluster, database, tick_id, started_at, _utc_now(), "failed", 0, 0, note_prefix + "Conversations query failed")
+            return
+        if not conversation_rows:
+            _record_background_activity(cluster, database, tick_id, started_at, _utc_now(), "skipped", 0, 0, note_prefix + "no conversations in source window")
+            return
+
+        now_iso = _to_utc_iso(_utc_now())
+        summary_text = _build_background_summary(conversation_rows)
+        payload = {
+            "Period": "background-" + now_iso[:10],
+            "Summary": summary_text,
+            "Timestamp": now_iso,
+        }
+        proposal_row = {
+            "ProposalId": "bgp-" + str(uuid.uuid4()),
+            "CreatedAt": now_iso,
+            "JobType": _BG_JOB_TYPE,
+            "TargetTable": _BG_TARGET_TABLE,
+            "Payload": payload,
+            "Status": "pending",
+            "SourceWindowStart": _to_utc_iso(window_start),
+            "SourceWindowEnd": _to_utc_iso(window_end),
+            "Notes": f"generated by {trigger} background tick from {len(conversation_rows)} conversation row(s)",
+            "ReviewedAt": "",
+            "ReviewedBy": "",
+        }
+        if not _write_background_proposal(cluster, database, proposal_row):
+            _record_background_activity(cluster, database, tick_id, started_at, _utc_now(), "failed", 0, 0, note_prefix + "BackgroundProposals write failed")
+            return
+        _record_background_activity(cluster, database, tick_id, started_at, _utc_now(), "succeeded", 1, 0, note_prefix + "proposal created")
+    except Exception as error:
+        _record_background_activity(cluster, database, tick_id, started_at, _utc_now(), "failed", 0, 0, note_prefix + str(error)[:500])
+    finally:
+        _bg_tick_lock.release()
+
+
+def _bg_loop_worker():
+    next_due = time.time() + max(1, int(_bg_loop_interval_seconds or 7200))
+    while not _bg_loop_stop.is_set():
+        if not _bg_loop_enabled:
+            next_due = time.time() + max(1, int(_bg_loop_interval_seconds or 7200))
+            _bg_loop_stop.wait(5)
+            continue
+
+        now_ts = time.time()
+        if now_ts >= next_due:
+            _run_background_tick("scheduled")
+            next_due = time.time() + max(1, int(_bg_loop_interval_seconds or 7200))
+
+        wait_seconds = min(5, max(0.1, next_due - time.time()))
+        _bg_loop_stop.wait(wait_seconds)
+
+
+def _start_bg_loop():
+    global _bg_loop_thread
+    if not _cognition_enabled:
+        return False
+    cluster, database = _get_kusto_config()
+    if not cluster or not database or not _kusto_token_cache:
+        return False
+    if _bg_loop_thread and _bg_loop_thread.is_alive():
+        return True
+    _bg_loop_stop.clear()
+    _bg_loop_thread = threading.Thread(target=_bg_loop_worker, name="eva-background-loop", daemon=True)
+    _bg_loop_thread.start()
+    print(f"[Bridge] Background loop started ({_bg_loop_interval_seconds}s interval)")
+    return True
+
+
+def _stop_bg_loop():
+    global _bg_loop_thread
+    _bg_loop_stop.set()
+    active_thread = _bg_loop_thread
+    if active_thread and active_thread.is_alive():
+        active_thread.join(timeout=3)
+    _bg_loop_thread = None
+
+
+def _trigger_background_run_once():
+    threading.Thread(target=_run_background_tick, args=("manual",), daemon=True).start()
+
+
+def _background_proposal_payload(row):
+    payload = row.get("Payload") if row else None
+    if isinstance(payload, str):
+        try:
+            payload = json.loads(payload)
+        except json.JSONDecodeError:
+            return None, "proposal payload is not valid JSON"
+    if not isinstance(payload, dict):
+        return None, "proposal payload must be an object"
+    return payload, ""
+
+
+def _background_proposal_update_row(current, status, reviewed_by, notes):
+    row = {column: current.get(column, "") for column in _BG_PROPOSAL_COLUMNS}
+    payload, _ = _background_proposal_payload(row)
+    if payload is not None:
+        row["Payload"] = payload
+    row["Status"] = status
+    row["ReviewedAt"] = _to_utc_iso(_utc_now())
+    row["ReviewedBy"] = reviewed_by
+    row["Notes"] = notes or row.get("Notes", "")
+    return row
+
+
 def _ensure_acp_model(requested_model):
     """Ensure ACP client is running with the requested model."""
     global acp_client
@@ -1831,6 +2205,12 @@ class BridgeHandler(BaseHTTPRequestHandler):
             self._mcp_status()
         elif parsed_path == "/v1/goals":
             self._goals_list()
+        elif parsed_path == "/v1/background/status":
+            self._background_status()
+        elif parsed_path == "/v1/background/proposals":
+            self._background_proposals()
+        elif parsed_path == "/v1/background/activity":
+            self._background_activity()
         elif parsed_path == "/v1/memory/context":
             self._memory_context()
         elif parsed_path.startswith("/v1/files/"):
@@ -1853,6 +2233,10 @@ class BridgeHandler(BaseHTTPRequestHandler):
             self._kusto_seed()
         elif parsed_path == "/v1/goals":
             self._goals_create()
+        elif parsed_path == "/v1/background/control":
+            self._background_control()
+        elif re.fullmatch(r"/v1/background/proposals/[^/]+/(approve|reject)", parsed_path):
+            self._background_review(parsed_path)
         elif parsed_path == "/v1/files/purge":
             self._purge_artifacts()
         else:
@@ -1889,7 +2273,7 @@ class BridgeHandler(BaseHTTPRequestHandler):
             return None, "Invalid JSON"
         return data, ""
 
-    def _goals_kusto_context(self):
+    def _kusto_context(self):
         cluster, db = _get_kusto_config()
         if not cluster or not db:
             self._json_response(503, {"error": {"message": "Kusto cluster or database not configured for the bridge"}})
@@ -1908,11 +2292,20 @@ class BridgeHandler(BaseHTTPRequestHandler):
             return None, None, False
         return cluster, db, True
 
+    def _goals_kusto_context(self):
+        return self._kusto_context()
+
     def _validate_goal_id(self, goal_id):
         goal_id = str(goal_id or "").strip()
         if not re.fullmatch(r"[A-Za-z0-9-]{1,128}", goal_id):
             return "", "goal_id is invalid"
         return goal_id, ""
+
+    def _validate_background_proposal_id(self, proposal_id):
+        proposal_id = str(proposal_id or "").strip()
+        if not re.fullmatch(r"[A-Za-z0-9-]{1,128}", proposal_id):
+            return "", "proposal_id is invalid"
+        return proposal_id, ""
 
     def _goal_string_field(self, data, key, max_len, required=False):
         value = data.get(key, "")
@@ -2011,6 +2404,200 @@ class BridgeHandler(BaseHTTPRequestHandler):
 
     def _write_goal_row(self, cluster, db, row):
         return _kusto_ingest_direct(cluster, db, "Goals", _GOAL_COLUMNS, [row])
+
+    def _background_status(self):
+        self._json_response(200, _background_status_dict())
+
+    def _background_latest_proposal_by_id(self, cluster, db, proposal_id):
+        safe_id = _safe_kusto_string(proposal_id)
+        query = _BG_PROPOSALS_LATEST_QUERY + f" | where ProposalId == '{safe_id}' | take 1"
+        rows = _kusto_query_direct(cluster, db, query)
+        if rows is None:
+            return None, "BackgroundProposals query failed"
+        if not rows:
+            return {}, ""
+        return rows[0], ""
+
+    def _background_proposals(self):
+        if not _is_loopback_bind():
+            self._json_response(403, {"error": {"message": "background proposal reads are restricted to loopback bind"}})
+            return
+        cluster, db, ok = self._kusto_context()
+        if not ok:
+            return
+        parsed = urllib.parse.urlparse(self.path)
+        params = urllib.parse.parse_qs(parsed.query)
+        status = str(params.get("status", ["pending"])[0] or "pending").strip().lower()
+        if status not in _BG_PROPOSAL_STATUSES and status != "all":
+            self._json_response(400, {"error": {"message": "status must be pending, approved, rejected, applying, applied, failed, or all"}})
+            return
+        query = _BG_PROPOSALS_LATEST_QUERY
+        if status != "all":
+            query += f" | where Status == '{_safe_kusto_string(status)}'"
+        query += " | order by CreatedAt desc | take 50"
+        rows = _kusto_query_direct(cluster, db, query)
+        if rows is None:
+            self._json_response(500, {"error": {"message": "BackgroundProposals query failed"}})
+            return
+        self._json_response(200, {"proposals": rows})
+
+    def _background_activity(self):
+        if not _is_loopback_bind():
+            self._json_response(403, {"error": {"message": "background activity reads are restricted to loopback bind"}})
+            return
+        cluster, db, ok = self._kusto_context()
+        if not ok:
+            return
+        query = "BackgroundActivity | order by StartedAt desc | take 50"
+        rows = _kusto_query_direct(cluster, db, query)
+        if rows is None:
+            self._json_response(500, {"error": {"message": "BackgroundActivity query failed"}})
+            return
+        self._json_response(200, {"activity": rows})
+
+    def _background_control(self):
+        global _bg_loop_enabled, _bg_loop_interval_seconds, _bg_last_error
+        if not _is_loopback_bind():
+            self._json_response(403, {"error": {"message": "background mutations are restricted to loopback bind"}})
+            return
+
+        data, error = self._read_json_body()
+        if error:
+            self._json_response(400, {"error": {"message": error}})
+            return
+        if not isinstance(data, dict):
+            self._json_response(400, {"error": {"message": "Request body must be an object"}})
+            return
+        unknown = sorted(set(data.keys()) - {"enabled", "intervalSeconds", "runNow"})
+        if unknown:
+            self._json_response(400, {"error": {"message": "Unsupported field(s): " + ", ".join(unknown)}})
+            return
+
+        requested_enabled = _bg_loop_enabled
+        if "enabled" in data:
+            if not isinstance(data.get("enabled"), bool):
+                self._json_response(400, {"error": {"message": "enabled must be a boolean"}})
+                return
+            requested_enabled = bool(data.get("enabled"))
+
+        requested_interval = _bg_loop_interval_seconds
+        if "intervalSeconds" in data:
+            if isinstance(data.get("intervalSeconds"), bool):
+                self._json_response(400, {"error": {"message": "intervalSeconds must be an integer"}})
+                return
+            try:
+                requested_interval = int(data.get("intervalSeconds"))
+            except (TypeError, ValueError):
+                self._json_response(400, {"error": {"message": "intervalSeconds must be an integer"}})
+                return
+            if requested_interval < 900 or requested_interval > 86400:
+                self._json_response(400, {"error": {"message": "intervalSeconds must be between 900 and 86400"}})
+                return
+
+        run_now = bool(data.get("runNow"))
+        needs_kusto = requested_enabled or run_now
+        if needs_kusto:
+            if not _cognition_enabled:
+                self._json_response(503, {"error": {"message": "Cognition is not enabled"}})
+                return
+            cluster, db, context_ok = self._kusto_context()
+            if not context_ok:
+                return
+
+        _bg_loop_enabled = requested_enabled
+        _bg_loop_interval_seconds = requested_interval
+        if _bg_loop_enabled:
+            if not _start_bg_loop():
+                _bg_last_error = "background loop could not start"
+                self._json_response(503, {"error": {"message": _bg_last_error}})
+                return
+        else:
+            _stop_bg_loop()
+            _bg_last_error = ""
+        if run_now:
+            _trigger_background_run_once()
+
+        status = _background_status_dict()
+        status["runNowQueued"] = run_now
+        self._json_response(200, status)
+
+    def _background_review(self, parsed_path):
+        if not _is_loopback_bind():
+            self._json_response(403, {"error": {"message": "background mutations are restricted to loopback bind"}})
+            return
+        match = re.fullmatch(r"/v1/background/proposals/([^/]+)/(approve|reject)", parsed_path)
+        if not match:
+            self._json_response(404, {"error": {"message": "Not Found"}})
+            return
+        proposal_id, error = self._validate_background_proposal_id(urllib.parse.unquote(match.group(1)))
+        if error:
+            self._json_response(400, {"error": {"message": error}})
+            return
+        action = match.group(2)
+        cluster, db, ok = self._kusto_context()
+        if not ok:
+            return
+
+        current, error = self._background_latest_proposal_by_id(cluster, db, proposal_id)
+        if error:
+            self._json_response(500, {"error": {"message": error}})
+            return
+        if not current:
+            self._json_response(404, {"error": {"message": "Proposal not found"}})
+            return
+        current_status = str(current.get("Status", "")).lower()
+        if action == "approve" and current_status not in {"pending", "applying"}:
+            self._json_response(409, {"error": {"message": "Proposal is not pending or applying"}})
+            return
+        if action == "reject" and current_status != "pending":
+            self._json_response(409, {"error": {"message": "Proposal is not pending"}})
+            return
+
+        if action == "approve":
+            if current.get("TargetTable") != _BG_TARGET_TABLE:
+                self._json_response(400, {"error": {"message": "Unsupported proposal target table"}})
+                return
+            payload, error = _background_proposal_payload(current)
+            if error:
+                self._json_response(400, {"error": {"message": error}})
+                return
+            summary_row = {
+                "Period": str(payload.get("Period", "") or ""),
+                "Summary": str(payload.get("Summary", "") or ""),
+                "Timestamp": str(payload.get("Timestamp", "") or ""),
+            }
+            if not summary_row["Period"] or not summary_row["Summary"] or not summary_row["Timestamp"]:
+                self._json_response(400, {"error": {"message": "Proposal payload must include Period, Summary, and Timestamp"}})
+                return
+            parsed_timestamp = _parse_kusto_datetime(summary_row["Timestamp"])
+            if not parsed_timestamp:
+                self._json_response(400, {"error": {"message": "Proposal payload Timestamp must be a valid datetime"}})
+                return
+            summary_row["Timestamp"] = _to_utc_iso(parsed_timestamp)
+            if current_status == "pending":
+                applying_row = _background_proposal_update_row(current, "applying", "loopback", "applying to MemorySummaries")
+                if not _write_background_proposal(cluster, db, applying_row):
+                    self._json_response(500, {"error": {"message": "BackgroundProposals applying status write failed"}})
+                    return
+                current = applying_row
+            summary_exists, error = _background_memory_summary_exists(cluster, db, summary_row)
+            if error:
+                self._json_response(500, {"error": {"message": error + "; proposal remains applying. Retry approve safely after resolving the transient error."}})
+                return
+            if not summary_exists and not _kusto_ingest_direct(cluster, db, _BG_TARGET_TABLE, ["Period", "Summary", "Timestamp"], [summary_row]):
+                self._json_response(500, {"error": {"message": "MemorySummaries write failed after proposal moved to applying; proposal remains applying. Retry approve safely after resolving the transient error."}})
+                return
+            reviewed_row = _background_proposal_update_row(current, "applied", "loopback", "approved and applied to MemorySummaries")
+        else:
+            reviewed_row = _background_proposal_update_row(current, "rejected", "loopback", "rejected by user")
+
+        if not _write_background_proposal(cluster, db, reviewed_row):
+            message = "BackgroundProposals status write failed"
+            if action == "approve":
+                message += "; proposal remains applying. Retry approve safely after resolving the transient error."
+            self._json_response(500, {"error": {"message": message}})
+            return
+        self._json_response(200, {"proposal": reviewed_row})
 
     def _goals_list(self):
         cluster, db, ok = self._goals_kusto_context()
@@ -2279,6 +2866,7 @@ class BridgeHandler(BaseHTTPRequestHandler):
         if not user_message:
             self._json_response(400, {"error": {"message": "No user message provided"}})
             return
+        _mark_user_activity()
 
         print(f"[AIG] Processing: {user_message[:80]}...")
 
@@ -2347,7 +2935,7 @@ class BridgeHandler(BaseHTTPRequestHandler):
             r'\b(latest|recent|rows?|records?)\b',
             msg_lower
         )) and bool(_re.search(
-            r'\b(table|reflections|goals|conversations|knowledge|selfstate|emotionstate|memorysummaries|heuristicsindex|emotionbaseline)\b',
+            r'\b(table|reflections|goals|conversations|knowledge|selfstate|emotionstate|memorysummaries|heuristicsindex|emotionbaseline|backgroundproposals|backgroundactivity)\b',
             msg_lower
         )) and needs_acp_tools
 
@@ -2706,6 +3294,8 @@ class BridgeHandler(BaseHTTPRequestHandler):
         parsed = urlparse(self.path)
         params = parse_qs(parsed.query)
         user_message = params.get("message", [""])[0]
+        if user_message:
+            _mark_user_activity()
 
         context = _build_memory_context(user_message)
         self._json_response(200, {
@@ -2734,6 +3324,8 @@ class BridgeHandler(BaseHTTPRequestHandler):
         user_msg = data.get("user_message", "")
         assistant_msg = data.get("assistant_message", "")
         model = data.get("model", "unknown")
+        if user_msg:
+            _mark_user_activity()
 
         if user_msg and assistant_msg:
             threading.Thread(target=_post_response_reflection,
@@ -2965,6 +3557,8 @@ class BridgeHandler(BaseHTTPRequestHandler):
                 c = msg.get("content", "")
                 last_user_msg = " ".join(p.get("text", "") for p in c if p.get("type") == "text") if isinstance(c, list) else c
                 break
+        if last_user_msg:
+            _mark_user_activity()
 
         memory_context = _build_memory_context(last_user_msg)
         if memory_context:
@@ -3217,6 +3811,12 @@ def main():
     print(f"  POST /v1/goals              - Create a Kusto-backed goal")
     print(f"  PATCH /v1/goals/<id>        - Update a Kusto-backed goal")
     print(f"  DELETE /v1/goals/<id>       - Soft-delete a Kusto-backed goal")
+    print(f"  GET  /v1/background/status  - Background loop status")
+    print(f"  GET  /v1/background/proposals - List memory proposals")
+    print(f"  GET  /v1/background/activity - List background activity")
+    print(f"  POST /v1/background/control - Update background loop controls")
+    print(f"  POST /v1/background/proposals/<id>/approve - Apply a memory proposal")
+    print(f"  POST /v1/background/proposals/<id>/reject - Reject a memory proposal")
     print(f"  POST /v1/kusto/seed         - Apply Eva Kusto schema seed")
     print(f"  GET  /v1/files/<name>       - Download a generated artifact")
     print(f"  POST /v1/files/purge        - Delete all artifacts")
@@ -3227,7 +3827,10 @@ def main():
         server.serve_forever()
     except KeyboardInterrupt:
         print("\n[Bridge] Shutting down...")
-        acp_client.stop()
+    finally:
+        _stop_bg_loop()
+        if acp_client:
+            acp_client.stop()
         server.server_close()
 
 

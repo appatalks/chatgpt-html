@@ -32,7 +32,7 @@
 2026-01-01T00:00:00Z,data_retrieval,active,{"skills": ["stock_quotes", "financial_data", "company_info", "web_search"]}
 2026-01-01T00:00:00Z,weather_news,active,{"feeds": ["weather", "news", "markets", "space_weather"]}
 2026-01-01T00:00:00Z,image_skills,active,{"skills": ["wikimedia_search", "dalle3_generation"]}
-2026-01-01T00:00:00Z,persistent_memory,active,{"tables": ["Knowledge", "Conversations", "EmotionState", "MemorySummaries", "Reflections", "Goals", "SelfState", "HeuristicsIndex", "EmotionBaseline"]}
+2026-01-01T00:00:00Z,persistent_memory,active,{"tables": ["Knowledge", "Conversations", "EmotionState", "MemorySummaries", "Reflections", "Goals", "SelfState", "HeuristicsIndex", "EmotionBaseline", "BackgroundProposals", "BackgroundActivity"]}
 2026-01-01T00:00:00Z,mcp_kusto-mcp-server,active,{}
 
 // ── Table: Knowledge ──────────────────────────────────────────────
@@ -113,6 +113,41 @@ Empathy,0.6
 
 .ingest inline into table MemorySummaries <|
 2026-01-01,Initial setup — Eva database seeded with starter knowledge and emotion baseline.,2026-01-01T00:00:00Z
+
+// -- Table: BackgroundProposals -----------------------------------
+// Human-reviewed proposals produced by bridge-internal background jobs.
+.create-merge table BackgroundProposals (
+    ProposalId: string,
+    CreatedAt: datetime,
+    JobType: string,
+    TargetTable: string,
+    Payload: dynamic,
+    Status: string,
+    SourceWindowStart: datetime,
+    SourceWindowEnd: datetime,
+    Notes: string,
+    ReviewedAt: datetime,
+    ReviewedBy: string
+)
+
+.ingest inline into table BackgroundProposals <|
+seed-background-proposal-001,2026-01-01T00:00:00Z,memory_consolidation,MemorySummaries,"{""Period"": ""background-2026-01-01"", ""Summary"": ""Seed proposal only - no canonical write needed."", ""Timestamp"": ""2026-01-01T00:00:00Z""}",rejected,2026-01-01T00:00:00Z,2026-01-01T00:00:00Z,seed row,2026-01-01T00:00:00Z,seed
+
+// -- Table: BackgroundActivity ------------------------------------
+// Tick history for bridge-internal background jobs.
+.create-merge table BackgroundActivity (
+    TickId: string,
+    StartedAt: datetime,
+    EndedAt: datetime,
+    JobType: string,
+    Status: string,
+    ProposalCount: int,
+    TokenEstimate: int,
+    Notes: string
+)
+
+.ingest inline into table BackgroundActivity <|
+seed-background-tick-001,2026-01-01T00:00:00Z,2026-01-01T00:00:01Z,memory_consolidation,skipped,0,0,seed row
 
 // ── Table: Reflections ────────────────────────────────────────────
 // Eva's self-reflections triggered by significant interactions.
