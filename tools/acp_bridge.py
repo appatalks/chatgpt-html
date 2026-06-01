@@ -2186,7 +2186,12 @@ class BridgeHandler(BaseHTTPRequestHandler):
     """HTTP handler that bridges browser requests to ACP."""
 
     def _cors_headers(self):
-        self.send_header("Access-Control-Allow-Origin", "*")
+        origin = self.headers.get("Origin", "")
+        allowed = not origin or origin.startswith("file://") or origin.startswith("http://127.0.0.1") or origin.startswith("http://localhost") or origin.startswith("http://[::1]")
+        if allowed:
+            self.send_header("Access-Control-Allow-Origin", origin if origin else "*")
+        else:
+            self.send_header("Access-Control-Allow-Origin", "null")
         self.send_header("Access-Control-Allow-Methods", "GET, POST, PATCH, DELETE, OPTIONS")
         self.send_header("Access-Control-Allow-Headers", "Content-Type, Authorization")
 
@@ -2494,7 +2499,12 @@ class BridgeHandler(BaseHTTPRequestHandler):
                 self._json_response(400, {"error": {"message": "intervalSeconds must be between 900 and 86400"}})
                 return
 
-        run_now = bool(data.get("runNow"))
+        run_now = False
+        if "runNow" in data:
+            if not isinstance(data.get("runNow"), bool):
+                self._json_response(400, {"error": {"message": "runNow must be a boolean"}})
+                return
+            run_now = data["runNow"]
         needs_kusto = requested_enabled or run_now
         if needs_kusto:
             if not _cognition_enabled:

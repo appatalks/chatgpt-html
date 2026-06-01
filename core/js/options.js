@@ -1764,6 +1764,7 @@ function _vvStartListening() {
 function _vvStopListening() {
   if (_vv.awakeTimer) { clearTimeout(_vv.awakeTimer); _vv.awakeTimer = null; }
   if (_vv.silenceTimer) { clearTimeout(_vv.silenceTimer); _vv.silenceTimer = null; }
+  if (_vv.recordingCap) { clearTimeout(_vv.recordingCap); _vv.recordingCap = null; }
   if (_vv.recognition) {
     var rec = _vv.recognition;
     _vv.recognition = null; // prevent auto-restart
@@ -1812,10 +1813,11 @@ function _vvWhisperRecord() {
   _vv.speechDetected = false;
 
   _vv.mediaRecorder.ondataavailable = function(e) {
-    if (e.data && e.data.size > 0) _vv.audioChunks.push(e.data);
+    if (e.data && e.data.size > 0 && _vv.speechDetected) _vv.audioChunks.push(e.data);
   };
 
   _vv.mediaRecorder.onstop = function() {
+    if (_vv.recordingCap) { clearTimeout(_vv.recordingCap); _vv.recordingCap = null; }
     if (!_vv.speechDetected || !_vv.audioChunks.length || !_vv.whisperMode) {
       if (_vv.open && _vv.whisperMode) setTimeout(function() { _vvWhisperRecord(); }, 200);
       return;
@@ -1826,6 +1828,15 @@ function _vvWhisperRecord() {
   };
 
   _vv.mediaRecorder.start(250);
+
+  // Cap recording at 30 seconds to prevent unbounded memory growth
+  _vv.recordingCap = setTimeout(function() {
+    _vv.recordingCap = null;
+    if (_vv.mediaRecorder && _vv.mediaRecorder.state === 'recording') {
+      try { _vv.mediaRecorder.stop(); } catch(e) {}
+    }
+  }, 30000);
+
   _vvWhisperMonitor();
 }
 
