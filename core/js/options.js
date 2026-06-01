@@ -1813,7 +1813,7 @@ function _vvWhisperRecord() {
   _vv.speechDetected = false;
 
   _vv.mediaRecorder.ondataavailable = function(e) {
-    if (e.data && e.data.size > 0 && _vv.speechDetected) _vv.audioChunks.push(e.data);
+    if (e.data && e.data.size > 0) _vv.audioChunks.push(e.data);
   };
 
   _vv.mediaRecorder.onstop = function() {
