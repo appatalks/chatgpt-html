@@ -2187,6 +2187,9 @@ class BridgeHandler(BaseHTTPRequestHandler):
 
     def _cors_headers(self):
         origin = self.headers.get("Origin", "")
+        # Reject any origin containing CRLF or null bytes to prevent HTTP response splitting
+        if "\r" in origin or "\n" in origin or "\x00" in origin:
+            origin = ""
         allowed = not origin or origin.startswith("file://") or origin.startswith("http://127.0.0.1") or origin.startswith("http://localhost") or origin.startswith("http://[::1]")
         if allowed:
             self.send_header("Access-Control-Allow-Origin", origin if origin else "*")
