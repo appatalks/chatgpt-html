@@ -110,6 +110,9 @@ function saveAuthKeys() {
   } else if (lmsModelEl) {
     localStorage.removeItem('aig_lmstudio_model');
   }
+  if (typeof _acpBridgeCache !== 'undefined') _acpBridgeCache = null;
+  if (typeof loadGoals === 'function') loadGoals(true);
+  if (typeof loadBackgroundData === 'function') loadBackgroundData(true);
   setStatus('info', 'API keys saved to browser storage.');
 }
 
@@ -165,6 +168,598 @@ function getSafeBridgeBaseUrl() {
   } catch (e) {
     return fallback;
   }
+}
+
+async function getSettingsBridgeUrl() {
+  if (typeof detectACPBridge === 'function') {
+    return await detectACPBridge();
+  }
+  if (typeof getACPBridgeUrl === 'function') {
+    return getACPBridgeUrl();
+  }
+  return 'http://localhost:8888';
+}
+
+var _goalsState = { goals: [], loading: false, emptyMessage: '' };
+
+async function getGoalsBridgeUrl() {
+  return await getSettingsBridgeUrl();
+}
+
+function getGoalField(goal, primary, alternate) {
+  if (!goal) return '';
+  if (goal[primary] !== undefined && goal[primary] !== null) return goal[primary];
+  if (alternate && goal[alternate] !== undefined && goal[alternate] !== null) return goal[alternate];
+  return '';
+}
+
+function formatGoalCategory(value) {
+  return String(value || '').replace(/_/g, ' ') || 'uncategorized';
+}
+
+function formatGoalDate(value) {
+  if (!value) return '-';
+  var date = new Date(value);
+  if (Number.isNaN(date.getTime())) return String(value);
+  return date.toLocaleString();
+}
+
+function setGoalsStatus(type, text, quiet) {
+  var statusEl = document.getElementById('goalsStatus');
+  if (statusEl) {
+    statusEl.textContent = text || '';
+    statusEl.setAttribute('data-status', type || 'info');
+  }
+  if (text && !quiet) {
+    setStatus(type === 'error' ? 'error' : 'info', text);
+  }
+}
+
+function updateActiveGoalsCount(goals) {
+  var countEl = document.getElementById('evaActiveGoalsCount');
+  if (!countEl) return;
+  var active = (goals || []).filter(function(goal) {
+    return String(getGoalField(goal, 'Status', 'status') || '').toLowerCase() === 'active';
+  }).length;
+  countEl.textContent = String(active);
+}
+
+function renderGoalsList() {
+  var listEl = document.getElementById('goalsList');
+  if (!listEl) return;
+  listEl.innerHTML = '';
+
+  if (_goalsState.emptyMessage) {
+    var empty = document.createElement('div');
+    empty.className = 'auth-note';
+    empty.textContent = _goalsState.emptyMessage;
+    listEl.appendChild(empty);
+    return;
+  }
+
+  if (!_goalsState.goals.length) {
+    var none = document.createElement('div');
+    none.className = 'auth-note';
+    none.textContent = 'No goals yet.';
+    listEl.appendChild(none);
+    return;
+  }
+
+  _goalsState.goals.forEach(function(goal) {
+    var goalId = String(getGoalField(goal, 'GoalId', 'goalId') || '');
+    var title = String(getGoalField(goal, 'Title', 'title') || 'Untitled goal');
+    var description = String(getGoalField(goal, 'Description', 'description') || '');
+    var category = String(getGoalField(goal, 'Category', 'category') || '');
+    var priority = getGoalField(goal, 'Priority', 'priority');
+    var status = String(getGoalField(goal, 'Status', 'status') || '');
+    var updatedAt = getGoalField(goal, 'UpdatedAt', 'updatedAt');
+
+    var row = document.createElement('div');
+    row.className = 'goal-row';
+
+    var head = document.createElement('div');
+    head.className = 'goal-row-head';
+
+    var titleEl = document.createElement('div');
+    titleEl.className = 'goal-title';
+    titleEl.textContent = title;
+    head.appendChild(titleEl);
+
+    var actions = document.createElement('div');
+    actions.className = 'goal-actions';
+    var editButton = document.createElement('button');
+    editButton.type = 'button';
+    editButton.className = 'auth-toggle';
+    editButton.textContent = 'Edit';
+    editButton.addEventListener('click', function() { openGoalForm(goal); });
+    actions.appendChild(editButton);
+    var deleteButton = document.createElement('button');
+    deleteButton.type = 'button';
+    deleteButton.className = 'auth-toggle';
+    deleteButton.textContent = 'Delete';
+    deleteButton.addEventListener('click', function() { deleteGoal(goalId, title); });
+    actions.appendChild(deleteButton);
+    head.appendChild(actions);
+
+    var meta = document.createElement('div');
+    meta.className = 'goal-meta';
+    var categoryBadge = document.createElement('span');
+    categoryBadge.className = 'goal-badge';
+    categoryBadge.textContent = formatGoalCategory(category);
+    meta.appendChild(categoryBadge);
+    var priorityEl = document.createElement('span');
+    priorityEl.textContent = 'Priority: ' + (priority === '' ? '-' : priority);
+    meta.appendChild(priorityEl);
+    var statusEl = document.createElement('span');
+    statusEl.textContent = 'Status: ' + (status || '-');
+    meta.appendChild(statusEl);
+    var updatedEl = document.createElement('span');
+    updatedEl.textContent = 'Updated: ' + formatGoalDate(updatedAt);
+    meta.appendChild(updatedEl);
+
+    row.appendChild(head);
+    row.appendChild(meta);
+    if (description) {
+      var desc = document.createElement('div');
+      desc.className = 'goal-description';
+      desc.textContent = description;
+      row.appendChild(desc);
+    }
+    listEl.appendChild(row);
+  });
+}
+
+async function goalsBridgeRequest(path, options) {
+  var bridgeUrl = await getGoalsBridgeUrl();
+  var response = await fetch(bridgeUrl.replace(/\/+$/, '') + path, options || {});
+  var text = await response.text();
+  var data = {};
+  if (text) {
+    try { data = JSON.parse(text); } catch (_) { data = { message: text }; }
+  }
+  if (!response.ok) {
+    var message = data && data.error && data.error.message ? data.error.message : (data.message || ('HTTP ' + response.status));
+    var error = new Error(message);
+    error.status = response.status;
+    error.data = data;
+    throw error;
+  }
+  return data;
+}
+
+async function loadGoals(quiet) {
+  if (_goalsState.loading) return;
+  _goalsState.loading = true;
+  setGoalsStatus('info', quiet ? '' : 'Loading goals...', true);
+  try {
+    var options = { method: 'GET' };
+    if (typeof AbortSignal !== 'undefined' && AbortSignal.timeout) {
+      options.signal = AbortSignal.timeout(3000);
+    }
+    var data = await goalsBridgeRequest('/v1/goals', options);
+    _goalsState.goals = Array.isArray(data.goals) ? data.goals : [];
+    _goalsState.emptyMessage = '';
+    updateActiveGoalsCount(_goalsState.goals);
+    renderGoalsList();
+    setGoalsStatus('info', _goalsState.goals.length ? '' : 'No goals yet.', true);
+  } catch (error) {
+    _goalsState.goals = [];
+    updateActiveGoalsCount([]);
+    if (error && error.status === 503) {
+      _goalsState.emptyMessage = error.message || 'Goals are not available right now.';
+      setGoalsStatus('warn', _goalsState.emptyMessage, true);
+    } else {
+      _goalsState.emptyMessage = 'Goals are not available right now.';
+      setGoalsStatus('error', 'Goals load failed: ' + (error.message || error), quiet);
+    }
+    renderGoalsList();
+  } finally {
+    _goalsState.loading = false;
+  }
+}
+
+function setGoalFormStatusMode(isEdit) {
+  var statusField = document.getElementById('goalStatusField');
+  if (statusField) statusField.style.display = isEdit ? 'block' : 'none';
+}
+
+function openGoalForm(goal) {
+  var form = document.getElementById('goalsForm');
+  if (!form) return;
+  var isEdit = !!goal;
+  var goalId = isEdit ? String(getGoalField(goal, 'GoalId', 'goalId') || '') : '';
+  var editId = document.getElementById('goalEditId');
+  var title = document.getElementById('goalTitle');
+  var description = document.getElementById('goalDescription');
+  var category = document.getElementById('goalCategory');
+  var priority = document.getElementById('goalPriority');
+  var status = document.getElementById('goalStatusSelect');
+  if (editId) editId.value = goalId;
+  if (title) title.value = isEdit ? String(getGoalField(goal, 'Title', 'title') || '') : '';
+  if (description) description.value = isEdit ? String(getGoalField(goal, 'Description', 'description') || '') : '';
+  if (category) category.value = isEdit ? String(getGoalField(goal, 'Category', 'category') || 'relational') : 'relational';
+  if (priority) priority.value = isEdit ? String(getGoalField(goal, 'Priority', 'priority') || 50) : '50';
+  if (status) status.value = isEdit ? String(getGoalField(goal, 'Status', 'status') || 'active') : 'active';
+  setGoalFormStatusMode(isEdit);
+  form.style.display = 'block';
+  setGoalsStatus('info', '', true);
+  if (title) title.focus();
+}
+
+function closeGoalForm() {
+  var form = document.getElementById('goalsForm');
+  if (form) form.style.display = 'none';
+  setGoalFormStatusMode(false);
+}
+
+function readGoalForm() {
+  var title = document.getElementById('goalTitle');
+  var description = document.getElementById('goalDescription');
+  var category = document.getElementById('goalCategory');
+  var priority = document.getElementById('goalPriority');
+  var status = document.getElementById('goalStatusSelect');
+  var editId = document.getElementById('goalEditId');
+  var titleValue = title ? title.value.trim() : '';
+  var descriptionValue = description ? description.value.trim() : '';
+  var priorityValue = priority ? Number(priority.value) : NaN;
+  if (!titleValue) return { error: 'Title is required.' };
+  if (titleValue.length > 200) return { error: 'Title must be 200 characters or fewer.' };
+  if (descriptionValue.length > 2000) return { error: 'Description must be 2000 characters or fewer.' };
+  if (!Number.isInteger(priorityValue) || priorityValue < 0 || priorityValue > 100) return { error: 'Priority must be an integer from 0 to 100.' };
+  var body = {
+    title: titleValue,
+    description: descriptionValue,
+    category: category ? category.value : 'relational',
+    priority: priorityValue,
+    relatedTopics: ''
+  };
+  if (editId && editId.value && status) body.status = status.value;
+  return { body: body, goalId: editId ? editId.value : '' };
+}
+
+async function saveGoalFromSettings() {
+  var formData = readGoalForm();
+  if (formData.error) {
+    setGoalsStatus('error', formData.error, false);
+    return;
+  }
+  var isEdit = !!formData.goalId;
+  var button = document.getElementById('goalsSaveButton');
+  if (button) button.disabled = true;
+  setGoalsStatus('info', 'Saving goal...', true);
+  try {
+    var path = isEdit ? '/v1/goals/' + encodeURIComponent(formData.goalId) : '/v1/goals';
+    await goalsBridgeRequest(path, {
+      method: isEdit ? 'PATCH' : 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(formData.body)
+    });
+    closeGoalForm();
+    await loadGoals(true);
+    setGoalsStatus('info', 'Goal saved.', false);
+  } catch (error) {
+    var message = error && error.status === 503 ? (error.message || 'Goals are not available right now.') : ('Goal save failed: ' + (error.message || error));
+    setGoalsStatus('error', message, false);
+  } finally {
+    if (button) button.disabled = false;
+  }
+}
+
+async function deleteGoal(goalId, title) {
+  if (!goalId) return;
+  if (!confirm('Drop goal "' + title + '"?')) return;
+  setGoalsStatus('info', 'Dropping goal...', true);
+  try {
+    await goalsBridgeRequest('/v1/goals/' + encodeURIComponent(goalId), { method: 'DELETE' });
+    await loadGoals(true);
+    setGoalsStatus('info', 'Goal dropped.', false);
+  } catch (error) {
+    var message = error && error.status === 503 ? (error.message || 'Goals are not available right now.') : ('Goal delete failed: ' + (error.message || error));
+    setGoalsStatus('error', message, false);
+  }
+}
+
+function initGoals() {
+  var newButton = document.getElementById('goalsNewButton');
+  var refreshButton = document.getElementById('goalsRefreshButton');
+  var saveButton = document.getElementById('goalsSaveButton');
+  var cancelButton = document.getElementById('goalsCancelButton');
+  if (newButton) newButton.addEventListener('click', function() { openGoalForm(null); });
+  if (refreshButton) refreshButton.addEventListener('click', function() { loadGoals(false); });
+  if (saveButton) saveButton.addEventListener('click', saveGoalFromSettings);
+  if (cancelButton) cancelButton.addEventListener('click', closeGoalForm);
+  renderGoalsList();
+  loadGoals(true);
+}
+
+var _backgroundState = { status: null, proposals: [], activity: [], loading: false, error: '' };
+
+async function backgroundBridgeRequest(path, options) {
+  var bridgeUrl = await getSettingsBridgeUrl();
+  var response = await fetch(bridgeUrl.replace(/\/+$/, '') + path, options || {});
+  var text = await response.text();
+  var data = {};
+  if (text) {
+    try { data = JSON.parse(text); } catch (_) { data = { message: text }; }
+  }
+  if (!response.ok) {
+    var message = data && data.error && data.error.message ? data.error.message : (data.message || ('HTTP ' + response.status));
+    var error = new Error(message);
+    error.status = response.status;
+    error.data = data;
+    throw error;
+  }
+  return data;
+}
+
+function getBackgroundField(row, primary, alternate) {
+  if (!row) return '';
+  if (row[primary] !== undefined && row[primary] !== null) return row[primary];
+  if (alternate && row[alternate] !== undefined && row[alternate] !== null) return row[alternate];
+  return '';
+}
+
+function getBackgroundPayload(proposal) {
+  var payload = getBackgroundField(proposal, 'Payload', 'payload');
+  if (!payload) return {};
+  if (typeof payload === 'string') {
+    try { return JSON.parse(payload); } catch (_) { return {}; }
+  }
+  return typeof payload === 'object' ? payload : {};
+}
+
+function renderBackgroundStatus() {
+  var statusEl = document.getElementById('backgroundStatus');
+  if (!statusEl) return;
+  var status = _backgroundState.status || null;
+  if (!status) {
+    statusEl.textContent = _backgroundState.error || 'Background status unavailable.';
+    statusEl.setAttribute('data-status', _backgroundState.error ? 'warn' : 'info');
+    return;
+  }
+  var lastError = _backgroundState.error || status.lastError || 'none';
+  var parts = [
+    'Running: ' + (status.running ? 'yes' : 'no'),
+    'Enabled: ' + (status.enabled ? 'yes' : 'no'),
+    'Interval: ' + (status.intervalSeconds || 0) + 's',
+    'Last tick: ' + (status.lastTick ? formatGoalDate(status.lastTick) : '-'),
+    'Last error: ' + lastError
+  ];
+  statusEl.textContent = parts.join(' | ');
+  statusEl.setAttribute('data-status', lastError === 'none' ? 'info' : 'warn');
+
+  var enabledEl = document.getElementById('backgroundEnabled');
+  var intervalEl = document.getElementById('backgroundIntervalSeconds');
+  if (enabledEl) enabledEl.checked = !!status.enabled;
+  if (intervalEl && status.intervalSeconds) intervalEl.value = String(status.intervalSeconds);
+}
+
+function renderBackgroundProposals() {
+  var listEl = document.getElementById('backgroundProposals');
+  if (!listEl) return;
+  listEl.innerHTML = '';
+  if (_backgroundState.error && !_backgroundState.proposals.length) {
+    var errorEl = document.createElement('div');
+    errorEl.className = 'auth-note';
+    errorEl.textContent = _backgroundState.error;
+    listEl.appendChild(errorEl);
+    return;
+  }
+  if (!_backgroundState.proposals.length) {
+    var emptyEl = document.createElement('div');
+    emptyEl.className = 'auth-note';
+    emptyEl.textContent = 'No pending proposals.';
+    listEl.appendChild(emptyEl);
+    return;
+  }
+
+  _backgroundState.proposals.forEach(function(proposal) {
+    var proposalId = String(getBackgroundField(proposal, 'ProposalId', 'proposalId') || '');
+    var status = String(getBackgroundField(proposal, 'Status', 'status') || 'pending');
+    var createdAt = getBackgroundField(proposal, 'CreatedAt', 'createdAt');
+    var notes = String(getBackgroundField(proposal, 'Notes', 'notes') || '');
+    var windowStart = getBackgroundField(proposal, 'SourceWindowStart', 'sourceWindowStart');
+    var windowEnd = getBackgroundField(proposal, 'SourceWindowEnd', 'sourceWindowEnd');
+    var payload = getBackgroundPayload(proposal);
+    var summary = String(payload.Summary || payload.summary || 'No summary text.');
+
+    var row = document.createElement('div');
+    row.className = 'background-row';
+
+    var head = document.createElement('div');
+    head.className = 'background-row-head';
+    var title = document.createElement('div');
+    title.className = 'background-title';
+    title.textContent = 'Memory summary proposal';
+    head.appendChild(title);
+
+    var actions = document.createElement('div');
+    actions.className = 'background-actions';
+    if (status.toLowerCase() === 'pending') {
+      var approveButton = document.createElement('button');
+      approveButton.type = 'button';
+      approveButton.className = 'auth-save background-inline-button';
+      approveButton.textContent = 'Approve';
+      approveButton.addEventListener('click', function() { reviewBackgroundProposal(proposalId, 'approve'); });
+      actions.appendChild(approveButton);
+      var rejectButton = document.createElement('button');
+      rejectButton.type = 'button';
+      rejectButton.className = 'auth-toggle';
+      rejectButton.textContent = 'Reject';
+      rejectButton.addEventListener('click', function() { reviewBackgroundProposal(proposalId, 'reject'); });
+      actions.appendChild(rejectButton);
+    }
+    head.appendChild(actions);
+    row.appendChild(head);
+
+    var meta = document.createElement('div');
+    meta.className = 'background-meta';
+    ['Status: ' + status, 'Created: ' + formatGoalDate(createdAt), 'Proposal: ' + proposalId].forEach(function(text) {
+      var item = document.createElement('span');
+      item.textContent = text;
+      meta.appendChild(item);
+    });
+    row.appendChild(meta);
+
+    var source = document.createElement('div');
+    source.className = 'background-meta';
+    source.textContent = 'Source window: ' + formatGoalDate(windowStart) + ' to ' + formatGoalDate(windowEnd);
+    row.appendChild(source);
+
+    var summaryEl = document.createElement('div');
+    summaryEl.className = 'background-description';
+    summaryEl.textContent = summary;
+    row.appendChild(summaryEl);
+    if (notes) {
+      var notesEl = document.createElement('div');
+      notesEl.className = 'background-note';
+      notesEl.textContent = notes;
+      row.appendChild(notesEl);
+    }
+    listEl.appendChild(row);
+  });
+}
+
+function renderBackgroundActivity() {
+  var listEl = document.getElementById('backgroundActivity');
+  if (!listEl) return;
+  listEl.innerHTML = '';
+  if (!_backgroundState.activity.length) {
+    var emptyEl = document.createElement('div');
+    emptyEl.className = 'auth-note';
+    emptyEl.textContent = 'No background activity yet.';
+    listEl.appendChild(emptyEl);
+    return;
+  }
+  _backgroundState.activity.forEach(function(activity) {
+    var row = document.createElement('div');
+    row.className = 'background-row background-activity-row';
+    var status = String(getBackgroundField(activity, 'Status', 'status') || '');
+    var startedAt = getBackgroundField(activity, 'StartedAt', 'startedAt');
+    var proposalCount = getBackgroundField(activity, 'ProposalCount', 'proposalCount');
+    var notes = String(getBackgroundField(activity, 'Notes', 'notes') || '');
+    var title = document.createElement('div');
+    title.className = 'background-title';
+    title.textContent = status || 'activity';
+    row.appendChild(title);
+    var meta = document.createElement('div');
+    meta.className = 'background-meta';
+    meta.textContent = formatGoalDate(startedAt) + ' | Proposals: ' + (proposalCount === '' ? 0 : proposalCount);
+    row.appendChild(meta);
+    if (notes) {
+      var notesEl = document.createElement('div');
+      notesEl.className = 'background-note';
+      notesEl.textContent = notes;
+      row.appendChild(notesEl);
+    }
+    listEl.appendChild(row);
+  });
+}
+
+function renderBackgroundAll() {
+  renderBackgroundStatus();
+  renderBackgroundProposals();
+  renderBackgroundActivity();
+}
+
+async function loadBackgroundData(quiet) {
+  if (_backgroundState.loading) return;
+  _backgroundState.loading = true;
+  _backgroundState.error = '';
+  if (!quiet) {
+    _backgroundState.status = null;
+    renderBackgroundStatus();
+  }
+  try {
+    var options = { method: 'GET' };
+    if (typeof AbortSignal !== 'undefined' && AbortSignal.timeout) {
+      options.signal = AbortSignal.timeout(3000);
+    }
+    _backgroundState.status = await backgroundBridgeRequest('/v1/background/status', options);
+    try {
+      var proposalData = await backgroundBridgeRequest('/v1/background/proposals?status=pending', options);
+      var activityData = await backgroundBridgeRequest('/v1/background/activity', options);
+      _backgroundState.proposals = Array.isArray(proposalData.proposals) ? proposalData.proposals : [];
+      _backgroundState.activity = Array.isArray(activityData.activity) ? activityData.activity : [];
+    } catch (listError) {
+      _backgroundState.proposals = [];
+      _backgroundState.activity = [];
+      _backgroundState.error = listError.message || 'Background lists are not available right now.';
+    }
+  } catch (error) {
+    _backgroundState.status = null;
+    _backgroundState.proposals = [];
+    _backgroundState.activity = [];
+    _backgroundState.error = error.message || 'Background loop is not available right now.';
+    if (!quiet) setStatus('warn', _backgroundState.error);
+  } finally {
+    _backgroundState.loading = false;
+    renderBackgroundAll();
+  }
+}
+
+async function saveBackgroundControls(runNow) {
+  var enabledEl = document.getElementById('backgroundEnabled');
+  var intervalEl = document.getElementById('backgroundIntervalSeconds');
+  var saveButton = document.getElementById('backgroundSaveButton');
+  var runButton = document.getElementById('backgroundRunNowButton');
+  var intervalValue = intervalEl ? parseInt(intervalEl.value, 10) : 7200;
+  if (!Number.isInteger(intervalValue) || intervalValue < 900 || intervalValue > 86400) {
+    _backgroundState.error = 'Interval must be between 900 and 86400 seconds.';
+    renderBackgroundStatus();
+    setStatus('error', _backgroundState.error);
+    return;
+  }
+  if (saveButton) saveButton.disabled = true;
+  if (runButton) runButton.disabled = true;
+  try {
+    var data = await backgroundBridgeRequest('/v1/background/control', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        enabled: enabledEl ? !!enabledEl.checked : true,
+        intervalSeconds: intervalValue,
+        runNow: !!runNow
+      })
+    });
+    _backgroundState.status = data;
+    _backgroundState.error = '';
+    renderBackgroundStatus();
+    await loadBackgroundData(true);
+    setStatus('info', runNow ? 'Background run queued.' : 'Background controls saved.');
+  } catch (error) {
+    _backgroundState.error = error.message || 'Background control update failed.';
+    renderBackgroundStatus();
+    setStatus('error', _backgroundState.error);
+  } finally {
+    if (saveButton) saveButton.disabled = false;
+    if (runButton) runButton.disabled = false;
+  }
+}
+
+async function reviewBackgroundProposal(proposalId, action) {
+  if (!proposalId) return;
+  if (action === 'approve' && !confirm('Apply this proposal to MemorySummaries?')) return;
+  try {
+    await backgroundBridgeRequest('/v1/background/proposals/' + encodeURIComponent(proposalId) + '/' + action, { method: 'POST' });
+    await loadBackgroundData(true);
+    setStatus('info', action === 'approve' ? 'Proposal applied.' : 'Proposal rejected.');
+  } catch (error) {
+    _backgroundState.error = error.message || 'Proposal review failed.';
+    renderBackgroundAll();
+    setStatus('error', _backgroundState.error);
+  }
+}
+
+function initBackground() {
+  var saveButton = document.getElementById('backgroundSaveButton');
+  var runButton = document.getElementById('backgroundRunNowButton');
+  var refreshButton = document.getElementById('backgroundRefreshButton');
+  if (saveButton) saveButton.addEventListener('click', function() { saveBackgroundControls(false); });
+  if (runButton) runButton.addEventListener('click', function() { saveBackgroundControls(true); });
+  if (refreshButton) refreshButton.addEventListener('click', function() { loadBackgroundData(false); });
+  renderBackgroundAll();
+  loadBackgroundData(true);
 }
 
 function applyStandaloneSimplifications() {
@@ -613,6 +1208,7 @@ document.addEventListener('DOMContentLoaded', () => {
       settingsMenu.classList.add('open');
       if (overlay) overlay.classList.add('open');
       populateAuthFields();
+      if (typeof loadBackgroundData === 'function') loadBackgroundData(true);
     }
   }
 
@@ -720,6 +1316,7 @@ document.addEventListener('DOMContentLoaded', () => {
       settingsMenu.classList.add('open');
       if (overlay) overlay.classList.add('open');
       populateAuthFields();
+      if (typeof loadBackgroundData === 'function') loadBackgroundData(true);
     }
     if (tabName) {
       setTimeout(function() {
@@ -771,6 +1368,8 @@ document.addEventListener('DOMContentLoaded', () => {
       settingsPanels.forEach(function(p) {
         p.classList.toggle('active', p.getAttribute('data-stab') === target);
       });
+      if (target === 'goals' && typeof loadGoals === 'function') loadGoals(false);
+      if (target === 'background' && typeof loadBackgroundData === 'function') loadBackgroundData(false);
     });
   });
 
@@ -805,6 +1404,8 @@ document.addEventListener('DOMContentLoaded', () => {
   initSystemPrompt();
   onModelSettingsChange();
   if (typeof cogInit === 'function') cogInit();
+  if (typeof initGoals === 'function') initGoals();
+  if (typeof initBackground === 'function') initBackground();
 
   // Initialize status panel with any pending config/init notes
   setStatus('info', document.getElementById('idText') && document.getElementById('idText').textContent ? document.getElementById('idText').textContent : '');
@@ -840,6 +1441,611 @@ function showWelcome() {
     '&bull; <b>Multiple Models</b> &mdash; Switch providers in Settings &rarr; Models (OpenAI, Gemini, Copilot, local LLMs).<br><br>' +
     'Just type or speak &mdash; I\'m ready.' +
     '</div>';
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  Voice View — ambient, always-listening mode
+// ═══════════════════════════════════════════════════════════════
+
+var _vv = {
+  open: false,
+  animFrame: null,
+  audioCtx: null,
+  analyser: null,
+  micStream: null,
+  dataArray: null,
+  phase: 'idle', // idle | listening | awake | thinking | speaking | error
+  recognition: null,
+  awakeTimer: null,
+  lastTranscript: '',
+  lastEvaReply: '',
+  speakObserver: null
+};
+
+function toggleVoiceView() {
+  if (_vv.open) {
+    closeVoiceView();
+  } else {
+    openVoiceView();
+  }
+}
+
+function openVoiceView() {
+  var el = document.getElementById('voiceView');
+  if (!el) return;
+  _vv.open = true;
+  el.classList.add('open');
+  el.setAttribute('aria-hidden', 'false');
+  _vvSetStatus('idle', 'Tap the orb to begin');
+  _vvClearTranscript();
+
+  // Wire close button
+  var closeBtn = document.getElementById('voiceViewClose');
+  if (closeBtn) closeBtn.onclick = closeVoiceView;
+
+  // Wire canvas tap to start/stop listening
+  var canvas = document.getElementById('voiceViewCanvas');
+  if (canvas) canvas.onclick = _vvToggleListening;
+
+  // Escape key to close
+  _vv._onEscape = function(e) { if (e.key === 'Escape') closeVoiceView(); };
+  document.addEventListener('keydown', _vv._onEscape);
+
+  // Start animation loop
+  _vvStartCanvas();
+}
+
+function closeVoiceView() {
+  _vv.open = false;
+  var el = document.getElementById('voiceView');
+  if (el) {
+    el.classList.remove('open');
+    el.setAttribute('aria-hidden', 'true');
+  }
+  // Clean up observer and restore auto-speak if a command was pending
+  if (_vv.speakObserver) { _vv.speakObserver.disconnect(); _vv.speakObserver = null; }
+  if (_vv._wasAutoSpeak !== undefined) {
+    var autoSpeak = document.getElementById('autoSpeak');
+    if (autoSpeak) autoSpeak.checked = _vv._wasAutoSpeak;
+    delete _vv._wasAutoSpeak;
+  }
+  // Remove Escape listener
+  if (_vv._onEscape) {
+    document.removeEventListener('keydown', _vv._onEscape);
+    delete _vv._onEscape;
+  }
+  _vvStopListening();
+  _vvStopCanvas();
+}
+
+function _vvSetStatus(phase, text) {
+  _vv.phase = phase;
+  var el = document.getElementById('voiceViewStatus');
+  if (!el) return;
+  el.className = 'voice-view-status';
+  if (phase !== 'idle') el.classList.add('vv-' + phase);
+  if (text) el.textContent = text;
+}
+
+function _vvClearTranscript() {
+  var el = document.getElementById('voiceViewTranscript');
+  if (el) el.innerHTML = '';
+  _vv.lastTranscript = '';
+  _vv.lastEvaReply = '';
+}
+
+function _vvShowTranscript(userText, evaText) {
+  var el = document.getElementById('voiceViewTranscript');
+  if (!el) return;
+  var html = '';
+  if (userText) html += '<div class="vv-user">' + escapeHtml(userText) + '</div>';
+  if (evaText) {
+    var short = evaText.length > 200 ? evaText.substring(0, 197) + '...' : evaText;
+    html += '<div class="vv-eva">' + escapeHtml(short) + '</div>';
+  }
+  el.innerHTML = html;
+}
+
+// --- Canvas waveform ---
+
+function _vvStartCanvas() {
+  var canvas = document.getElementById('voiceViewCanvas');
+  if (!canvas) return;
+  var ctx = canvas.getContext('2d');
+  var w = canvas.width, h = canvas.height;
+  var cx = w / 2, cy = h / 2, baseR = w * 0.34;
+
+  function draw() {
+    if (!_vv.open) return;
+    ctx.clearRect(0, 0, w, h);
+
+    // Get audio data if available
+    var freqData = null;
+    if (_vv.analyser && _vv.dataArray) {
+      _vv.analyser.getByteFrequencyData(_vv.dataArray);
+      freqData = _vv.dataArray;
+    }
+
+    var t = performance.now() / 1000;
+    var phase = _vv.phase;
+
+    // Color by state
+    var hue, sat, light, glowAlpha;
+    if (phase === 'awake') {
+      hue = 265; sat = 80; light = 65; glowAlpha = 0.5;
+    } else if (phase === 'thinking') {
+      hue = 220; sat = 70; light = 55; glowAlpha = 0.4;
+    } else if (phase === 'speaking') {
+      hue = 145; sat = 60; light = 50; glowAlpha = 0.45;
+    } else if (phase === 'listening') {
+      hue = 265; sat = 55; light = 50; glowAlpha = 0.3;
+    } else if (phase === 'error') {
+      hue = 0; sat = 65; light = 50; glowAlpha = 0.3;
+    } else {
+      hue = 220; sat = 30; light = 35; glowAlpha = 0.15;
+    }
+
+    // Outer glow
+    var gradient = ctx.createRadialGradient(cx, cy, baseR * 0.8, cx, cy, baseR * 1.6);
+    gradient.addColorStop(0, 'hsla(' + hue + ',' + sat + '%,' + light + '%,' + (glowAlpha * 0.4) + ')');
+    gradient.addColorStop(1, 'transparent');
+    ctx.fillStyle = gradient;
+    ctx.fillRect(0, 0, w, h);
+
+    // Draw radial waveform
+    var segments = 128;
+    ctx.beginPath();
+    for (var i = 0; i <= segments; i++) {
+      var angle = (i / segments) * Math.PI * 2 - Math.PI / 2;
+      var amp = 0;
+      if (freqData && freqData.length > 0) {
+        var fi = Math.floor((i / segments) * freqData.length);
+        amp = freqData[fi] / 255;
+      }
+      // Add organic motion even when quiet
+      var breathe = Math.sin(t * 1.2 + angle * 3) * 0.02 + Math.sin(t * 0.7 + angle * 7) * 0.01;
+      var pulse = (phase === 'awake' || phase === 'speaking') ? Math.sin(t * 4) * 0.03 : 0;
+      var r = baseR * (1 + amp * 0.35 + breathe + pulse);
+      var x = cx + Math.cos(angle) * r;
+      var y = cy + Math.sin(angle) * r;
+      if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+    }
+    ctx.closePath();
+
+    // Fill
+    var fillGrad = ctx.createRadialGradient(cx, cy, 0, cx, cy, baseR * 1.2);
+    fillGrad.addColorStop(0, 'hsla(' + hue + ',' + sat + '%,' + (light + 15) + '%,0.12)');
+    fillGrad.addColorStop(0.7, 'hsla(' + hue + ',' + sat + '%,' + light + '%,0.06)');
+    fillGrad.addColorStop(1, 'transparent');
+    ctx.fillStyle = fillGrad;
+    ctx.fill();
+
+    // Stroke
+    ctx.strokeStyle = 'hsla(' + hue + ',' + sat + '%,' + light + '%,' + (0.5 + glowAlpha) + ')';
+    ctx.lineWidth = 2;
+    ctx.shadowColor = 'hsla(' + hue + ',' + sat + '%,' + light + '%,' + glowAlpha + ')';
+    ctx.shadowBlur = 20;
+    ctx.stroke();
+    ctx.shadowBlur = 0;
+
+    // Inner ring (subtle)
+    ctx.beginPath();
+    ctx.arc(cx, cy, baseR * 0.6, 0, Math.PI * 2);
+    ctx.strokeStyle = 'hsla(' + hue + ',' + sat + '%,' + light + '%,0.08)';
+    ctx.lineWidth = 1;
+    ctx.stroke();
+
+    _vv.animFrame = requestAnimationFrame(draw);
+  }
+
+  _vv.animFrame = requestAnimationFrame(draw);
+}
+
+function _vvStopCanvas() {
+  if (_vv.animFrame) {
+    cancelAnimationFrame(_vv.animFrame);
+    _vv.animFrame = null;
+  }
+}
+
+// --- Mic analyser (for waveform visualization, separate from speech recognition) ---
+
+function _vvStartMicAnalyser() {
+  if (_vv.analyser) return Promise.resolve();
+  var AudioCtx = window.AudioContext || window.webkitAudioContext;
+  if (!AudioCtx) return Promise.resolve();
+
+  return navigator.mediaDevices.getUserMedia({ audio: true }).then(function(stream) {
+    _vv.micStream = stream;
+    _vv.audioCtx = new AudioCtx();
+    var source = _vv.audioCtx.createMediaStreamSource(stream);
+    _vv.analyser = _vv.audioCtx.createAnalyser();
+    _vv.analyser.fftSize = 256;
+    _vv.dataArray = new Uint8Array(_vv.analyser.frequencyBinCount);
+    source.connect(_vv.analyser);
+  }).catch(function(err) {
+    console.warn('[VoiceView] Mic access denied:', err.message);
+  });
+}
+
+function _vvStopMicAnalyser() {
+  if (_vv.micStream) {
+    _vv.micStream.getTracks().forEach(function(t) { t.stop(); });
+    _vv.micStream = null;
+  }
+  if (_vv.audioCtx) {
+    try { _vv.audioCtx.close(); } catch(e) {}
+    _vv.audioCtx = null;
+  }
+  _vv.analyser = null;
+  _vv.dataArray = null;
+}
+
+// --- Voice recognition (voice-view specific, runs alongside the orb) ---
+
+function _vvToggleListening() {
+  if (_vv.recognition || _vv.whisperMode) {
+    _vvStopListening();
+  } else {
+    _vvStartListening();
+  }
+}
+
+function _vvStartListening() {
+  // In Electron, Web Speech API can't reach Google's servers (missing API key).
+  // Go straight to Whisper-based transcription.
+  if (window.evaStandalone && window.evaStandalone.isStandalone) {
+    _vvStartWhisperListening();
+    return;
+  }
+
+  var SpeechRec = window.SpeechRecognition || window.webkitSpeechRecognition;
+  if (!SpeechRec) {
+    _vvStartWhisperListening();
+    return;
+  }
+
+  // Stop the chat-mode listener if active so we don't conflict
+  if (typeof stopVoiceListener === 'function') stopVoiceListener();
+
+  _vvStartMicAnalyser();
+
+  _vv.recognition = new SpeechRec();
+  _vv.recognition.lang = 'en-US';
+  _vv.recognition.continuous = true;
+  _vv.recognition.interimResults = false;
+
+  _vv.recognition.onstart = function() {
+    _vvSetStatus('listening', 'Listening for "Eva"...');
+  };
+
+  _vv.recognition.onresult = function(event) {
+    for (var i = event.resultIndex; i < event.results.length; i++) {
+      if (!event.results[i].isFinal) continue;
+      _vvHandleTranscript(event.results[i][0].transcript.trim());
+    }
+  };
+
+  _vv.recognition.onerror = function(event) {
+    if (event.error === 'no-speech' || event.error === 'aborted') return;
+    if (event.error === 'not-allowed') {
+      _vvSetStatus('error', 'Microphone access denied');
+      _vv.recognition = null;
+      return;
+    }
+    if (event.error === 'network' || event.error === 'service-not-allowed') {
+      console.warn('[VoiceView] Web Speech API unavailable (' + event.error + '), falling back to Whisper');
+      _vv.recognition = null;
+      _vvStartWhisperListening();
+      return;
+    }
+  };
+
+  _vv.recognition.onend = function() {
+    // Auto-restart unless we intentionally stopped
+    if (_vv.recognition && _vv.open) {
+      try { _vv.recognition.start(); }
+      catch(e) {
+        setTimeout(function() {
+          if (_vv.recognition && _vv.open) {
+            try { _vv.recognition.start(); } catch(e2) {
+              _vvSetStatus('error', 'Recognition stopped');
+              _vv.recognition = null;
+            }
+          }
+        }, 300);
+      }
+    }
+  };
+
+  _vv.recognition.start();
+}
+
+function _vvStopListening() {
+  if (_vv.awakeTimer) { clearTimeout(_vv.awakeTimer); _vv.awakeTimer = null; }
+  if (_vv.silenceTimer) { clearTimeout(_vv.silenceTimer); _vv.silenceTimer = null; }
+  if (_vv.recordingCap) { clearTimeout(_vv.recordingCap); _vv.recordingCap = null; }
+  if (_vv.recognition) {
+    var rec = _vv.recognition;
+    _vv.recognition = null; // prevent auto-restart
+    try { rec.stop(); } catch(e) {}
+  }
+  if (_vv.mediaRecorder) {
+    try { _vv.mediaRecorder.stop(); } catch(e) {}
+    _vv.mediaRecorder = null;
+  }
+  _vv.whisperMode = false;
+  _vv.audioChunks = [];
+  _vv.speechDetected = false;
+  _vvStopMicAnalyser();
+  if (_vv.open) _vvSetStatus('idle', 'Tap the orb to begin');
+}
+
+// --- Whisper-based transcription fallback (for Electron / when Web Speech API is unavailable) ---
+
+function _vvStartWhisperListening() {
+  if (typeof stopVoiceListener === 'function') stopVoiceListener();
+
+  _vv.whisperMode = true;
+  _vvSetStatus('listening', 'Listening for "Eva"...');
+  _vvStartMicAnalyser().then(function() {
+    if (_vv.open && _vv.whisperMode) _vvWhisperRecord();
+  });
+}
+
+function _vvWhisperRecord() {
+  if (!_vv.open || !_vv.whisperMode || !_vv.micStream) return;
+  if (_vv.phase === 'thinking' || _vv.phase === 'speaking') return;
+
+  var mimeType = 'audio/webm';
+  if (typeof MediaRecorder !== 'undefined' && MediaRecorder.isTypeSupported) {
+    if (MediaRecorder.isTypeSupported('audio/webm;codecs=opus')) mimeType = 'audio/webm;codecs=opus';
+  }
+
+  try {
+    _vv.mediaRecorder = new MediaRecorder(_vv.micStream, { mimeType: mimeType });
+  } catch(e) {
+    _vvSetStatus('error', 'MediaRecorder not available');
+    return;
+  }
+
+  _vv.audioChunks = [];
+  _vv.speechDetected = false;
+
+  _vv.mediaRecorder.ondataavailable = function(e) {
+    if (e.data && e.data.size > 0) _vv.audioChunks.push(e.data);
+  };
+
+  _vv.mediaRecorder.onstop = function() {
+    if (_vv.recordingCap) { clearTimeout(_vv.recordingCap); _vv.recordingCap = null; }
+    if (!_vv.speechDetected || !_vv.audioChunks.length || !_vv.whisperMode) {
+      if (_vv.open && _vv.whisperMode) setTimeout(function() { _vvWhisperRecord(); }, 200);
+      return;
+    }
+    var blob = new Blob(_vv.audioChunks, { type: mimeType });
+    _vv.audioChunks = [];
+    _vvWhisperTranscribe(blob);
+  };
+
+  _vv.mediaRecorder.start(250);
+
+  // Cap recording at 30 seconds to prevent unbounded memory growth
+  _vv.recordingCap = setTimeout(function() {
+    _vv.recordingCap = null;
+    if (_vv.mediaRecorder && _vv.mediaRecorder.state === 'recording') {
+      try { _vv.mediaRecorder.stop(); } catch(e) {}
+    }
+  }, 30000);
+
+  _vvWhisperMonitor();
+}
+
+function _vvWhisperMonitor() {
+  if (!_vv.open || !_vv.whisperMode || !_vv.analyser || !_vv.dataArray) return;
+
+  var threshold = 25;
+  var silenceDelay = 1500;
+
+  function check() {
+    if (!_vv.open || !_vv.whisperMode || !_vv.analyser || !_vv.dataArray) return;
+    if (_vv.phase === 'thinking' || _vv.phase === 'speaking') return;
+    if (!_vv.mediaRecorder || _vv.mediaRecorder.state !== 'recording') return;
+
+    _vv.analyser.getByteFrequencyData(_vv.dataArray);
+    var sum = 0;
+    for (var i = 0; i < _vv.dataArray.length; i++) sum += _vv.dataArray[i];
+    var avg = sum / _vv.dataArray.length;
+
+    if (avg > threshold) {
+      _vv.speechDetected = true;
+      if (_vv.silenceTimer) { clearTimeout(_vv.silenceTimer); _vv.silenceTimer = null; }
+    } else if (_vv.speechDetected && !_vv.silenceTimer) {
+      _vv.silenceTimer = setTimeout(function() {
+        _vv.silenceTimer = null;
+        if (_vv.mediaRecorder && _vv.mediaRecorder.state === 'recording') {
+          try { _vv.mediaRecorder.stop(); } catch(e) {}
+        }
+      }, silenceDelay);
+    }
+
+    requestAnimationFrame(check);
+  }
+
+  requestAnimationFrame(check);
+}
+
+function _vvWhisperTranscribe(blob) {
+  var apiKey = typeof getAuthKey === 'function' ? getAuthKey('OPENAI_API_KEY') : null;
+  if (!apiKey) {
+    _vvSetStatus('error', 'OpenAI API key required for voice in standalone mode');
+    return;
+  }
+
+  var formData = new FormData();
+  formData.append('file', blob, 'audio.webm');
+  formData.append('model', 'whisper-1');
+  formData.append('language', 'en');
+
+  fetch('https://api.openai.com/v1/audio/transcriptions', {
+    method: 'POST',
+    headers: { 'Authorization': 'Bearer ' + apiKey },
+    body: formData
+  }).then(function(res) {
+    if (!res.ok) throw new Error('Whisper API returned ' + res.status);
+    return res.json();
+  }).then(function(data) {
+    if (data.text && data.text.trim()) {
+      _vvHandleTranscript(data.text.trim());
+    }
+    if (_vv.open && _vv.whisperMode && _vv.phase !== 'thinking' && _vv.phase !== 'speaking') {
+      _vvWhisperRecord();
+    }
+  }).catch(function(err) {
+    console.warn('[VoiceView] Whisper transcription error:', err.message);
+    if (_vv.open && _vv.whisperMode) setTimeout(function() { _vvWhisperRecord(); }, 1000);
+  });
+}
+
+function _vvHandleTranscript(transcript) {
+  // Ignore input while processing a command
+  if (_vv.phase === 'thinking' || _vv.phase === 'speaking') return;
+
+  var lower = transcript.toLowerCase();
+  var evaIdx = lower.indexOf('eva');
+
+  if (evaIdx >= 0) {
+    var command = transcript.substring(evaIdx + 3).trim().replace(/^[,.\s]+/, '').trim();
+    if (command.length > 1) {
+      _vvSendCommand(command);
+    } else {
+      // Just "Eva" -- go awake
+      _vvSetStatus('awake', 'Listening...');
+      if (_vv.awakeTimer) clearTimeout(_vv.awakeTimer);
+      _vv.awakeTimer = setTimeout(function() {
+        if (_vv.phase === 'awake') _vvSetStatus('listening', 'Listening for "Eva"...');
+      }, 10000);
+    }
+    return;
+  }
+
+  if (_vv.phase === 'awake') {
+    if (_vv.awakeTimer) { clearTimeout(_vv.awakeTimer); _vv.awakeTimer = null; }
+    if (transcript.length > 1) {
+      _vvSendCommand(transcript);
+    } else {
+      _vvSetStatus('listening', 'Listening for "Eva"...');
+    }
+  }
+}
+
+function _vvSendCommand(command) {
+  _vv.lastTranscript = command;
+  _vvSetStatus('thinking', 'Thinking...');
+  _vvShowTranscript(command, '');
+
+  // Inject the command and send via the normal pipeline
+  var txtMsg = document.getElementById('txtMsg');
+  if (txtMsg) txtMsg.textContent = command;
+
+  // Force auto-speak on for voice view responses
+  var autoSpeak = document.getElementById('autoSpeak');
+  _vv._wasAutoSpeak = autoSpeak ? autoSpeak.checked : false;
+  if (autoSpeak) autoSpeak.checked = true;
+
+  // Watch for Eva's response to appear in txtOutput
+  _vvWatchForResponse();
+
+  if (typeof sendData === 'function') sendData();
+}
+
+function _vvWatchForResponse() {
+  var txtOutput = document.getElementById('txtOutput');
+  if (!txtOutput) return;
+
+  // Use a MutationObserver to detect when Eva's reply bubble appears
+  if (_vv.speakObserver) { _vv.speakObserver.disconnect(); _vv.speakObserver = null; }
+
+  var responded = false;
+  _vv.speakObserver = new MutationObserver(function() {
+    if (responded || !_vv.open) return;
+    // Check for a new Eva response
+    var evaResponse = (typeof lastResponse === 'string') ? lastResponse.trim() : '';
+    if (evaResponse && evaResponse !== _vv.lastEvaReply) {
+      responded = true;
+      _vv.lastEvaReply = evaResponse;
+      _vvSetStatus('speaking', 'Speaking...');
+      _vvShowTranscript(_vv.lastTranscript, evaResponse);
+
+      if (_vv.speakObserver) { _vv.speakObserver.disconnect(); _vv.speakObserver = null; }
+
+      // Wait for TTS to finish, then return to listening
+      _vvWaitForSpeechEnd(function() {
+        _vvRestoreAutoSpeak();
+        if (_vv.open && (_vv.recognition || _vv.whisperMode)) {
+          _vvSetStatus('listening', 'Listening for "Eva"...');
+          if (_vv.whisperMode) _vvWhisperRecord();
+        }
+      });
+    }
+  });
+
+  _vv.speakObserver.observe(txtOutput, { childList: true, subtree: true, characterData: true });
+
+  // Safety timeout: if no response in 60 seconds, go back to listening
+  setTimeout(function() {
+    if (!responded && _vv.speakObserver) {
+      _vv.speakObserver.disconnect();
+      _vv.speakObserver = null;
+      _vvRestoreAutoSpeak();
+      if (_vv.open) {
+        _vvSetStatus('listening', 'Listening for "Eva"...');
+        if (_vv.whisperMode) _vvWhisperRecord();
+      }
+    }
+  }, 60000);
+}
+
+function _vvRestoreAutoSpeak() {
+  if (_vv._wasAutoSpeak === undefined) return;
+  var autoSpeak = document.getElementById('autoSpeak');
+  if (autoSpeak) autoSpeak.checked = _vv._wasAutoSpeak;
+  delete _vv._wasAutoSpeak;
+}
+
+function _vvWaitForSpeechEnd(callback) {
+  var audio = document.getElementById('audioPlayback');
+
+  // For browser-native TTS, check speechSynthesis.speaking
+  var synth = window.speechSynthesis;
+  if (synth && synth.speaking) {
+    var synthCheck = setInterval(function() {
+      if (!synth.speaking) { clearInterval(synthCheck); setTimeout(callback, 500); }
+    }, 500);
+    // Cap at 30 seconds
+    setTimeout(function() { clearInterval(synthCheck); callback(); }, 30000);
+    return;
+  }
+
+  if (!audio) { setTimeout(callback, 2000); return; }
+
+  // Check if audio is currently playing or about to play
+  var checkCount = 0;
+  var maxChecks = 30; // 30 seconds max
+  function check() {
+    if (!_vv.open) { callback(); return; }
+    checkCount++;
+    if (checkCount > maxChecks) { callback(); return; }
+    if (!audio.paused && !audio.ended) {
+      audio.addEventListener('ended', function onEnd() {
+        audio.removeEventListener('ended', onEnd);
+        setTimeout(callback, 500);
+      }, { once: true });
+    } else {
+      setTimeout(check, 1000);
+    }
+  }
+  // Give TTS a moment to start
+  setTimeout(check, 1500);
 }
 
 function OnLoad() {
@@ -1143,7 +2349,7 @@ function setStatus(type, text) {
   }
 }
 
-// --- Cognitive layer settings (conductor / implementer / reviewer) ---
+// --- Cognitive layer settings (eva / reviewer) ---
 function _cogPopulateModelSelect(targetId) {
   var src = document.getElementById('selAIGBackend');
   var dst = document.getElementById(targetId);
@@ -1156,29 +2362,40 @@ function _cogPopulateModelSelect(targetId) {
   });
 }
 
+var COG_PROMPT_FIELDS = {
+  eva: { id: 'cogEvaPrompt', key: 'cogEvaPrompt', cfgKey: 'evaPrompt' },
+  reviewer: { id: 'cogReviewerPrompt', key: 'cogReviewerPrompt', cfgKey: 'reviewerPrompt' }
+};
+
+function _cogPromptDefault(role) {
+  var defaults = (window.EvaCognition && window.EvaCognition.DEFAULT_PROMPTS) ||
+    ((typeof Cognition !== 'undefined' && Cognition.DEFAULT_PROMPTS) ? Cognition.DEFAULT_PROMPTS : {});
+  return defaults[role] || '';
+}
+
+function _cogStoredPromptOrDefault(role) {
+  var field = COG_PROMPT_FIELDS[role];
+  if (!field) return '';
+  try {
+    var stored = localStorage.getItem(field.key);
+    if (stored) return stored;
+  } catch (_) {}
+  return _cogPromptDefault(role);
+}
+
 function cogInit() {
   if (typeof Cognition === 'undefined') return;
-  ['cogConductorModel', 'cogImplementerModel', 'cogReviewerModel']
+  ['cogEvaModel', 'cogReviewerModel']
     .forEach(_cogPopulateModelSelect);
   var cfg = Cognition.getCfg();
   var $ = function (id) { return document.getElementById(id); };
   if ($('cogEnabled'))           $('cogEnabled').checked          = !!cfg.enabled;
   if ($('cogShowTrace'))         $('cogShowTrace').checked        = !!cfg.showTrace;
-  if ($('cogConductorModel'))    $('cogConductorModel').value     = cfg.conductorModel;
-  if ($('cogImplementerModel'))  $('cogImplementerModel').value   = cfg.implementerModel;
+  if ($('cogEvaModel'))          $('cogEvaModel').value           = cfg.evaModel;
   if ($('cogReviewerModel'))     $('cogReviewerModel').value      = cfg.reviewerModel;
   if ($('cogMaxCycles'))         $('cogMaxCycles').value          = String(cfg.maxCycles);
-  // Only seed prompt textareas when the user has stored a custom value;
-  // otherwise leave them empty so the placeholder shows the defaults are
-  // active.
-  var stored = {
-    conductor: localStorage.getItem('cogConductorPrompt'),
-    implementer: localStorage.getItem('cogImplementerPrompt'),
-    reviewer: localStorage.getItem('cogReviewerPrompt')
-  };
-  if ($('cogConductorPrompt'))   $('cogConductorPrompt').value   = stored.conductor   || '';
-  if ($('cogImplementerPrompt')) $('cogImplementerPrompt').value = stored.implementer || '';
-  if ($('cogReviewerPrompt'))    $('cogReviewerPrompt').value    = stored.reviewer    || '';
+  if ($('cogEvaPrompt'))         $('cogEvaPrompt').value         = _cogStoredPromptOrDefault('eva');
+  if ($('cogReviewerPrompt'))    $('cogReviewerPrompt').value    = _cogStoredPromptOrDefault('reviewer');
   cogUpdateBadge();
 }
 
@@ -1188,14 +2405,20 @@ function cogPersist() {
   var partial = {
     enabled:           $('cogEnabled')          ? $('cogEnabled').checked        : false,
     showTrace:         $('cogShowTrace')        ? $('cogShowTrace').checked      : false,
-    conductorModel:    $('cogConductorModel')   ? $('cogConductorModel').value   : '',
-    implementerModel:  $('cogImplementerModel') ? $('cogImplementerModel').value : '',
+    evaModel:          $('cogEvaModel')         ? $('cogEvaModel').value         : '',
     reviewerModel:     $('cogReviewerModel')    ? $('cogReviewerModel').value    : '',
-    maxCycles:         $('cogMaxCycles')        ? $('cogMaxCycles').value        : '1',
-    conductorPrompt:   $('cogConductorPrompt')  ? $('cogConductorPrompt').value  : '',
-    implementerPrompt: $('cogImplementerPrompt')? $('cogImplementerPrompt').value: '',
-    reviewerPrompt:    $('cogReviewerPrompt')   ? $('cogReviewerPrompt').value   : ''
+    maxCycles:         $('cogMaxCycles')        ? $('cogMaxCycles').value        : '1'
   };
+  Object.keys(COG_PROMPT_FIELDS).forEach(function (role) {
+    var field = COG_PROMPT_FIELDS[role];
+    var el = $(field.id);
+    if (!el) return;
+    if (el.value === _cogPromptDefault(role)) {
+      try { localStorage.removeItem(field.key); } catch (_) {}
+      return;
+    }
+    partial[field.cfgKey] = el.value;
+  });
   Cognition.setCfg(partial);
   cogUpdateBadge();
 }
@@ -1209,12 +2432,28 @@ function cogUpdateBadge() {
   badge.textContent = on ? 'Cognition: on' : 'Cognition: off';
 }
 
-function cogResetPrompts() {
-  ['cogConductorPrompt','cogImplementerPrompt','cogReviewerPrompt'].forEach(function (id) {
-    try { localStorage.removeItem(id); } catch (_) {}
-    var el = document.getElementById(id);
-    if (el) el.value = '';
-  });
+function _cogApplyDefaultPrompt(role) {
+  var field = COG_PROMPT_FIELDS[role];
+  if (!field) return false;
+  try { localStorage.removeItem(field.key); } catch (_) {}
+  var el = document.getElementById(field.id);
+  if (!el) return false;
+  el.value = _cogPromptDefault(role);
+  return true;
+}
+
+function _cogNotifyPromptChange(role) {
+  var field = COG_PROMPT_FIELDS[role];
+  var el = field ? document.getElementById(field.id) : null;
+  if (typeof cogPersist === 'function') {
+    cogPersist();
+  } else if (el) {
+    el.dispatchEvent(new Event('change', { bubbles: true }));
+  }
+}
+
+function cogResetPrompt(role) {
+  if (_cogApplyDefaultPrompt(role)) _cogNotifyPromptChange(role);
 }
 
 // --- Monitors: Token, Network, Session ---
@@ -1861,7 +3100,7 @@ function speakText() {
     } else {
       let text = document.getElementById("txtOutput").innerHTML;
       // Strip any cognition-trace details block first so trace content
-      // (which echoes the implementer/reviewer drafts) does not get spoken.
+      // (which echoes the eva/reviewer drafts) does not get spoken.
       text = text.replace(/<details class="cog-trace"[\s\S]*?<\/details>/g, '');
       let textArr = text.split('<span class="eva">Eva:');
       if (textArr.length > 1) {

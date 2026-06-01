@@ -64,7 +64,7 @@ async function aigSend() {
   setStatus('info', 'Eva (AIG) processing...');
   if (typeof _copilotLastUserMsg !== 'undefined') { _copilotLastUserMsg = sQuestion; }
 
-  // Optional cognitive layer (conductor / implementer / reviewer).
+  // Optional cognitive layer (eva / reviewer).
   // Runs when the Settings toggle is on OR the user message contains an
   // explicit trigger phrase like "trigger the chain" / "use cognition".
   // Falls back to the regular single-shot bridge call on any error.
@@ -83,7 +83,7 @@ async function aigSend() {
         forcedReason: cogDecision.reason
       });
       var cogContent = (cogResult && cogResult.content) ? cogResult.content : '';
-      // Execute any [[EVA_ACTION]] blocks the implementer emitted, then render.
+      // Execute any [[EVA_ACTION]] blocks Eva emitted, then render.
       var actionsRun = [];
       if (Cognition.executeActions) {
         var execRes = await Cognition.executeActions(cogContent);
@@ -102,8 +102,7 @@ async function aigSend() {
         masterOutput += txtOutput.innerText + '\n';
         localStorage.setItem('masterOutput', masterOutput);
       }
-      var cogTag = 'cog:' + (cogResult.conductorModel || '?') + '+' +
-                   (cogResult.implementerModel || '?') + '+' +
+      var cogTag = 'cog:' + (cogResult.evaModel || '?') + '+' +
                    (cogResult.reviewerModel || '?') +
                    '/c' + (cogResult.cycles || 0) +
                    (cogDecision.reason === 'phrase' ? '/forced' : '') +
@@ -123,7 +122,7 @@ async function aigSend() {
         } catch (_) {}
       }
       setStatus('info', 'Eva (AIG, cognition) \u2014 ' +
-                (cogResult.implementerModel || 'implementer') +
+                (cogResult.evaModel || 'eva') +
                 '  [' + cogTag + ']');
       var checkboxC = document.getElementById('autoSpeak');
       if (checkboxC && checkboxC.checked) {
@@ -144,7 +143,7 @@ async function aigSend() {
                      ? Cognition.getCfg() : null;
     var cogNote = [
       '[Cognition Layer Runtime State - AUTHORITATIVE]',
-      'The cognitive layer (conductor / implementer / reviewer) is currently DISABLED for this turn.',
+      'The cognitive layer (eva / reviewer) is currently DISABLED for this turn.',
       'It is controlled by the user via Settings > Models > "Enable Cognitive Layer",',
       'or by an explicit phrase trigger such as "trigger the chain" or "use cognition".',
       'You are NOT running inside that layer right now. You are the single-shot AIG responder.',
@@ -154,8 +153,7 @@ async function aigSend() {
       'If the user wants the layer, tell them to enable the toggle or use a trigger phrase.'
     ].join('\n');
     if (cogState) {
-      cogNote += '\nConfigured models when enabled: conductor=' + cogState.conductorModel +
-                 ', implementer=' + cogState.implementerModel +
+      cogNote += '\nConfigured models when enabled: eva=' + cogState.evaModel +
                  ', reviewer=' + cogState.reviewerModel +
                  ', maxCycles=' + cogState.maxCycles + '.';
     }

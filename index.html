@@ -62,6 +62,9 @@
       <button id="evaModelsBtn" class="eva-nav-item" type="button" title="Models">
         <span class="eva-nav-icon">&#x1F916;</span> Models
       </button>
+      <button id="evaVoiceViewBtn" class="eva-nav-item" type="button" title="Voice View" onclick="toggleVoiceView()">
+        <span class="eva-nav-icon">&#x1F399;&#xFE0F;</span> Voice
+      </button>
       <button id="evaSettingsBtn" class="eva-nav-item" type="button" title="Settings">
         <span class="eva-nav-icon">&#x2699;&#xFE0F;</span> Settings
       </button>
@@ -174,6 +177,8 @@
       <button class="settings-tab" data-stab="models" role="tab">Models</button>
       <button class="settings-tab" data-stab="auth" role="tab">Auth</button>
       <button class="settings-tab" data-stab="prompts" role="tab">Prompts</button>
+      <button class="settings-tab" data-stab="goals" role="tab">Goals</button>
+      <button class="settings-tab" data-stab="background" role="tab">Background</button>
       <button class="settings-tab" data-stab="mcp" role="tab">MCP</button>
     </div>
     <div class="settings-body">
@@ -212,7 +217,8 @@
         <hr style="margin:14px 0;border:none;border-top:1px solid rgba(127,127,127,0.25)">
         <div class="auth-note" style="margin:0">
           <strong>About</strong><br>
-          Eva AI Assistant <span id="evaAppVersion">v5.2.1</span><br>
+          Eva AI Assistant <span id="evaAppVersion">v5.2.2</span><br>
+          <span>Active goals: <span id="evaActiveGoalsCount">0</span></span><br>
           <span id="evaStandaloneVersion" style="display:none"></span>
         </div>
       </div>
@@ -345,22 +351,18 @@
             </select>
           </div>
 
-          <!-- Cognitive Layer (Conductor / Implementer / Reviewer) -->
+          <!-- Cognitive Layer (Eva / Reviewer) -->
           <div class="model-opt cog-section">
             <label class="cog-toggle-row">
               <input type="checkbox" id="cogEnabled" onchange="cogPersist()">
-              <span><strong>Enable Cognitive Layer</strong> &mdash; route Eva (AIG) through internal conductor / implementer / reviewer agents.</span>
+              <span><strong>Enable Cognitive Layer</strong> &mdash; route Eva (AIG) through internal eva / reviewer agents.</span>
             </label>
-            <p class="cog-help">When on, every Eva (AIG) turn is planned by a conductor, drafted by an implementer, then critiqued by a reviewer (bounded loop). The user only sees the final approved draft. Each agent uses its own model.</p>
+            <p class="cog-help">When on, every Eva (AIG) turn is drafted by Eva, then critiqued by a reviewer (bounded loop). The user only sees the final approved draft. Each agent uses its own model.</p>
 
             <div class="cog-grid">
               <div>
-                <label for="cogConductorModel">Conductor model:</label>
-                <select id="cogConductorModel" onchange="cogPersist()"></select>
-              </div>
-              <div>
-                <label for="cogImplementerModel">Implementer model:</label>
-                <select id="cogImplementerModel" onchange="cogPersist()"></select>
+                <label for="cogEvaModel">Eva model:</label>
+                <select id="cogEvaModel" onchange="cogPersist()"></select>
               </div>
               <div>
                 <label for="cogReviewerModel">Reviewer model:</label>
@@ -375,18 +377,19 @@
             <details class="cog-prompts">
               <summary>Edit agent system prompts</summary>
               <div class="cog-prompt-row">
-                <label for="cogConductorPrompt">Conductor prompt:</label>
-                <textarea id="cogConductorPrompt" rows="3" onchange="cogPersist()" placeholder="(default conductor prompt)"></textarea>
+                <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:3px">
+                  <label for="cogEvaPrompt" style="margin:0">Eva prompt:</label>
+                  <button type="button" class="auth-toggle" style="padding:3px 8px;font-size:11px" onclick="cogResetPrompt('eva')" aria-label="Reset Eva prompt to default">Reset</button>
+                </div>
+                <textarea id="cogEvaPrompt" rows="3" onchange="cogPersist()" placeholder="(default Eva prompt)"></textarea>
               </div>
               <div class="cog-prompt-row">
-                <label for="cogImplementerPrompt">Implementer prompt:</label>
-                <textarea id="cogImplementerPrompt" rows="3" onchange="cogPersist()" placeholder="(default implementer prompt)"></textarea>
-              </div>
-              <div class="cog-prompt-row">
-                <label for="cogReviewerPrompt">Reviewer prompt:</label>
+                <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:3px">
+                  <label for="cogReviewerPrompt" style="margin:0">Reviewer prompt:</label>
+                  <button type="button" class="auth-toggle" style="padding:3px 8px;font-size:11px" onclick="cogResetPrompt('reviewer')" aria-label="Reset reviewer prompt to default">Reset</button>
+                </div>
                 <textarea id="cogReviewerPrompt" rows="3" onchange="cogPersist()" placeholder="(default reviewer prompt)"></textarea>
               </div>
-              <button type="button" class="lcars-btn" onclick="cogResetPrompts()">Reset prompts to defaults</button>
             </details>
 
             <label class="cog-toggle-row">
@@ -458,6 +461,84 @@
         <label for="txtSystemPrompt">System / Developer Prompt:</label>
         <textarea id="txtSystemPrompt" rows="8" placeholder="Enter custom system instructions..."></textarea>
         <p class="prompt-hint">This prompt is sent as the system/developer message to the AI. Select a preset above or write your own.</p>
+      </div>
+
+      <!-- Goals Tab -->
+      <div class="settings-panel" data-stab="goals">
+        <div class="goals-toolbar">
+          <button type="button" class="auth-save" id="goalsNewButton">New goal</button>
+          <button type="button" class="auth-toggle" id="goalsRefreshButton">Refresh</button>
+        </div>
+
+        <div id="goalsStatus" class="mcp-status" aria-live="polite"></div>
+
+        <div id="goalsForm" class="mcp-preset goals-form" style="display:none">
+          <input type="hidden" id="goalEditId">
+          <div class="auth-field">
+            <label for="goalTitle">Title:</label>
+            <input type="text" id="goalTitle" maxlength="200" autocomplete="off">
+          </div>
+          <div class="auth-field">
+            <label for="goalDescription">Description:</label>
+            <textarea id="goalDescription" rows="4" maxlength="2000"></textarea>
+          </div>
+          <div class="goals-grid">
+            <div>
+              <label for="goalCategory">Category:</label>
+              <select id="goalCategory">
+                <option value="self_improvement">Self improvement</option>
+                <option value="knowledge_curation">Knowledge curation</option>
+                <option value="relational">Relational</option>
+              </select>
+            </div>
+            <div>
+              <label for="goalPriority">Priority:</label>
+              <input type="number" id="goalPriority" min="0" max="100" step="1" value="50">
+            </div>
+          </div>
+          <div id="goalStatusField" class="auth-field" style="display:none">
+            <label for="goalStatusSelect">Status:</label>
+            <select id="goalStatusSelect">
+              <option value="active">Active</option>
+              <option value="paused">Paused</option>
+              <option value="done">Done</option>
+              <option value="dropped">Dropped</option>
+            </select>
+          </div>
+          <div class="goals-form-actions">
+            <button type="button" class="auth-save" id="goalsSaveButton">Save goal</button>
+            <button type="button" class="auth-toggle" id="goalsCancelButton">Cancel</button>
+          </div>
+        </div>
+
+        <div id="goalsList" class="goals-list"></div>
+      </div>
+
+      <!-- Background Tab -->
+      <div class="settings-panel" data-stab="background">
+        <div id="backgroundStatus" class="mcp-status" aria-live="polite"></div>
+
+        <div class="mcp-preset background-controls">
+          <label class="background-toggle-row">
+            <input type="checkbox" id="backgroundEnabled">
+            <strong>Enable background loop</strong>
+          </label>
+          <div class="auth-field">
+            <label for="backgroundIntervalSeconds">Interval seconds:</label>
+            <input type="number" id="backgroundIntervalSeconds" min="900" max="86400" step="300" value="7200">
+          </div>
+          <div class="background-actions">
+            <button type="button" class="auth-save" id="backgroundSaveButton">Save controls</button>
+            <button type="button" class="auth-toggle" id="backgroundRunNowButton">Run once</button>
+            <button type="button" class="auth-toggle" id="backgroundRefreshButton">Refresh</button>
+          </div>
+        </div>
+
+        <h4 class="settings-subhead">Pending proposals</h4>
+        <div id="backgroundProposals" class="background-list"></div>
+
+        <h4 class="settings-subhead">Recent activity</h4>
+        <div id="backgroundActivity" class="background-list"></div>
       </div>
 
       <!-- MCP Tab -->
@@ -664,6 +745,17 @@
   <button id="printButton" onclick="printMaster()" aria-label="Print output">Print Output</button>
     <button id="clearMessagesBtn" onclick="clearMessages()" aria-label="Clear memory">Clear Memory</button>
   </footer> 
+
+  <!-- Voice View — ambient, always-listening mode -->
+  <div id="voiceView" class="voice-view" aria-hidden="true">
+    <button id="voiceViewClose" class="voice-view-close" type="button" aria-label="Exit voice view">&times;</button>
+    <div class="voice-view-center">
+      <canvas id="voiceViewCanvas" width="320" height="320"></canvas>
+      <div id="voiceViewLabel" class="voice-view-label">Eva</div>
+      <div id="voiceViewStatus" class="voice-view-status">Tap to begin</div>
+      <div id="voiceViewTranscript" class="voice-view-transcript"></div>
+    </div>
+  </div>
 
   <!-- Image lightbox -->
   <div class="eva-lightbox" id="evaLightbox">

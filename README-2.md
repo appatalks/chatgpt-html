@@ -21,7 +21,7 @@ Detailed architecture, dependencies, and implementation notes for Eva AI Assista
 
 ## Highlights
 
-- Multi-agent AIG with planner, implementer, and reviewer
+- Multi-agent AIG with eva and reviewer
 - MCP tool access (Kusto, GitHub, Azure) hot-reloadable at runtime
 - Persistent memory and emotion tracking via Azure Data Explorer
 - Inline image search (Wikimedia) and generation (DALL-E 3)
@@ -136,14 +136,14 @@ core/
                            - Authoritative ground-truth note injected into the single-shot
                              system prompt so the model does not fabricate pipeline runs
     cognition.js           Browser-side multi-agent cognitive layer (Cognition.run)
-                           - Three role-specific agents: conductor, implementer, reviewer
+                           - Two role-specific agents: eva, reviewer
                            - Each agent calls /v1/aig/chat independently with its own
                              model and editable system prompt
                            - Bounded review loop (cogMaxCycles, default 1, range 0-3)
                            - Verdict-first reviewer protocol (APPROVE | REQUEST_CHANGES)
                            - Capability registry: Cognition.registerCapability({id,
                              description, run})
-                           - Action protocol: implementer can emit
+                           - Action protocol: eva can emit
                              [[EVA_ACTION]]{"id":"...","args":{...}}[[/EVA_ACTION]]
                              blocks; the browser executes them and replaces each block
                              with the rendered HTML
@@ -184,12 +184,15 @@ tools/
                            - DeviceCodeCredential with persistent token cache
                            - Accepts pre-fetched token via KUSTO_ACCESS_TOKEN env
   eva_seed.kql             Sanitized database seed (public-safe)
-                           - Creates all 8 Eva tables with sample data
+                           - Creates all 10 Eva tables with sample data
+                           - Includes background proposal and activity tables
                            - Run in Kusto Web Explorer to bootstrap a new instance
   test_static.py           CI-safe static tests (no bridge needed)
                            - File integrity, secret scanning, CSV logic, config safety
   test_eva.py              Integration tests (requires live bridge)
                            - 64 checks across 13 sections
+  eval/                    Behavioral eval harness for Eva
+                           - JSON fixtures, mock replay, live AIG checks, result snapshots
   acp_bridge.service       Systemd unit file for headless server deployment
   acp_setup.sh             One-command installer (arch check, copilot install, service setup)
   barkTTS_server.py        Suno Bark TTS engine server (GPU)
@@ -298,7 +301,25 @@ Options:
 | `/v1/models` | GET | — | Available models list |
 | `/v1/mcp` | GET | — | Active MCP servers and presets (secrets redacted) |
 | `/v1/mcp/configure` | POST | `{"mcp_servers":{...}}` | Restarts copilot with new MCP config |
+| `/v1/goals` | GET | none | List Kusto-backed goals, any status |
+| `/v1/goals` | POST | `{"title":"...", "description":"...", "category":"relational", "priority":50, "relatedTopics":"..."}` | Create an active goal |
+| `/v1/goals/<goal_id>` | PATCH | Any subset of goal fields | Update a goal by appending a latest Kusto row |
+| `/v1/goals/<goal_id>` | DELETE | none | Soft-delete a goal by setting status to `dropped` |
+| `/v1/background/status` | GET | none | Background loop status, interval, last tick, last error |
+| `/v1/background/proposals` | GET | `?status=pending` | Latest memory-consolidation proposals (loopback bind only) |
+| `/v1/background/activity` | GET | none | Latest 50 background tick activity rows (loopback bind only) |
+| `/v1/background/control` | POST | `{"enabled":true, "intervalSeconds":7200, "runNow":false}` | Update loop controls or queue a manual run |
+| `/v1/background/proposals/<proposal_id>/approve` | POST | none | Apply a pending MemorySummaries proposal |
+| `/v1/background/proposals/<proposal_id>/reject` | POST | none | Reject a pending proposal |
 | `/health` | GET | — | Status, session ID, model, MCP servers |
+
+Goals mutations, Kusto seed, file purge, background mutation endpoints, and background proposal/activity reads require loopback bind. Background status remains readable on any bind.
+
+### Background Memory Consolidation
+
+When cognition and Kusto are configured, the ACP bridge starts an internal background loop. It wakes every two hours by default, pauses if user activity happened in the last 120 seconds, and records each tick in `BackgroundActivity`.
+
+The first shipping job is memory consolidation. It reads recent `Conversations`, builds a deterministic summary without calling an external model, and writes a pending row to `BackgroundProposals`. The loop never writes `MemorySummaries` directly. A human reviews proposals in Settings -> Background. Approval first appends an `applying` proposal row, writes the proposed payload to `MemorySummaries`, then appends `applied`; if the canonical write fails, the proposal stays `applying` so approve can be retried safely. Rejection appends a `rejected` proposal row. Control, approve, reject, proposals, and activity endpoints are loopback-only.
 
 ### Security
 
@@ -324,6 +345,7 @@ Custom MCP server implementing the [Model Context Protocol](https://modelcontext
 | `eva_recall_knowledge` | `entity`, `limit?` | Recall facts about an entity |
 | `eva_get_emotion_state` | — | Get Eva's current emotion + baseline |
 | `eva_get_recent_reflections` | `limit?` | Get Eva's self-reflections |
+| `eva_get_active_goals` | `category?`, `limit?` | Get active long-term goals |
 
 ### Authentication
 
@@ -335,14 +357,16 @@ Token cache: `~/.azure/msal_token_cache.json` (persists across restarts, ~90 day
 
 ## Settings Panel
 
-Five tabs in a modal overlay:
+Seven tabs in a modal overlay:
 
 | Tab | Contents |
 |---|---|
 | **General** | Theme (Default/LCARS/Eva), TTS engine/voice, auto-speak toggle |
-| **Models** | Model selector (grouped by provider), temperature, max tokens, reasoning effort, AIG backend selector, ACP model selector, and the **Cognitive Layer** controls (toggle, three role-specific model selectors, max review cycles, editable per-agent system prompts, debug trace) |
+| **Models** | Model selector (grouped by provider), temperature, max tokens, reasoning effort, AIG backend selector, ACP model selector, and the **Cognitive Layer** controls (toggle, two role-specific model selectors, max review cycles, editable per-agent system prompts, debug trace) |
 | **Auth** | API key inputs with show/hide toggles, ACP bridge URL. Keys stored in localStorage, override config.json |
 | **Prompts** | Personality presets (Default/Concise/Advanced/Terminal/Custom), editable system prompt textarea |
+| **Goals** | Kusto-backed goals list, create form, edit controls, and soft-delete action through bridge endpoints |
+| **Background** | Bridge background loop status, enable and interval controls, run-once action, proposal approval/rejection, recent activity |
 | **MCP** | Azure MCP, GitHub MCP, Kusto MCP toggles with config fields. Apply/refresh buttons |
 
 ## Image Handling
@@ -428,7 +452,7 @@ A bundled desktop build that ships the web UI and the ACP bridge together. The E
 cd standalone
 npm install
 npm run dist
-./dist/'Eva Standalone-5.2.1.AppImage'
+./dist/'Eva Standalone-5.2.2.AppImage'
 ```
 
 Host prerequisites: Node.js 24+, Python 3.12+, Copilot CLI authenticated. The AppImage hides Bark and the AWS Polly engines from the Settings panel and locks the Kusto database to the value configured in first-run setup. Build details and runtime notes are in [standalone/README.md](standalone/README.md).
@@ -456,7 +480,7 @@ Current state (2026-04-05):
 The **Eva (AIG)** model is the recommended way to use Eva. Selecting it in the model
 dropdown activates the full stack: intelligent orchestration, persistent memory,
 emotion tracking, and proactive data retrieval. An optional browser-side cognitive
-layer (conductor / implementer / reviewer) can be enabled on top; see
+layer (eva / reviewer) can be enabled on top; see
 [Cognition Layer](#cognition-layer).
 
 ### How AIG Works
@@ -511,16 +535,15 @@ plan/draft/review loop on top of any AIG turn.
 ### Browser Cognitive Layer (`core/js/cognition.js`)
 
 Opt-in via Settings > Models > **Enable Cognitive Layer**. When active, every Eva
-(AIG) turn is routed through three role-specific agents before the user sees a
+(AIG) turn is routed through two role-specific agents before the user sees a
 response:
 
 ```
 User turn
-  -> Conductor (planning, capability selection)
-     -> Implementer (drafts the user-facing answer, may emit action blocks)
-        -> Reviewer (verdict: APPROVE | REQUEST_CHANGES)
-           -> Implementer (revises against feedback) ... up to cogMaxCycles
-  -> executeActions(): runs any [[EVA_ACTION]] blocks the implementer emitted
+  -> Eva (plans, drafts the user-facing answer, may emit action blocks)
+     -> Reviewer (verdict: APPROVE | REQUEST_CHANGES)
+        -> Eva (revises against feedback) ... up to cogMaxCycles
+  -> executeActions(): runs any [[EVA_ACTION]] blocks Eva emitted
   -> renderEvaResponse(): renders the final approved draft
 ```
 
@@ -538,12 +561,12 @@ is surfaced in the footer status line and a small `Cognition: on` pill.
 | Neither | Single-shot AIG path; an authoritative system note tells the model the layer is OFF for this turn so it cannot fabricate phase narration |
 
 Recognized trigger phrases include `trigger the chain`, `use cognition`,
-`use the cognitive layer`, `run the conductor`, `run the reviewer`,
-`run the implementer`, `engage cognition`, and `cognition: on`.
+`use the cognitive layer`, `run eva`, `run the reviewer`,
+`engage cognition`, and `cognition: on`.
 
 **Capability registry and action protocol:**
 
-The implementer can invoke registered capabilities by emitting an action block on
+The eva agent can invoke registered capabilities by emitting an action block on
 its own line:
 
 ```
@@ -571,7 +594,7 @@ excludes `tmp/`).
 **Status tag format:**
 
 ```
-Eva (AIG, cognition) - <implementer-model>  [cog:<c>+<i>+<r>/c<N>[/forced][/act<K>]]
+Eva (AIG, cognition) - <eva-model>  [cog:<e>+<r>/c<N>[/forced][/act<K>]]
 ```
 
 `/forced` indicates a phrase-triggered run; `/act<K>` indicates K capability
@@ -593,9 +616,14 @@ Injected into every AIG request as a structured system prompt section:
 | `[Workflow: Memory]` | Always | Instructions for recall |
 | `[Morning Reflection]` | First msg of day | `MemorySummaries` (latest 3) |
 | `[Memory — Core Facts]` | Always | `Knowledge` where Confidence ≥ 0.6 (top 10) |
+| `[Active Goals]` | Always when present | `Goals` where Status is `active` (top 10) |
 | `[Emotion State]` | Always | Latest `EmotionState` row |
 | `[Memory — Relevant]` | On keyword match | `Knowledge` matching user words |
 | `[Live Data]` | On intent detection | Various tables, queried on-demand |
+
+### Goals
+
+Goals are persistent intentions stored in the Kusto `Goals` table. The bridge injects active goals into `_build_memory_context` after core facts so they influence prompting across sessions. Add or edit them from Settings > Goals, which calls the bridge `/v1/goals` endpoints; writes stay outside MCP so the user approves each change.
 
 ### Post-Response Reflection (`_post_response_reflection`)
 
@@ -648,16 +676,15 @@ The bridge uses `.ingest inline into table <T> <|` with strict CSV:
 
 ## Workspace Agent Profiles
 
-`.github/agents/` ships three VS Code Copilot workspace agents tuned for this
+`.github/agents/` ships two VS Code Copilot workspace agents tuned for this
 project's conventions. These are editor-time review tooling, not runtime components
 of Eva, and they do not run automatically when the browser cognitive layer is
 active.
 
 | File | Role | When to use |
 |---|---|---|
-| `reviewer.agent.md` | Code reviewer | Reviewing browser UI, model routing, ACP bridge, Kusto cognition, secrets, tests, docs |
-| `implementer.agent.md` | Code implementer | Writing, refactoring, or fixing changes (often in response to reviewer feedback) |
-| `conductor.agent.md` | Orchestrator | Running an automated review → implement → re-review loop with bounded cycles |
+| `eva.agent.md` | Eva (lead agent) | Planning, writing, refactoring, fixing, testing, or shipping code. Eva knows her own architecture, runtime, and capabilities. |
+| `reviewer.agent.md` | Comprehensive reviewer | Reviewing Eva's work, approving changes, designing tests, running checks, or rubber-ducking plans |
 
 The optional `.github/agents/local/` folder is gitignored and reserved for
 maintainer-only notes (dev topology, recurring commands, internal hosts, agent
@@ -706,6 +733,8 @@ Runs on every PR to `main` or `notAIG`:
 |------|-------------|---------------|
 | `tools/test_static.py` | CI + local | No |
 | `tools/test_eva.py` | Local only | Yes (live bridge on port 8888) |
+| `tools/eval/run.py --mode mock` | CI + local | No |
+| `tools/eval/run.py --mode live` | Local behavioral regression check | Yes |
 
 ```bash
 # CI-safe tests (no bridge needed)
@@ -713,7 +742,21 @@ python3 tools/test_static.py
 
 # Full integration tests (requires running bridge)
 python3 tools/test_eva.py --verbose
+
+# Behavioral eval with synthetic ideal responses
+python3 tools/eval/run.py --mode mock
+
+# Behavioral eval against a running bridge
+python3 tools/eval/run.py --mode live --bridge http://localhost:8888
 ```
+
+### Behavioral Evaluation
+
+The behavioral eval harness lives in `tools/eval/`. It checks Eva-specific behavior such as identity, style adherence, refusal boundaries, seeded-memory recall, routing hints, capability markers, and prompt-injection resistance. This is separate from `tools/test_eva.py`, which remains the live endpoint smoke suite.
+
+Fixtures are stored as one JSON file per category in `tools/eval/fixtures/`, and the framework contract is documented in `.github/eva-eval.skill.md`. Mock mode reads `tools/eval/mock_responses.json` so CI can run without a bridge. Live mode posts to `/v1/aig/chat` on the configured bridge. Results are written to `tools/eval/results/<timestamp>.json` and `<timestamp>.md`.
+
+Add new fixtures when changing Eva's prompts, memory behavior, refusals, routing rules, or capability markers. Prefer deterministic regex and literal checkers before using an LLM judge, and keep recall fixtures tied to sanitized rows in `tools/eva_seed.kql`.
 
 ---
 Based on [CodeProject](https://www.codeproject.com/Articles/5350454/Chat-GPT-in-JavaScript). Heavily extended.

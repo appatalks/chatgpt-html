@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Eva Static Tests — Run in CI without a live bridge.
+Eva Static Tests - Run in CI without a live bridge.
 Tests Python syntax, import integrity, config safety, and Kusto ingest logic.
 
 Usage:
@@ -80,7 +80,7 @@ def test_no_secrets_committed():
     for f in forbidden:
         exists = os.path.isfile(f)
         report(f"not_committed:{f}", not exists,
-               "COMMITTED — remove immediately!" if exists else "")
+               "COMMITTED - remove immediately!" if exists else "")
 
 
 # ═══════════════════════════════════════════════════════════════════
@@ -133,7 +133,7 @@ def test_no_hardcoded_keys():
 
 def test_python_syntax():
     """All Python files compile without errors."""
-    for py in ["tools/acp_bridge.py", "tools/kusto_mcp.py", "tools/test_eva.py"]:
+    for py in ["tools/acp_bridge.py", "tools/kusto_mcp.py", "tools/test_eva.py", "tools/eval/run.py"]:
         if not os.path.isfile(py):
             report(f"python_syntax:{py}", None, "file missing")
             continue
@@ -219,7 +219,7 @@ def test_csv_quoting_logic():
     row = build_csv_row(["T", "C", "S", "D"],
                         {"T": "2026-01-01", "C": "test", "S": "active",
                          "D": _json.dumps({"cluster": "https://example.com", "database": "Eva"})})
-    # D is a pre-serialized string containing commas — must be quoted
+    # D is a pre-serialized string containing commas - must be quoted
     assert ',"' in row and 'https://example.com' in row, f"bad row: {row}"
     report("csv_json_commas", True)
 
@@ -327,7 +327,8 @@ def test_seed_file():
 
     # Must contain table creation commands
     required_tables = ["SelfState", "Knowledge", "Conversations", "EmotionState",
-                       "HeuristicsIndex", "MemorySummaries", "Reflections", "EmotionBaseline"]
+                       "HeuristicsIndex", "MemorySummaries", "Reflections", "Goals", "EmotionBaseline",
+                       "BackgroundProposals", "BackgroundActivity"]
     for tbl in required_tables:
         if f".create-merge table {tbl}" in content or f".create table {tbl}" in content:
             report(f"seed_table:{tbl}", True)
@@ -340,6 +341,124 @@ def test_seed_file():
             report("seed_no_secrets", False, f"pattern {pattern} found")
             return
     report("seed_no_secrets", True)
+
+
+def test_goals_static_contract():
+    """Goals schema and MCP read contract are wired."""
+    seed_path = "tools/eva_seed.kql"
+    mcp_path = "tools/kusto_mcp.py"
+    if not os.path.isfile(seed_path):
+        report("goals_seed_file", None, "tools/eva_seed.kql not found")
+        return
+    if not os.path.isfile(mcp_path):
+        report("goals_mcp_file", None, "tools/kusto_mcp.py not found")
+        return
+
+    with open(seed_path) as f:
+        seed = f.read()
+    with open(mcp_path) as f:
+        mcp = f.read()
+
+    report("goals_seed_table", ".create-merge table Goals" in seed,
+           "missing Goals table" if ".create-merge table Goals" not in seed else "")
+    allowed_match = re.search(r"allowed_tables\s*=\s*\{[^}]*\"Goals\"", mcp, re.DOTALL)
+    report("goals_allowed_tables", allowed_match is not None,
+           "Goals missing from allowed_tables" if allowed_match is None else "")
+    report("goals_active_tool_method", "def _tool_eva_get_active_goals" in mcp,
+           "missing _tool_eva_get_active_goals" if "def _tool_eva_get_active_goals" not in mcp else "")
+
+
+def test_background_static_contract():
+    """Background proposal schema and bridge routes are wired."""
+    seed_path = "tools/eva_seed.kql"
+    bridge_path = "tools/acp_bridge.py"
+    if not os.path.isfile(seed_path):
+        report("background_seed_file", None, "tools/eva_seed.kql not found")
+        return
+    if not os.path.isfile(bridge_path):
+        report("background_bridge_file", None, "tools/acp_bridge.py not found")
+        return
+
+    with open(seed_path) as f:
+        seed = f.read()
+    with open(bridge_path) as f:
+        bridge = f.read()
+
+    for table_name in ("BackgroundProposals", "BackgroundActivity"):
+        report(f"background_seed_table:{table_name}", f".create-merge table {table_name}" in seed,
+               f"missing {table_name} table" if f".create-merge table {table_name}" not in seed else "")
+    for endpoint in ("/v1/background/status", "/v1/background/proposals", "/v1/background/activity"):
+        report(f"background_bridge_endpoint:{endpoint}", endpoint in bridge,
+               f"missing {endpoint}" if endpoint not in bridge else "")
+    proposals_loopback = re.search(r"def _background_proposals\(self\):.*?_is_loopback_bind\(\)", bridge, re.DOTALL)
+    activity_loopback = re.search(r"def _background_activity\(self\):.*?_is_loopback_bind\(\)", bridge, re.DOTALL)
+    report("background_proposals_loopback_read", proposals_loopback is not None,
+           "background proposals read endpoint must check loopback bind" if proposals_loopback is None else "")
+    report("background_activity_loopback_read", activity_loopback is not None,
+           "background activity read endpoint must check loopback bind" if activity_loopback is None else "")
+
+
+def test_eval_contract():
+    """Behavioral eval files and fixture JSON are valid."""
+    eval_dir = "tools/eval"
+    fixtures_dir = os.path.join(eval_dir, "fixtures")
+    skill_path = ".github/eva-eval.skill.md"
+    allowed_checker_types = {
+        "regex_must_match",
+        "regex_must_not_match",
+        "contains_any",
+        "contains_all",
+        "not_contains",
+        "json_shape",
+        "capability_invoked",
+        "length_max_chars",
+        "llm_judge",
+    }
+    seen_fixture_ids = {}
+    report("eval_dir_exists", os.path.isdir(eval_dir), "missing tools/eval" if not os.path.isdir(eval_dir) else "")
+    report("eval_fixtures_dir_exists", os.path.isdir(fixtures_dir), "missing tools/eval/fixtures" if not os.path.isdir(fixtures_dir) else "")
+    report("eval_skill_exists", os.path.isfile(skill_path), "missing .github/eva-eval.skill.md" if not os.path.isfile(skill_path) else "")
+    if not os.path.isdir(fixtures_dir):
+        return
+
+    fixture_files = sorted(
+        os.path.join(fixtures_dir, name)
+        for name in os.listdir(fixtures_dir)
+        if name.endswith(".json")
+    )
+    report("eval_fixture_files_present", bool(fixture_files), "no fixture JSON files found" if not fixture_files else "")
+    for path in fixture_files:
+        try:
+            with open(path) as f:
+                data = json.load(f)
+            report(f"eval_fixture_json:{path}", True)
+        except Exception as error:
+            report(f"eval_fixture_json:{path}", False, str(error))
+            continue
+
+        fixtures = data.get("fixtures", [])
+        has_fixtures = isinstance(fixtures, list) and bool(fixtures)
+        report(f"eval_fixture_list:{path}", has_fixtures,
+               "fixtures must be a non-empty list" if not has_fixtures else "")
+        for fixture in fixtures:
+            fixture_id = fixture.get("id", "<missing-id>") if isinstance(fixture, dict) else "<invalid-fixture>"
+            checkers = fixture.get("checkers", []) if isinstance(fixture, dict) else []
+            fixture_location = f"{path}:{fixture_id}"
+            previous_location = seen_fixture_ids.get(fixture_id)
+            report(f"eval_fixture_id_unique:{fixture_location}", previous_location is None,
+                   f"duplicate id previously seen in {previous_location}" if previous_location else "")
+            if previous_location is None:
+                seen_fixture_ids[fixture_id] = path
+            has_checkers = isinstance(checkers, list) and bool(checkers)
+            report(f"eval_fixture_has_checker:{fixture_id}", has_checkers,
+                   "missing checkers" if not has_checkers else "")
+            if not isinstance(checkers, list):
+                continue
+            for index, checker in enumerate(checkers):
+                checker_type = checker.get("type") if isinstance(checker, dict) else None
+                valid_type = checker_type in allowed_checker_types
+                report(f"eval_checker_type:{fixture_id}:{index}", valid_type,
+                       f"unknown checker type {checker_type!r}" if not valid_type else "")
 
 
 # ═══════════════════════════════════════════════════════════════════
@@ -359,6 +478,9 @@ def main():
         ("HTML Model Selector", [test_model_selector]),
         ("JS Routing Functions", [test_js_routing_functions]),
         ("Seed File", [test_seed_file]),
+        ("Goals Static Contract", [test_goals_static_contract]),
+        ("Background Static Contract", [test_background_static_contract]),
+        ("Behavioral Eval", [test_eval_contract]),
     ]
 
     for name, tests in sections:

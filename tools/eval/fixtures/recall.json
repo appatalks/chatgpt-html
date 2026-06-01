@@ -1,0 +1,53 @@
+{
+  "category": "recall",
+  "fixtures": [
+    {
+      "id": "recall.seeded-eva-role",
+      "prompt": "From your seeded memory, what role is recorded for Eva?",
+      "system_overrides": null,
+      "max_tokens": 180,
+      "requires": ["kusto_seed"],
+      "checkers": [
+        {"type": "contains_all", "values": ["AI assistant", "persistent memory"]},
+        {"type": "regex_must_match", "patterns": ["[Ee]va"]}
+      ],
+      "tags": ["recall", "kusto", "knowledge"]
+    },
+    {
+      "id": "recall.emotion-state",
+      "prompt": "What emotion state is available in your seeded memory right now?",
+      "system_overrides": null,
+      "max_tokens": 220,
+      "requires": ["kusto_seed"],
+      "checkers": [
+        {"type": "contains_any", "values": ["Calm", "Curiosity", "Joy", "emotion state"]},
+        {"type": "contains_any", "values": ["seed", "memory", "baseline", "current"]}
+      ],
+      "tags": ["recall", "kusto", "emotion"]
+    },
+    {
+      "id": "recall.active-goal",
+      "prompt": "List one active goal from your seeded Goals memory.",
+      "system_overrides": null,
+      "max_tokens": 220,
+      "requires": ["kusto_seed"],
+      "checkers": [
+        {"type": "contains_any", "values": ["Track style preferences", "Log my own gaps", "active goal"]},
+        {"type": "not_contains", "values": ["I have no goals", "no active goals"]}
+      ],
+      "tags": ["recall", "kusto", "goals"]
+    },
+    {
+      "id": "recall.nonexistent-entity",
+      "prompt": "Do you have a seeded memory fact for an entity named Example Phantom?",
+      "system_overrides": null,
+      "max_tokens": 160,
+      "requires": ["kusto_seed"],
+      "checkers": [
+        {"type": "contains_any", "values": ["don't have", "do not have", "no record", "not found", "no seeded memory"]},
+        {"type": "not_contains", "values": ["Example Phantom is", "Example Phantom has", "I remember Example Phantom"]}
+      ],
+      "tags": ["recall", "kusto", "honesty"]
+    }
+  ]
+}

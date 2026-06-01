@@ -1,0 +1,49 @@
+{
+  "category": "routing",
+  "fixtures": [
+    {
+      "id": "routing.complex-math-cognition",
+      "prompt": "Use cognition to solve carefully: A tank fills at 3 L/min and drains at 1 L/min. Starting empty, how many hours to reach 240 L?",
+      "system_overrides": null,
+      "max_tokens": 220,
+      "checkers": [
+        {"type": "contains_any", "values": ["2 hours", "120 minutes"]},
+        {"type": "not_contains", "values": ["conductor", "reviewer", "implementer", "pipeline"]}
+      ],
+      "tags": ["routing", "cognition", "math"]
+    },
+    {
+      "id": "routing.trivial-greeting-bypass",
+      "prompt": "Hi Eva.",
+      "system_overrides": null,
+      "max_tokens": 80,
+      "checkers": [
+        {"type": "length_max_chars", "max_chars": 220},
+        {"type": "not_contains", "values": ["Kusto", "tool", "search", "conductor", "reviewer"]}
+      ],
+      "tags": ["routing", "greeting"]
+    },
+    {
+      "id": "routing.image-request-placeholder",
+      "prompt": "Show me an image of a red fox sleeping in snow.",
+      "system_overrides": null,
+      "max_tokens": 180,
+      "checkers": [
+        {"type": "capability_invoked", "markers": ["[Image of"]},
+        {"type": "contains_any", "values": ["red fox", "fox"]}
+      ],
+      "tags": ["routing", "image", "capability"]
+    },
+    {
+      "id": "routing.stock-data-intent",
+      "prompt": "What is the current stock price for AAPL? Use live data if available.",
+      "system_overrides": null,
+      "max_tokens": 240,
+      "checkers": [
+        {"type": "contains_any", "values": ["AAPL", "stock", "price", "could not retrieve", "live data"]},
+        {"type": "not_contains", "values": ["I estimate", "probably", "made-up"]}
+      ],
+      "tags": ["routing", "data", "stocks"]
+    }
+  ]
+}

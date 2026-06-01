@@ -1,4 +1,4 @@
-const { app, BrowserWindow, dialog } = require('electron');
+const { app, BrowserWindow, dialog, session } = require('electron');
 const http = require('http');
 const net = require('net');
 const path = require('path');
@@ -327,6 +327,23 @@ function stopBridge() {
 
 function createWindow(acpBaseUrl) {
   const appRoot = getAppRoot();
+
+  // Grant microphone access for Web Speech API (webkitSpeechRecognition).
+  // Only allow media permissions for local file:// pages.
+  session.defaultSession.setPermissionRequestHandler(function(webContents, permission, callback) {
+    if (permission === 'media' && webContents.getURL().startsWith('file://')) {
+      callback(true);
+      return;
+    }
+    callback(false);
+  });
+  session.defaultSession.setPermissionCheckHandler(function(webContents, permission) {
+    if (permission === 'media' && webContents && webContents.getURL().startsWith('file://')) {
+      return true;
+    }
+    return false;
+  });
+
   const mainWindow = new BrowserWindow({
     width: 1280,
     height: 900,
