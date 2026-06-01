@@ -62,6 +62,9 @@
       <button id="evaModelsBtn" class="eva-nav-item" type="button" title="Models">
         <span class="eva-nav-icon">&#x1F916;</span> Models
       </button>
+      <button id="evaVoiceViewBtn" class="eva-nav-item" type="button" title="Voice View" onclick="toggleVoiceView()">
+        <span class="eva-nav-icon">&#x1F399;&#xFE0F;</span> Voice
+      </button>
       <button id="evaSettingsBtn" class="eva-nav-item" type="button" title="Settings">
         <span class="eva-nav-icon">&#x2699;&#xFE0F;</span> Settings
       </button>
@@ -214,7 +217,7 @@
         <hr style="margin:14px 0;border:none;border-top:1px solid rgba(127,127,127,0.25)">
         <div class="auth-note" style="margin:0">
           <strong>About</strong><br>
-          Eva AI Assistant <span id="evaAppVersion">v5.2.1</span><br>
+          Eva AI Assistant <span id="evaAppVersion">v5.2.2</span><br>
           <span>Active goals: <span id="evaActiveGoalsCount">0</span></span><br>
           <span id="evaStandaloneVersion" style="display:none"></span>
         </div>
@@ -348,22 +351,18 @@
             </select>
           </div>
 
-          <!-- Cognitive Layer (Conductor / Implementer / Reviewer) -->
+          <!-- Cognitive Layer (Eva / Reviewer) -->
           <div class="model-opt cog-section">
             <label class="cog-toggle-row">
               <input type="checkbox" id="cogEnabled" onchange="cogPersist()">
-              <span><strong>Enable Cognitive Layer</strong> &mdash; route Eva (AIG) through internal conductor / implementer / reviewer agents.</span>
+              <span><strong>Enable Cognitive Layer</strong> &mdash; route Eva (AIG) through internal eva / reviewer agents.</span>
             </label>
-            <p class="cog-help">When on, every Eva (AIG) turn is planned by a conductor, drafted by an implementer, then critiqued by a reviewer (bounded loop). The user only sees the final approved draft. Each agent uses its own model.</p>
+            <p class="cog-help">When on, every Eva (AIG) turn is drafted by Eva, then critiqued by a reviewer (bounded loop). The user only sees the final approved draft. Each agent uses its own model.</p>
 
             <div class="cog-grid">
               <div>
-                <label for="cogConductorModel">Conductor model:</label>
-                <select id="cogConductorModel" onchange="cogPersist()"></select>
-              </div>
-              <div>
-                <label for="cogImplementerModel">Implementer model:</label>
-                <select id="cogImplementerModel" onchange="cogPersist()"></select>
+                <label for="cogEvaModel">Eva model:</label>
+                <select id="cogEvaModel" onchange="cogPersist()"></select>
               </div>
               <div>
                 <label for="cogReviewerModel">Reviewer model:</label>
@@ -379,17 +378,10 @@
               <summary>Edit agent system prompts</summary>
               <div class="cog-prompt-row">
                 <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:3px">
-                  <label for="cogConductorPrompt" style="margin:0">Conductor prompt:</label>
-                  <button type="button" class="auth-toggle" style="padding:3px 8px;font-size:11px" onclick="cogResetPrompt('conductor')" aria-label="Reset conductor prompt to default">Reset</button>
+                  <label for="cogEvaPrompt" style="margin:0">Eva prompt:</label>
+                  <button type="button" class="auth-toggle" style="padding:3px 8px;font-size:11px" onclick="cogResetPrompt('eva')" aria-label="Reset Eva prompt to default">Reset</button>
                 </div>
-                <textarea id="cogConductorPrompt" rows="3" onchange="cogPersist()" placeholder="(default conductor prompt)"></textarea>
-              </div>
-              <div class="cog-prompt-row">
-                <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:3px">
-                  <label for="cogImplementerPrompt" style="margin:0">Implementer prompt:</label>
-                  <button type="button" class="auth-toggle" style="padding:3px 8px;font-size:11px" onclick="cogResetPrompt('implementer')" aria-label="Reset implementer prompt to default">Reset</button>
-                </div>
-                <textarea id="cogImplementerPrompt" rows="3" onchange="cogPersist()" placeholder="(default implementer prompt)"></textarea>
+                <textarea id="cogEvaPrompt" rows="3" onchange="cogPersist()" placeholder="(default Eva prompt)"></textarea>
               </div>
               <div class="cog-prompt-row">
                 <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:3px">
@@ -753,6 +745,17 @@
   <button id="printButton" onclick="printMaster()" aria-label="Print output">Print Output</button>
     <button id="clearMessagesBtn" onclick="clearMessages()" aria-label="Clear memory">Clear Memory</button>
   </footer> 
+
+  <!-- Voice View — ambient, always-listening mode -->
+  <div id="voiceView" class="voice-view" aria-hidden="true">
+    <button id="voiceViewClose" class="voice-view-close" type="button" aria-label="Exit voice view">&times;</button>
+    <div class="voice-view-center">
+      <canvas id="voiceViewCanvas" width="320" height="320"></canvas>
+      <div id="voiceViewLabel" class="voice-view-label">Eva</div>
+      <div id="voiceViewStatus" class="voice-view-status">Tap to begin</div>
+      <div id="voiceViewTranscript" class="voice-view-transcript"></div>
+    </div>
+  </div>
 
   <!-- Image lightbox -->
   <div class="eva-lightbox" id="evaLightbox">

@@ -21,7 +21,7 @@ Detailed architecture, dependencies, and implementation notes for Eva AI Assista
 
 ## Highlights
 
-- Multi-agent AIG with planner, implementer, and reviewer
+- Multi-agent AIG with eva and reviewer
 - MCP tool access (Kusto, GitHub, Azure) hot-reloadable at runtime
 - Persistent memory and emotion tracking via Azure Data Explorer
 - Inline image search (Wikimedia) and generation (DALL-E 3)
@@ -136,14 +136,14 @@ core/
                            - Authoritative ground-truth note injected into the single-shot
                              system prompt so the model does not fabricate pipeline runs
     cognition.js           Browser-side multi-agent cognitive layer (Cognition.run)
-                           - Three role-specific agents: conductor, implementer, reviewer
+                           - Two role-specific agents: eva, reviewer
                            - Each agent calls /v1/aig/chat independently with its own
                              model and editable system prompt
                            - Bounded review loop (cogMaxCycles, default 1, range 0-3)
                            - Verdict-first reviewer protocol (APPROVE | REQUEST_CHANGES)
                            - Capability registry: Cognition.registerCapability({id,
                              description, run})
-                           - Action protocol: implementer can emit
+                           - Action protocol: eva can emit
                              [[EVA_ACTION]]{"id":"...","args":{...}}[[/EVA_ACTION]]
                              blocks; the browser executes them and replaces each block
                              with the rendered HTML
@@ -362,7 +362,7 @@ Seven tabs in a modal overlay:
 | Tab | Contents |
 |---|---|
 | **General** | Theme (Default/LCARS/Eva), TTS engine/voice, auto-speak toggle |
-| **Models** | Model selector (grouped by provider), temperature, max tokens, reasoning effort, AIG backend selector, ACP model selector, and the **Cognitive Layer** controls (toggle, three role-specific model selectors, max review cycles, editable per-agent system prompts, debug trace) |
+| **Models** | Model selector (grouped by provider), temperature, max tokens, reasoning effort, AIG backend selector, ACP model selector, and the **Cognitive Layer** controls (toggle, two role-specific model selectors, max review cycles, editable per-agent system prompts, debug trace) |
 | **Auth** | API key inputs with show/hide toggles, ACP bridge URL. Keys stored in localStorage, override config.json |
 | **Prompts** | Personality presets (Default/Concise/Advanced/Terminal/Custom), editable system prompt textarea |
 | **Goals** | Kusto-backed goals list, create form, edit controls, and soft-delete action through bridge endpoints |
@@ -452,7 +452,7 @@ A bundled desktop build that ships the web UI and the ACP bridge together. The E
 cd standalone
 npm install
 npm run dist
-./dist/'Eva Standalone-5.2.1.AppImage'
+./dist/'Eva Standalone-5.2.2.AppImage'
 ```
 
 Host prerequisites: Node.js 24+, Python 3.12+, Copilot CLI authenticated. The AppImage hides Bark and the AWS Polly engines from the Settings panel and locks the Kusto database to the value configured in first-run setup. Build details and runtime notes are in [standalone/README.md](standalone/README.md).
@@ -480,7 +480,7 @@ Current state (2026-04-05):
 The **Eva (AIG)** model is the recommended way to use Eva. Selecting it in the model
 dropdown activates the full stack: intelligent orchestration, persistent memory,
 emotion tracking, and proactive data retrieval. An optional browser-side cognitive
-layer (conductor / implementer / reviewer) can be enabled on top; see
+layer (eva / reviewer) can be enabled on top; see
 [Cognition Layer](#cognition-layer).
 
 ### How AIG Works
@@ -535,16 +535,15 @@ plan/draft/review loop on top of any AIG turn.
 ### Browser Cognitive Layer (`core/js/cognition.js`)
 
 Opt-in via Settings > Models > **Enable Cognitive Layer**. When active, every Eva
-(AIG) turn is routed through three role-specific agents before the user sees a
+(AIG) turn is routed through two role-specific agents before the user sees a
 response:
 
 ```
 User turn
-  -> Conductor (planning, capability selection)
-     -> Implementer (drafts the user-facing answer, may emit action blocks)
-        -> Reviewer (verdict: APPROVE | REQUEST_CHANGES)
-           -> Implementer (revises against feedback) ... up to cogMaxCycles
-  -> executeActions(): runs any [[EVA_ACTION]] blocks the implementer emitted
+  -> Eva (plans, drafts the user-facing answer, may emit action blocks)
+     -> Reviewer (verdict: APPROVE | REQUEST_CHANGES)
+        -> Eva (revises against feedback) ... up to cogMaxCycles
+  -> executeActions(): runs any [[EVA_ACTION]] blocks Eva emitted
   -> renderEvaResponse(): renders the final approved draft
 ```
 
@@ -562,12 +561,12 @@ is surfaced in the footer status line and a small `Cognition: on` pill.
 | Neither | Single-shot AIG path; an authoritative system note tells the model the layer is OFF for this turn so it cannot fabricate phase narration |
 
 Recognized trigger phrases include `trigger the chain`, `use cognition`,
-`use the cognitive layer`, `run the conductor`, `run the reviewer`,
-`run the implementer`, `engage cognition`, and `cognition: on`.
+`use the cognitive layer`, `run eva`, `run the reviewer`,
+`engage cognition`, and `cognition: on`.
 
 **Capability registry and action protocol:**
 
-The implementer can invoke registered capabilities by emitting an action block on
+The eva agent can invoke registered capabilities by emitting an action block on
 its own line:
 
 ```
@@ -595,7 +594,7 @@ excludes `tmp/`).
 **Status tag format:**
 
 ```
-Eva (AIG, cognition) - <implementer-model>  [cog:<c>+<i>+<r>/c<N>[/forced][/act<K>]]
+Eva (AIG, cognition) - <eva-model>  [cog:<e>+<r>/c<N>[/forced][/act<K>]]
 ```
 
 `/forced` indicates a phrase-triggered run; `/act<K>` indicates K capability
@@ -677,16 +676,15 @@ The bridge uses `.ingest inline into table <T> <|` with strict CSV:
 
 ## Workspace Agent Profiles
 
-`.github/agents/` ships three VS Code Copilot workspace agents tuned for this
+`.github/agents/` ships two VS Code Copilot workspace agents tuned for this
 project's conventions. These are editor-time review tooling, not runtime components
 of Eva, and they do not run automatically when the browser cognitive layer is
 active.
 
 | File | Role | When to use |
 |---|---|---|
-| `reviewer.agent.md` | Code reviewer | Reviewing browser UI, model routing, ACP bridge, Kusto cognition, secrets, tests, docs |
-| `implementer.agent.md` | Code implementer | Writing, refactoring, or fixing changes (often in response to reviewer feedback) |
-| `conductor.agent.md` | Orchestrator | Running an automated review → implement → re-review loop with bounded cycles |
+| `eva.agent.md` | Eva (lead agent) | Planning, writing, refactoring, fixing, testing, or shipping code. Eva knows her own architecture, runtime, and capabilities. |
+| `reviewer.agent.md` | Comprehensive reviewer | Reviewing Eva's work, approving changes, designing tests, running checks, or rubber-ducking plans |
 
 The optional `.github/agents/local/` folder is gitignored and reserved for
 maintainer-only notes (dev topology, recurring commands, internal hosts, agent

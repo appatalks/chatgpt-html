@@ -64,14 +64,16 @@ function lmsSend() {
                     out.scrollTop = out.scrollHeight;
                 })(sQuestion);
 
-    const openAIUrl = `http://localhost:1234/v1/chat/completions`;
+    var _lmsBaseUrl = (typeof getLmStudioBaseUrl === 'function') ? getLmStudioBaseUrl() : 'http://localhost:1234/v1';
+    var _lmsModel = (typeof getLmStudioModel === 'function') ? getLmStudioModel() : 'granite-3.1-8b-instruct';
+    const openAIUrl = _lmsBaseUrl.replace(/\/+$/, '') + '/chat/completions';
     const requestOptions = {
         method: "POST",
         headers: { 
             "Content-Type": "application/json"
         },
         body: JSON.stringify({
-            model: "granite-3.1-8b-instruct",
+            model: _lmsModel,
 
             messages: _lmsRequestMsgs.concat([
                 { role: "user", content: sQuestion }

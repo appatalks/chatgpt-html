@@ -1,40 +1,38 @@
 // dall-e-3
 
 function dalle3Send() {
-        // let OPENAI_API_KEY;
-
-        function auth() {
-            fetch('./config.json')
-            .then(response => response.json())
-            .then(config => {
-                OPENAI_API_KEY = config.OPENAI_API_KEY;
-            });
-        }
-
-        // Call the auth() function to retrieve the API key
-        auth();
-
             // Get user input from the form
-            const prompt = document.getElementById("txtMsg").innerHTML;
-            // const size = document.getElementById("size").value;
+            const prompt = document.getElementById("txtMsg").innerHTML
+                .replace(/<br>/g, '\n')
+                .replace(/<div[^>]*>|<\/div>|&nbsp;|<span[^>]*>|<\/span>/gi, '')
+                .trim();
+
+            if (!prompt) {
+                alert("Type in your prompt!");
+                document.getElementById("txtMsg").focus();
+                return;
+            }
 
             // Check if the API key is available
-            if (!OPENAI_API_KEY) {
+            var apiKey = (typeof getAuthKey === 'function') ? getAuthKey('OPENAI_API_KEY') : (typeof OPENAI_API_KEY !== 'undefined' ? OPENAI_API_KEY : '');
+            if (!apiKey) {
                 alert("OpenAI API key not available. Please check your configuration.");
                 return;
             }
 
-            // Clear the send div before adding new images
+            // Clear input and display user message (escaped)
             document.getElementById("txtMsg").innerHTML = "";
-            document.getElementById("txtOutput").innerHTML += '<span class="user">You: </span>' + prompt + "<br>" + "\n";
-	    document.getElementById("txtOutput").innerHTML += '<span class="eva">Eva: </span>' + "Here is a generated image of that description ... " + "\n";
+            var safePrompt = (typeof escapeHtml === 'function') ? escapeHtml(prompt) : prompt.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+            var txtOutput = document.getElementById("txtOutput");
+            txtOutput.innerHTML += '<div class="chat-bubble user-bubble"><span class="user">You:</span> ' + safePrompt + '</div>';
+            txtOutput.innerHTML += '<div class="chat-bubble eva-bubble"><span class="eva">Eva:</span> Here is a generated image of that description...</div>';
 
             // Send an API request using JavaScript fetch
             fetch("https://api.openai.com/v1/images/generations", {
                 method: "POST",
                 headers: {
                     "Content-Type": "application/json",
-                    "Authorization": `Bearer ${OPENAI_API_KEY}`
+                    "Authorization": "Bearer " + apiKey
                 },
                 body: JSON.stringify({
                     "model": "dall-e-3",

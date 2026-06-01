@@ -1443,6 +1443,600 @@ function showWelcome() {
     '</div>';
 }
 
+// ═══════════════════════════════════════════════════════════════
+//  Voice View — ambient, always-listening mode
+// ═══════════════════════════════════════════════════════════════
+
+var _vv = {
+  open: false,
+  animFrame: null,
+  audioCtx: null,
+  analyser: null,
+  micStream: null,
+  dataArray: null,
+  phase: 'idle', // idle | listening | awake | thinking | speaking | error
+  recognition: null,
+  awakeTimer: null,
+  lastTranscript: '',
+  lastEvaReply: '',
+  speakObserver: null
+};
+
+function toggleVoiceView() {
+  if (_vv.open) {
+    closeVoiceView();
+  } else {
+    openVoiceView();
+  }
+}
+
+function openVoiceView() {
+  var el = document.getElementById('voiceView');
+  if (!el) return;
+  _vv.open = true;
+  el.classList.add('open');
+  el.setAttribute('aria-hidden', 'false');
+  _vvSetStatus('idle', 'Tap the orb to begin');
+  _vvClearTranscript();
+
+  // Wire close button
+  var closeBtn = document.getElementById('voiceViewClose');
+  if (closeBtn) closeBtn.onclick = closeVoiceView;
+
+  // Wire canvas tap to start/stop listening
+  var canvas = document.getElementById('voiceViewCanvas');
+  if (canvas) canvas.onclick = _vvToggleListening;
+
+  // Escape key to close
+  _vv._onEscape = function(e) { if (e.key === 'Escape') closeVoiceView(); };
+  document.addEventListener('keydown', _vv._onEscape);
+
+  // Start animation loop
+  _vvStartCanvas();
+}
+
+function closeVoiceView() {
+  _vv.open = false;
+  var el = document.getElementById('voiceView');
+  if (el) {
+    el.classList.remove('open');
+    el.setAttribute('aria-hidden', 'true');
+  }
+  // Clean up observer and restore auto-speak if a command was pending
+  if (_vv.speakObserver) { _vv.speakObserver.disconnect(); _vv.speakObserver = null; }
+  if (_vv._wasAutoSpeak !== undefined) {
+    var autoSpeak = document.getElementById('autoSpeak');
+    if (autoSpeak) autoSpeak.checked = _vv._wasAutoSpeak;
+    delete _vv._wasAutoSpeak;
+  }
+  // Remove Escape listener
+  if (_vv._onEscape) {
+    document.removeEventListener('keydown', _vv._onEscape);
+    delete _vv._onEscape;
+  }
+  _vvStopListening();
+  _vvStopCanvas();
+}
+
+function _vvSetStatus(phase, text) {
+  _vv.phase = phase;
+  var el = document.getElementById('voiceViewStatus');
+  if (!el) return;
+  el.className = 'voice-view-status';
+  if (phase !== 'idle') el.classList.add('vv-' + phase);
+  if (text) el.textContent = text;
+}
+
+function _vvClearTranscript() {
+  var el = document.getElementById('voiceViewTranscript');
+  if (el) el.innerHTML = '';
+  _vv.lastTranscript = '';
+  _vv.lastEvaReply = '';
+}
+
+function _vvShowTranscript(userText, evaText) {
+  var el = document.getElementById('voiceViewTranscript');
+  if (!el) return;
+  var html = '';
+  if (userText) html += '<div class="vv-user">' + escapeHtml(userText) + '</div>';
+  if (evaText) {
+    var short = evaText.length > 200 ? evaText.substring(0, 197) + '...' : evaText;
+    html += '<div class="vv-eva">' + escapeHtml(short) + '</div>';
+  }
+  el.innerHTML = html;
+}
+
+// --- Canvas waveform ---
+
+function _vvStartCanvas() {
+  var canvas = document.getElementById('voiceViewCanvas');
+  if (!canvas) return;
+  var ctx = canvas.getContext('2d');
+  var w = canvas.width, h = canvas.height;
+  var cx = w / 2, cy = h / 2, baseR = w * 0.34;
+
+  function draw() {
+    if (!_vv.open) return;
+    ctx.clearRect(0, 0, w, h);
+
+    // Get audio data if available
+    var freqData = null;
+    if (_vv.analyser && _vv.dataArray) {
+      _vv.analyser.getByteFrequencyData(_vv.dataArray);
+      freqData = _vv.dataArray;
+    }
+
+    var t = performance.now() / 1000;
+    var phase = _vv.phase;
+
+    // Color by state
+    var hue, sat, light, glowAlpha;
+    if (phase === 'awake') {
+      hue = 265; sat = 80; light = 65; glowAlpha = 0.5;
+    } else if (phase === 'thinking') {
+      hue = 220; sat = 70; light = 55; glowAlpha = 0.4;
+    } else if (phase === 'speaking') {
+      hue = 145; sat = 60; light = 50; glowAlpha = 0.45;
+    } else if (phase === 'listening') {
+      hue = 265; sat = 55; light = 50; glowAlpha = 0.3;
+    } else if (phase === 'error') {
+      hue = 0; sat = 65; light = 50; glowAlpha = 0.3;
+    } else {
+      hue = 220; sat = 30; light = 35; glowAlpha = 0.15;
+    }
+
+    // Outer glow
+    var gradient = ctx.createRadialGradient(cx, cy, baseR * 0.8, cx, cy, baseR * 1.6);
+    gradient.addColorStop(0, 'hsla(' + hue + ',' + sat + '%,' + light + '%,' + (glowAlpha * 0.4) + ')');
+    gradient.addColorStop(1, 'transparent');
+    ctx.fillStyle = gradient;
+    ctx.fillRect(0, 0, w, h);
+
+    // Draw radial waveform
+    var segments = 128;
+    ctx.beginPath();
+    for (var i = 0; i <= segments; i++) {
+      var angle = (i / segments) * Math.PI * 2 - Math.PI / 2;
+      var amp = 0;
+      if (freqData && freqData.length > 0) {
+        var fi = Math.floor((i / segments) * freqData.length);
+        amp = freqData[fi] / 255;
+      }
+      // Add organic motion even when quiet
+      var breathe = Math.sin(t * 1.2 + angle * 3) * 0.02 + Math.sin(t * 0.7 + angle * 7) * 0.01;
+      var pulse = (phase === 'awake' || phase === 'speaking') ? Math.sin(t * 4) * 0.03 : 0;
+      var r = baseR * (1 + amp * 0.35 + breathe + pulse);
+      var x = cx + Math.cos(angle) * r;
+      var y = cy + Math.sin(angle) * r;
+      if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+    }
+    ctx.closePath();
+
+    // Fill
+    var fillGrad = ctx.createRadialGradient(cx, cy, 0, cx, cy, baseR * 1.2);
+    fillGrad.addColorStop(0, 'hsla(' + hue + ',' + sat + '%,' + (light + 15) + '%,0.12)');
+    fillGrad.addColorStop(0.7, 'hsla(' + hue + ',' + sat + '%,' + light + '%,0.06)');
+    fillGrad.addColorStop(1, 'transparent');
+    ctx.fillStyle = fillGrad;
+    ctx.fill();
+
+    // Stroke
+    ctx.strokeStyle = 'hsla(' + hue + ',' + sat + '%,' + light + '%,' + (0.5 + glowAlpha) + ')';
+    ctx.lineWidth = 2;
+    ctx.shadowColor = 'hsla(' + hue + ',' + sat + '%,' + light + '%,' + glowAlpha + ')';
+    ctx.shadowBlur = 20;
+    ctx.stroke();
+    ctx.shadowBlur = 0;
+
+    // Inner ring (subtle)
+    ctx.beginPath();
+    ctx.arc(cx, cy, baseR * 0.6, 0, Math.PI * 2);
+    ctx.strokeStyle = 'hsla(' + hue + ',' + sat + '%,' + light + '%,0.08)';
+    ctx.lineWidth = 1;
+    ctx.stroke();
+
+    _vv.animFrame = requestAnimationFrame(draw);
+  }
+
+  _vv.animFrame = requestAnimationFrame(draw);
+}
+
+function _vvStopCanvas() {
+  if (_vv.animFrame) {
+    cancelAnimationFrame(_vv.animFrame);
+    _vv.animFrame = null;
+  }
+}
+
+// --- Mic analyser (for waveform visualization, separate from speech recognition) ---
+
+function _vvStartMicAnalyser() {
+  if (_vv.analyser) return Promise.resolve();
+  var AudioCtx = window.AudioContext || window.webkitAudioContext;
+  if (!AudioCtx) return Promise.resolve();
+
+  return navigator.mediaDevices.getUserMedia({ audio: true }).then(function(stream) {
+    _vv.micStream = stream;
+    _vv.audioCtx = new AudioCtx();
+    var source = _vv.audioCtx.createMediaStreamSource(stream);
+    _vv.analyser = _vv.audioCtx.createAnalyser();
+    _vv.analyser.fftSize = 256;
+    _vv.dataArray = new Uint8Array(_vv.analyser.frequencyBinCount);
+    source.connect(_vv.analyser);
+  }).catch(function(err) {
+    console.warn('[VoiceView] Mic access denied:', err.message);
+  });
+}
+
+function _vvStopMicAnalyser() {
+  if (_vv.micStream) {
+    _vv.micStream.getTracks().forEach(function(t) { t.stop(); });
+    _vv.micStream = null;
+  }
+  if (_vv.audioCtx) {
+    try { _vv.audioCtx.close(); } catch(e) {}
+    _vv.audioCtx = null;
+  }
+  _vv.analyser = null;
+  _vv.dataArray = null;
+}
+
+// --- Voice recognition (voice-view specific, runs alongside the orb) ---
+
+function _vvToggleListening() {
+  if (_vv.recognition || _vv.whisperMode) {
+    _vvStopListening();
+  } else {
+    _vvStartListening();
+  }
+}
+
+function _vvStartListening() {
+  // In Electron, Web Speech API can't reach Google's servers (missing API key).
+  // Go straight to Whisper-based transcription.
+  if (window.evaStandalone && window.evaStandalone.isStandalone) {
+    _vvStartWhisperListening();
+    return;
+  }
+
+  var SpeechRec = window.SpeechRecognition || window.webkitSpeechRecognition;
+  if (!SpeechRec) {
+    _vvStartWhisperListening();
+    return;
+  }
+
+  // Stop the chat-mode listener if active so we don't conflict
+  if (typeof stopVoiceListener === 'function') stopVoiceListener();
+
+  _vvStartMicAnalyser();
+
+  _vv.recognition = new SpeechRec();
+  _vv.recognition.lang = 'en-US';
+  _vv.recognition.continuous = true;
+  _vv.recognition.interimResults = false;
+
+  _vv.recognition.onstart = function() {
+    _vvSetStatus('listening', 'Listening for "Eva"...');
+  };
+
+  _vv.recognition.onresult = function(event) {
+    for (var i = event.resultIndex; i < event.results.length; i++) {
+      if (!event.results[i].isFinal) continue;
+      _vvHandleTranscript(event.results[i][0].transcript.trim());
+    }
+  };
+
+  _vv.recognition.onerror = function(event) {
+    if (event.error === 'no-speech' || event.error === 'aborted') return;
+    if (event.error === 'not-allowed') {
+      _vvSetStatus('error', 'Microphone access denied');
+      _vv.recognition = null;
+      return;
+    }
+    if (event.error === 'network' || event.error === 'service-not-allowed') {
+      console.warn('[VoiceView] Web Speech API unavailable (' + event.error + '), falling back to Whisper');
+      _vv.recognition = null;
+      _vvStartWhisperListening();
+      return;
+    }
+  };
+
+  _vv.recognition.onend = function() {
+    // Auto-restart unless we intentionally stopped
+    if (_vv.recognition && _vv.open) {
+      try { _vv.recognition.start(); }
+      catch(e) {
+        setTimeout(function() {
+          if (_vv.recognition && _vv.open) {
+            try { _vv.recognition.start(); } catch(e2) {
+              _vvSetStatus('error', 'Recognition stopped');
+              _vv.recognition = null;
+            }
+          }
+        }, 300);
+      }
+    }
+  };
+
+  _vv.recognition.start();
+}
+
+function _vvStopListening() {
+  if (_vv.awakeTimer) { clearTimeout(_vv.awakeTimer); _vv.awakeTimer = null; }
+  if (_vv.silenceTimer) { clearTimeout(_vv.silenceTimer); _vv.silenceTimer = null; }
+  if (_vv.recognition) {
+    var rec = _vv.recognition;
+    _vv.recognition = null; // prevent auto-restart
+    try { rec.stop(); } catch(e) {}
+  }
+  if (_vv.mediaRecorder) {
+    try { _vv.mediaRecorder.stop(); } catch(e) {}
+    _vv.mediaRecorder = null;
+  }
+  _vv.whisperMode = false;
+  _vv.audioChunks = [];
+  _vv.speechDetected = false;
+  _vvStopMicAnalyser();
+  if (_vv.open) _vvSetStatus('idle', 'Tap the orb to begin');
+}
+
+// --- Whisper-based transcription fallback (for Electron / when Web Speech API is unavailable) ---
+
+function _vvStartWhisperListening() {
+  if (typeof stopVoiceListener === 'function') stopVoiceListener();
+
+  _vv.whisperMode = true;
+  _vvSetStatus('listening', 'Listening for "Eva"...');
+  _vvStartMicAnalyser().then(function() {
+    if (_vv.open && _vv.whisperMode) _vvWhisperRecord();
+  });
+}
+
+function _vvWhisperRecord() {
+  if (!_vv.open || !_vv.whisperMode || !_vv.micStream) return;
+  if (_vv.phase === 'thinking' || _vv.phase === 'speaking') return;
+
+  var mimeType = 'audio/webm';
+  if (typeof MediaRecorder !== 'undefined' && MediaRecorder.isTypeSupported) {
+    if (MediaRecorder.isTypeSupported('audio/webm;codecs=opus')) mimeType = 'audio/webm;codecs=opus';
+  }
+
+  try {
+    _vv.mediaRecorder = new MediaRecorder(_vv.micStream, { mimeType: mimeType });
+  } catch(e) {
+    _vvSetStatus('error', 'MediaRecorder not available');
+    return;
+  }
+
+  _vv.audioChunks = [];
+  _vv.speechDetected = false;
+
+  _vv.mediaRecorder.ondataavailable = function(e) {
+    if (e.data && e.data.size > 0) _vv.audioChunks.push(e.data);
+  };
+
+  _vv.mediaRecorder.onstop = function() {
+    if (!_vv.speechDetected || !_vv.audioChunks.length || !_vv.whisperMode) {
+      if (_vv.open && _vv.whisperMode) setTimeout(function() { _vvWhisperRecord(); }, 200);
+      return;
+    }
+    var blob = new Blob(_vv.audioChunks, { type: mimeType });
+    _vv.audioChunks = [];
+    _vvWhisperTranscribe(blob);
+  };
+
+  _vv.mediaRecorder.start(250);
+  _vvWhisperMonitor();
+}
+
+function _vvWhisperMonitor() {
+  if (!_vv.open || !_vv.whisperMode || !_vv.analyser || !_vv.dataArray) return;
+
+  var threshold = 25;
+  var silenceDelay = 1500;
+
+  function check() {
+    if (!_vv.open || !_vv.whisperMode || !_vv.analyser || !_vv.dataArray) return;
+    if (_vv.phase === 'thinking' || _vv.phase === 'speaking') return;
+    if (!_vv.mediaRecorder || _vv.mediaRecorder.state !== 'recording') return;
+
+    _vv.analyser.getByteFrequencyData(_vv.dataArray);
+    var sum = 0;
+    for (var i = 0; i < _vv.dataArray.length; i++) sum += _vv.dataArray[i];
+    var avg = sum / _vv.dataArray.length;
+
+    if (avg > threshold) {
+      _vv.speechDetected = true;
+      if (_vv.silenceTimer) { clearTimeout(_vv.silenceTimer); _vv.silenceTimer = null; }
+    } else if (_vv.speechDetected && !_vv.silenceTimer) {
+      _vv.silenceTimer = setTimeout(function() {
+        _vv.silenceTimer = null;
+        if (_vv.mediaRecorder && _vv.mediaRecorder.state === 'recording') {
+          try { _vv.mediaRecorder.stop(); } catch(e) {}
+        }
+      }, silenceDelay);
+    }
+
+    requestAnimationFrame(check);
+  }
+
+  requestAnimationFrame(check);
+}
+
+function _vvWhisperTranscribe(blob) {
+  var apiKey = typeof getAuthKey === 'function' ? getAuthKey('OPENAI_API_KEY') : null;
+  if (!apiKey) {
+    _vvSetStatus('error', 'OpenAI API key required for voice in standalone mode');
+    return;
+  }
+
+  var formData = new FormData();
+  formData.append('file', blob, 'audio.webm');
+  formData.append('model', 'whisper-1');
+  formData.append('language', 'en');
+
+  fetch('https://api.openai.com/v1/audio/transcriptions', {
+    method: 'POST',
+    headers: { 'Authorization': 'Bearer ' + apiKey },
+    body: formData
+  }).then(function(res) {
+    if (!res.ok) throw new Error('Whisper API returned ' + res.status);
+    return res.json();
+  }).then(function(data) {
+    if (data.text && data.text.trim()) {
+      _vvHandleTranscript(data.text.trim());
+    }
+    if (_vv.open && _vv.whisperMode && _vv.phase !== 'thinking' && _vv.phase !== 'speaking') {
+      _vvWhisperRecord();
+    }
+  }).catch(function(err) {
+    console.warn('[VoiceView] Whisper transcription error:', err.message);
+    if (_vv.open && _vv.whisperMode) setTimeout(function() { _vvWhisperRecord(); }, 1000);
+  });
+}
+
+function _vvHandleTranscript(transcript) {
+  // Ignore input while processing a command
+  if (_vv.phase === 'thinking' || _vv.phase === 'speaking') return;
+
+  var lower = transcript.toLowerCase();
+  var evaIdx = lower.indexOf('eva');
+
+  if (evaIdx >= 0) {
+    var command = transcript.substring(evaIdx + 3).trim().replace(/^[,.\s]+/, '').trim();
+    if (command.length > 1) {
+      _vvSendCommand(command);
+    } else {
+      // Just "Eva" -- go awake
+      _vvSetStatus('awake', 'Listening...');
+      if (_vv.awakeTimer) clearTimeout(_vv.awakeTimer);
+      _vv.awakeTimer = setTimeout(function() {
+        if (_vv.phase === 'awake') _vvSetStatus('listening', 'Listening for "Eva"...');
+      }, 10000);
+    }
+    return;
+  }
+
+  if (_vv.phase === 'awake') {
+    if (_vv.awakeTimer) { clearTimeout(_vv.awakeTimer); _vv.awakeTimer = null; }
+    if (transcript.length > 1) {
+      _vvSendCommand(transcript);
+    } else {
+      _vvSetStatus('listening', 'Listening for "Eva"...');
+    }
+  }
+}
+
+function _vvSendCommand(command) {
+  _vv.lastTranscript = command;
+  _vvSetStatus('thinking', 'Thinking...');
+  _vvShowTranscript(command, '');
+
+  // Inject the command and send via the normal pipeline
+  var txtMsg = document.getElementById('txtMsg');
+  if (txtMsg) txtMsg.textContent = command;
+
+  // Force auto-speak on for voice view responses
+  var autoSpeak = document.getElementById('autoSpeak');
+  _vv._wasAutoSpeak = autoSpeak ? autoSpeak.checked : false;
+  if (autoSpeak) autoSpeak.checked = true;
+
+  // Watch for Eva's response to appear in txtOutput
+  _vvWatchForResponse();
+
+  if (typeof sendData === 'function') sendData();
+}
+
+function _vvWatchForResponse() {
+  var txtOutput = document.getElementById('txtOutput');
+  if (!txtOutput) return;
+
+  // Use a MutationObserver to detect when Eva's reply bubble appears
+  if (_vv.speakObserver) { _vv.speakObserver.disconnect(); _vv.speakObserver = null; }
+
+  var responded = false;
+  _vv.speakObserver = new MutationObserver(function() {
+    if (responded || !_vv.open) return;
+    // Check for a new Eva response
+    var evaResponse = (typeof lastResponse === 'string') ? lastResponse.trim() : '';
+    if (evaResponse && evaResponse !== _vv.lastEvaReply) {
+      responded = true;
+      _vv.lastEvaReply = evaResponse;
+      _vvSetStatus('speaking', 'Speaking...');
+      _vvShowTranscript(_vv.lastTranscript, evaResponse);
+
+      if (_vv.speakObserver) { _vv.speakObserver.disconnect(); _vv.speakObserver = null; }
+
+      // Wait for TTS to finish, then return to listening
+      _vvWaitForSpeechEnd(function() {
+        _vvRestoreAutoSpeak();
+        if (_vv.open && (_vv.recognition || _vv.whisperMode)) {
+          _vvSetStatus('listening', 'Listening for "Eva"...');
+          if (_vv.whisperMode) _vvWhisperRecord();
+        }
+      });
+    }
+  });
+
+  _vv.speakObserver.observe(txtOutput, { childList: true, subtree: true, characterData: true });
+
+  // Safety timeout: if no response in 60 seconds, go back to listening
+  setTimeout(function() {
+    if (!responded && _vv.speakObserver) {
+      _vv.speakObserver.disconnect();
+      _vv.speakObserver = null;
+      _vvRestoreAutoSpeak();
+      if (_vv.open) {
+        _vvSetStatus('listening', 'Listening for "Eva"...');
+        if (_vv.whisperMode) _vvWhisperRecord();
+      }
+    }
+  }, 60000);
+}
+
+function _vvRestoreAutoSpeak() {
+  if (_vv._wasAutoSpeak === undefined) return;
+  var autoSpeak = document.getElementById('autoSpeak');
+  if (autoSpeak) autoSpeak.checked = _vv._wasAutoSpeak;
+  delete _vv._wasAutoSpeak;
+}
+
+function _vvWaitForSpeechEnd(callback) {
+  var audio = document.getElementById('audioPlayback');
+
+  // For browser-native TTS, check speechSynthesis.speaking
+  var synth = window.speechSynthesis;
+  if (synth && synth.speaking) {
+    var synthCheck = setInterval(function() {
+      if (!synth.speaking) { clearInterval(synthCheck); setTimeout(callback, 500); }
+    }, 500);
+    // Cap at 30 seconds
+    setTimeout(function() { clearInterval(synthCheck); callback(); }, 30000);
+    return;
+  }
+
+  if (!audio) { setTimeout(callback, 2000); return; }
+
+  // Check if audio is currently playing or about to play
+  var checkCount = 0;
+  var maxChecks = 30; // 30 seconds max
+  function check() {
+    if (!_vv.open) { callback(); return; }
+    checkCount++;
+    if (checkCount > maxChecks) { callback(); return; }
+    if (!audio.paused && !audio.ended) {
+      audio.addEventListener('ended', function onEnd() {
+        audio.removeEventListener('ended', onEnd);
+        setTimeout(callback, 500);
+      }, { once: true });
+    } else {
+      setTimeout(check, 1000);
+    }
+  }
+  // Give TTS a moment to start
+  setTimeout(check, 1500);
+}
+
 function OnLoad() {
     // Initialize session manager (restores active session if any)
     if (typeof initSessions === 'function') initSessions();
@@ -1744,7 +2338,7 @@ function setStatus(type, text) {
   }
 }
 
-// --- Cognitive layer settings (conductor / implementer / reviewer) ---
+// --- Cognitive layer settings (eva / reviewer) ---
 function _cogPopulateModelSelect(targetId) {
   var src = document.getElementById('selAIGBackend');
   var dst = document.getElementById(targetId);
@@ -1758,8 +2352,7 @@ function _cogPopulateModelSelect(targetId) {
 }
 
 var COG_PROMPT_FIELDS = {
-  conductor: { id: 'cogConductorPrompt', key: 'cogConductorPrompt', cfgKey: 'conductorPrompt' },
-  implementer: { id: 'cogImplementerPrompt', key: 'cogImplementerPrompt', cfgKey: 'implementerPrompt' },
+  eva: { id: 'cogEvaPrompt', key: 'cogEvaPrompt', cfgKey: 'evaPrompt' },
   reviewer: { id: 'cogReviewerPrompt', key: 'cogReviewerPrompt', cfgKey: 'reviewerPrompt' }
 };
 
@@ -1781,18 +2374,16 @@ function _cogStoredPromptOrDefault(role) {
 
 function cogInit() {
   if (typeof Cognition === 'undefined') return;
-  ['cogConductorModel', 'cogImplementerModel', 'cogReviewerModel']
+  ['cogEvaModel', 'cogReviewerModel']
     .forEach(_cogPopulateModelSelect);
   var cfg = Cognition.getCfg();
   var $ = function (id) { return document.getElementById(id); };
   if ($('cogEnabled'))           $('cogEnabled').checked          = !!cfg.enabled;
   if ($('cogShowTrace'))         $('cogShowTrace').checked        = !!cfg.showTrace;
-  if ($('cogConductorModel'))    $('cogConductorModel').value     = cfg.conductorModel;
-  if ($('cogImplementerModel'))  $('cogImplementerModel').value   = cfg.implementerModel;
+  if ($('cogEvaModel'))          $('cogEvaModel').value           = cfg.evaModel;
   if ($('cogReviewerModel'))     $('cogReviewerModel').value      = cfg.reviewerModel;
   if ($('cogMaxCycles'))         $('cogMaxCycles').value          = String(cfg.maxCycles);
-  if ($('cogConductorPrompt'))   $('cogConductorPrompt').value   = _cogStoredPromptOrDefault('conductor');
-  if ($('cogImplementerPrompt')) $('cogImplementerPrompt').value = _cogStoredPromptOrDefault('implementer');
+  if ($('cogEvaPrompt'))         $('cogEvaPrompt').value         = _cogStoredPromptOrDefault('eva');
   if ($('cogReviewerPrompt'))    $('cogReviewerPrompt').value    = _cogStoredPromptOrDefault('reviewer');
   cogUpdateBadge();
 }
@@ -1803,8 +2394,7 @@ function cogPersist() {
   var partial = {
     enabled:           $('cogEnabled')          ? $('cogEnabled').checked        : false,
     showTrace:         $('cogShowTrace')        ? $('cogShowTrace').checked      : false,
-    conductorModel:    $('cogConductorModel')   ? $('cogConductorModel').value   : '',
-    implementerModel:  $('cogImplementerModel') ? $('cogImplementerModel').value : '',
+    evaModel:          $('cogEvaModel')         ? $('cogEvaModel').value         : '',
     reviewerModel:     $('cogReviewerModel')    ? $('cogReviewerModel').value    : '',
     maxCycles:         $('cogMaxCycles')        ? $('cogMaxCycles').value        : '1'
   };
@@ -2499,7 +3089,7 @@ function speakText() {
     } else {
       let text = document.getElementById("txtOutput").innerHTML;
       // Strip any cognition-trace details block first so trace content
-      // (which echoes the implementer/reviewer drafts) does not get spoken.
+      // (which echoes the eva/reviewer drafts) does not get spoken.
       text = text.replace(/<details class="cog-trace"[\s\S]*?<\/details>/g, '');
       let textArr = text.split('<span class="eva">Eva:');
       if (textArr.length > 1) {

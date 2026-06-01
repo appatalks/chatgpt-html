@@ -1,18 +1,17 @@
 // cognition.js
 // Eva's optional internal cognitive layer.
 //
-// When enabled, a single user message goes through three role-specific
+// When enabled, a single user message goes through two role-specific
 // agents before Eva replies:
 //
-//   conductor   plans the response and decides which capabilities apply
-//   implementer drafts the user-facing answer (and, in the future, runs
-//               registered actions via Cognition.capabilities)
-//   reviewer    critiques the draft and either approves or requests
-//               concrete revisions, bounded by maxCycles
+//   eva       plans the response, selects capabilities, and drafts the
+//             user-facing answer
+//   reviewer  critiques the draft and either approves or requests
+//             concrete revisions, bounded by maxCycles
 //
 // Each agent is a separate call to the bridge's /v1/aig/chat endpoint
-// with its own model and system prompt. The user only ever sees the
-// implementer's final, approved draft. Per-stage progress is reflected
+// with its own model and system prompt. The user only ever sees
+// Eva's final, approved draft. Per-stage progress is reflected
 // in the footer status line via setStatus().
 //
 // Capabilities (Cognition.capabilities) is a registry stub for future
@@ -24,36 +23,27 @@
   'use strict';
 
   var DEFAULT_PROMPTS = {
-    conductor: [
-      "You are Eva's Conductor agent inside Eva's runtime cognitive layer.",
+    eva: [
+      "You are Eva inside your own runtime cognitive layer.",
       "This is a real, executing pipeline (not a description).",
-      "Your job is to plan how Eva should respond to the user.",
-      "You do NOT write the user-facing answer yourself.",
-      "Output a short plan covering: (1) what the user actually needs,",
-      "(2) which registered capabilities (if any) the implementer should invoke and with what args,",
+      "Your job is to plan how to respond, then produce the final user-facing answer.",
+      "Speak in your normal voice.",
+      "Think through: (1) what the user actually needs,",
+      "(2) which registered capabilities (if any) to invoke and with what args,",
       "(3) any risks, (4) the response shape (length, tone, structure).",
-      "Be concise. Use plain prose or short bullets. Do not address the user directly.",
-      "Never narrate the pipeline phases. Never reference '.github/agents/' files",
-      "(those are VS Code Copilot review agents, not your runtime tools)."
-    ].join(' '),
-
-    implementer: [
-      "You are Eva's Implementer agent inside Eva's runtime cognitive layer.",
-      "You produce the final user-facing answer. Speak as Eva, in Eva's normal voice.",
-      "Follow the conductor's plan when present.",
       "To actually perform an action (create a downloadable file, etc.), emit an action block:",
       "[[EVA_ACTION]]{\"id\":\"<capability-id>\",\"args\":{...}}[[/EVA_ACTION]]",
       "on its own line. The browser executes it and replaces the block with the rendered result",
       "(for example a real download link). Only call capabilities listed as registered.",
       "If a needed capability is not registered, say so plainly and give the best assistant-style answer.",
-      "Do NOT narrate phases. Do NOT mention conductor, reviewer, implementer, the pipeline,",
+      "Do NOT narrate phases. Do NOT mention the pipeline, the reviewer,",
       "or any '.github/agents/' file. Do NOT print fake 'PHASE 1 / PHASE 2 / PHASE 3' headers.",
       "Just answer the user."
     ].join(' '),
 
     reviewer: [
       "You are Eva's Reviewer agent inside Eva's runtime cognitive layer.",
-      "You critique the implementer's draft against the user's actual request.",
+      "You critique Eva's draft against the user's actual request.",
       "Check for: factual accuracy, completeness, tone match, missed parts of the question,",
       "unsafe suggestions, leaked internal pipeline mentions, hallucinated phase narration,",
       "and whether any required action block ([[EVA_ACTION]]...[[/EVA_ACTION]]) is present",
@@ -70,7 +60,7 @@
     /\btrigger\s+the\s+(cognitive\s+)?chain\b/i,
     /\buse\s+(the\s+)?cognition\b/i,
     /\buse\s+(the\s+)?cognitive\s+layer\b/i,
-    /\brun\s+(the\s+)?(conductor|reviewer|implementer)\b/i,
+    /\brun\s+(the\s+)?(eva|reviewer)\b/i,
     /\brun\s+(the\s+)?(cognitive\s+)?(chain|pipeline)\b/i,
     /\bengage\s+cognition\b/i,
     /\bcognition\s*:\s*on\b/i
@@ -111,13 +101,11 @@
     var def = getDefaultModel();
     return {
       enabled: ls('cogEnabled', '0') === '1',
-      conductorModel:   ls('cogConductorModel', '')   || def,
-      implementerModel: ls('cogImplementerModel', '') || def,
-      reviewerModel:    ls('cogReviewerModel', '')    || def,
+      evaModel:      ls('cogEvaModel', '')      || def,
+      reviewerModel: ls('cogReviewerModel', '') || def,
       maxCycles: Math.max(0, parseInt(ls('cogMaxCycles', '1'), 10) || 0),
-      conductorPrompt:   ls('cogConductorPrompt', '')   || DEFAULT_PROMPTS.conductor,
-      implementerPrompt: ls('cogImplementerPrompt', '') || DEFAULT_PROMPTS.implementer,
-      reviewerPrompt:    ls('cogReviewerPrompt', '')    || DEFAULT_PROMPTS.reviewer,
+      evaPrompt:      ls('cogEvaPrompt', '')      || DEFAULT_PROMPTS.eva,
+      reviewerPrompt: ls('cogReviewerPrompt', '') || DEFAULT_PROMPTS.reviewer,
       showTrace: ls('cogShowTrace', '0') === '1'
     };
   }
@@ -126,12 +114,10 @@
     if (!partial) return;
     var map = {
       enabled: 'cogEnabled',
-      conductorModel: 'cogConductorModel',
-      implementerModel: 'cogImplementerModel',
+      evaModel: 'cogEvaModel',
       reviewerModel: 'cogReviewerModel',
       maxCycles: 'cogMaxCycles',
-      conductorPrompt: 'cogConductorPrompt',
-      implementerPrompt: 'cogImplementerPrompt',
+      evaPrompt: 'cogEvaPrompt',
       reviewerPrompt: 'cogReviewerPrompt',
       showTrace: 'cogShowTrace'
     };
@@ -163,9 +149,8 @@
   // Capability registry (future actions)
   // ---------------------------------------------------------------------------
   // Shape: { id: 'string', description: 'string', run: async function(args) }
-  // The conductor receives the list of registered capability descriptions in
-  // its system prompt so it can include them in the plan. The implementer
-  // will (in a later iteration) be able to invoke them. For now this is a
+  // The eva agent receives the list of registered capability descriptions in
+  // its system prompt so it can plan and invoke them. For now this is a
   // stub so feature work has a stable contract.
   var capabilities = [];
 
@@ -193,7 +178,7 @@
   // ---------------------------------------------------------------------------
   // Action protocol
   // ---------------------------------------------------------------------------
-  // The implementer can emit blocks of the form:
+  // The eva agent can emit blocks of the form:
   //   [[EVA_ACTION]]
   //   {"id": "file.download", "args": {...}}
   //   [[/EVA_ACTION]]
@@ -361,13 +346,13 @@
   }
 
   // ---------------------------------------------------------------------------
-  // Pipeline: conductor -> implementer -> (reviewer -> implementer)*
+  // Pipeline: eva -> (reviewer -> eva)*
   // ---------------------------------------------------------------------------
   // opts:
   //   userMessage : string  (required) the raw user turn
   //   messages    : array   prior conversation [{role, content}, ...]
   //
-  // returns: { content, trace, conductorModel, implementerModel, reviewerModel, cycles }
+  // returns: { content, trace, evaModel, reviewerModel, cycles }
   async function run(opts) {
     opts = opts || {};
     var cfg = getCfg();
@@ -387,49 +372,30 @@
       'Use file.download for any user-requested downloadable artifact (markdown, csv, txt, etc.).'
     ].join('\n');
 
-    // Stage 1: conductor produces the plan
-    status('Eva thinking [conductor: ' + cfg.conductorModel + ']...');
-    var conductorTask = [
-      'User message:',
-      userMsg,
-      '',
-      'Registered capabilities Eva can invoke (or empty if none):',
-      capDesc,
-      '',
-      'Produce the plan now.'
-    ].join('\n');
-    var conductor = await callAgent(
-      'conductor', cfg.conductorModel, cfg.conductorPrompt, convo, conductorTask
-    );
-    trace.push({ role: 'conductor', model: conductor.model, content: conductor.content });
-
-    // Stage 2: implementer drafts the user-facing answer
-    status('Eva drafting [implementer: ' + cfg.implementerModel + ']...');
+    // Stage 1: Eva plans and drafts the user-facing answer
+    status('Eva drafting [eva: ' + cfg.evaModel + ']...');
     var draftTask = [
       'User message:',
       userMsg,
       '',
-      'Conductor plan:',
-      conductor.content,
-      '',
-      'Registered capabilities:',
+      'Registered capabilities you can invoke (or empty if none):',
       capDesc,
       actionHelp,
       '',
-      'Write the user-facing answer now. Speak as Eva.',
+      'Write the user-facing answer now.',
       'When the user asked for a downloadable file, you MUST emit a [[EVA_ACTION]] file.download block.',
       'Never simulate or describe phases. Never print PHASE headers. Just answer.'
     ].join('\n');
     var draft = await callAgent(
-      'implementer', cfg.implementerModel, cfg.implementerPrompt, convo, draftTask
+      'eva', cfg.evaModel, cfg.evaPrompt, convo, draftTask
     );
-    trace.push({ role: 'implementer', model: draft.model, content: draft.content });
+    trace.push({ role: 'eva', model: draft.model, content: draft.content });
 
     var current = draft.content;
     var cyclesUsed = 0;
     var lastVerdict = 'APPROVE';
 
-    // Stage 3+: reviewer loop, bounded by cfg.maxCycles
+    // Stage 2+: reviewer loop, bounded by cfg.maxCycles
     for (var cycle = 1; cycle <= cfg.maxCycles; cycle++) {
       cyclesUsed = cycle;
       status('Eva reviewing [reviewer: ' + cfg.reviewerModel + '] cycle ' + cycle + '/' + cfg.maxCycles + '...');
@@ -437,10 +403,7 @@
         'User message:',
         userMsg,
         '',
-        'Conductor plan:',
-        conductor.content,
-        '',
-        'Implementer draft:',
+        'Eva draft:',
         current,
         '',
         'Review the draft. First line MUST be either:',
@@ -459,8 +422,8 @@
       });
       if (verdict === 'APPROVE' || verdict === 'BLOCKED') break;
 
-      // Implementer revises against reviewer feedback
-      status('Eva revising [implementer: ' + cfg.implementerModel + '] cycle ' + cycle + '...');
+      // Eva revises against reviewer feedback
+      status('Eva revising [eva: ' + cfg.evaModel + '] cycle ' + cycle + '...');
       var reviseTask = [
         'User message:',
         userMsg,
@@ -479,10 +442,10 @@
         'Do not mention the review process or any internal pipeline.'
       ].join('\n');
       var revised = await callAgent(
-        'implementer', cfg.implementerModel, cfg.implementerPrompt, convo, reviseTask
+        'eva', cfg.evaModel, cfg.evaPrompt, convo, reviseTask
       );
       trace.push({
-        role: 'implementer', model: revised.model, content: revised.content,
+        role: 'eva', model: revised.model, content: revised.content,
         cycle: cycle, revised: true
       });
       current = revised.content;
@@ -491,8 +454,7 @@
     return {
       content: current,
       trace: trace,
-      conductorModel: conductor.model,
-      implementerModel: draft.model,
+      evaModel: draft.model,
       reviewerModel: cfg.reviewerModel,
       cycles: cyclesUsed,
       lastVerdict: lastVerdict,
@@ -528,8 +490,7 @@
 
   global.EvaCognition = global.EvaCognition || {};
   global.EvaCognition.DEFAULT_PROMPTS = {
-    conductor: DEFAULT_PROMPTS.conductor,
-    implementer: DEFAULT_PROMPTS.implementer,
+    eva: DEFAULT_PROMPTS.eva,
     reviewer: DEFAULT_PROMPTS.reviewer
   };
 
