@@ -398,6 +398,38 @@ def test_background_static_contract():
            "background activity read endpoint must check loopback bind" if activity_loopback is None else "")
 
 
+def test_mcp_config():
+    """mcp.json is valid and contains well-formed server entries (local-only, skipped in CI)."""
+    mcp_path = "mcp.json"
+    exists = os.path.isfile(mcp_path)
+    if not exists:
+        # mcp.json is local-only (like config.json); skip when absent
+        return
+    try:
+        with open(mcp_path) as f:
+            data = json.load(f)
+        report("mcp_json_valid", True)
+    except Exception as e:
+        report("mcp_json_valid", False, str(e))
+        return
+    servers = data.get("mcpServers", {})
+    report("mcp_json_has_servers", isinstance(servers, dict) and bool(servers),
+           "mcpServers must be a non-empty object" if not (isinstance(servers, dict) and bool(servers)) else "")
+    secret_pattern = re.compile(r"(sk-[a-zA-Z0-9]{10}|ghp_[a-zA-Z0-9]{10}|Bearer\s+\S{10})", re.IGNORECASE)
+    for name, cfg in servers.items():
+        has_command = isinstance(cfg.get("command"), str) and bool(cfg["command"])
+        report(f"mcp_server_command:{name}", has_command,
+               "missing or empty 'command'" if not has_command else "")
+        has_args = isinstance(cfg.get("args"), list)
+        report(f"mcp_server_args:{name}", has_args,
+               "'args' must be a list" if not has_args else "")
+        env = cfg.get("env", {})
+        for key, val in env.items():
+            leaked = secret_pattern.search(str(val))
+            report(f"mcp_server_env_clean:{name}:{key}", not leaked,
+                   "env value looks like a real secret" if leaked else "")
+
+
 def test_eval_contract():
     """Behavioral eval files and fixture JSON are valid."""
     eval_dir = "tools/eval"
@@ -480,6 +512,7 @@ def main():
         ("Seed File", [test_seed_file]),
         ("Goals Static Contract", [test_goals_static_contract]),
         ("Background Static Contract", [test_background_static_contract]),
+        ("MCP Config", [test_mcp_config]),
         ("Behavioral Eval", [test_eval_contract]),
     ]
 

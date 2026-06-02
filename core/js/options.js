@@ -1459,7 +1459,10 @@ var _vv = {
   awakeTimer: null,
   lastTranscript: '',
   lastEvaReply: '',
-  speakObserver: null
+  speakObserver: null,
+  ttsSource: null,
+  ttsAnalyser: null,
+  ttsDataArray: null
 };
 
 function toggleVoiceView() {
@@ -1476,8 +1479,7 @@ function openVoiceView() {
   _vv.open = true;
   el.classList.add('open');
   el.setAttribute('aria-hidden', 'false');
-  _vvSetStatus('idle', 'Tap the orb to begin');
-  _vvClearTranscript();
+  _vvSetStatus('idle');
 
   // Wire close button
   var closeBtn = document.getElementById('voiceViewClose');
@@ -1518,32 +1520,8 @@ function closeVoiceView() {
   _vvStopCanvas();
 }
 
-function _vvSetStatus(phase, text) {
+function _vvSetStatus(phase) {
   _vv.phase = phase;
-  var el = document.getElementById('voiceViewStatus');
-  if (!el) return;
-  el.className = 'voice-view-status';
-  if (phase !== 'idle') el.classList.add('vv-' + phase);
-  if (text) el.textContent = text;
-}
-
-function _vvClearTranscript() {
-  var el = document.getElementById('voiceViewTranscript');
-  if (el) el.innerHTML = '';
-  _vv.lastTranscript = '';
-  _vv.lastEvaReply = '';
-}
-
-function _vvShowTranscript(userText, evaText) {
-  var el = document.getElementById('voiceViewTranscript');
-  if (!el) return;
-  var html = '';
-  if (userText) html += '<div class="vv-user">' + escapeHtml(userText) + '</div>';
-  if (evaText) {
-    var short = evaText.length > 200 ? evaText.substring(0, 197) + '...' : evaText;
-    html += '<div class="vv-eva">' + escapeHtml(short) + '</div>';
-  }
-  el.innerHTML = html;
 }
 
 // --- Canvas waveform ---
@@ -1559,15 +1537,22 @@ function _vvStartCanvas() {
     if (!_vv.open) return;
     ctx.clearRect(0, 0, w, h);
 
+    var t = performance.now() / 1000;
+    var phase = _vv.phase;
+
     // Get audio data if available
     var freqData = null;
     if (_vv.analyser && _vv.dataArray) {
       _vv.analyser.getByteFrequencyData(_vv.dataArray);
       freqData = _vv.dataArray;
     }
-
-    var t = performance.now() / 1000;
-    var phase = _vv.phase;
+    // Prefer TTS analyser data when speaking
+    var ttsData = null;
+    if (_vv.ttsAnalyser && _vv.ttsDataArray && phase === 'speaking') {
+      _vv.ttsAnalyser.getByteFrequencyData(_vv.ttsDataArray);
+      ttsData = _vv.ttsDataArray;
+    }
+    var activeData = ttsData || freqData;
 
     // Color by state
     var hue, sat, light, glowAlpha;
@@ -1598,9 +1583,9 @@ function _vvStartCanvas() {
     for (var i = 0; i <= segments; i++) {
       var angle = (i / segments) * Math.PI * 2 - Math.PI / 2;
       var amp = 0;
-      if (freqData && freqData.length > 0) {
-        var fi = Math.floor((i / segments) * freqData.length);
-        amp = freqData[fi] / 255;
+      if (activeData && activeData.length > 0) {
+        var fi = Math.floor((i / segments) * activeData.length);
+        amp = activeData[fi] / 255;
       }
       // Add organic motion even when quiet
       var breathe = Math.sin(t * 1.2 + angle * 3) * 0.02 + Math.sin(t * 0.7 + angle * 7) * 0.01;
@@ -1657,7 +1642,8 @@ function _vvStartMicAnalyser() {
 
   return navigator.mediaDevices.getUserMedia({ audio: true }).then(function(stream) {
     _vv.micStream = stream;
-    _vv.audioCtx = new AudioCtx();
+    if (!_vv.audioCtx) _vv.audioCtx = new AudioCtx();
+    if (_vv.audioCtx.state === 'suspended') _vv.audioCtx.resume();
     var source = _vv.audioCtx.createMediaStreamSource(stream);
     _vv.analyser = _vv.audioCtx.createAnalyser();
     _vv.analyser.fftSize = 256;
@@ -1673,12 +1659,54 @@ function _vvStopMicAnalyser() {
     _vv.micStream.getTracks().forEach(function(t) { t.stop(); });
     _vv.micStream = null;
   }
-  if (_vv.audioCtx) {
-    try { _vv.audioCtx.close(); } catch(e) {}
-    _vv.audioCtx = null;
+  // Suspend (don't close) so cached TTS MediaElementSource stays valid
+  if (_vv.audioCtx && _vv.audioCtx.state === 'running') {
+    try { _vv.audioCtx.suspend(); } catch(e) {}
   }
   _vv.analyser = null;
   _vv.dataArray = null;
+}
+
+// --- TTS audio analyser (connects to <audio> element during speech) ---
+
+function _vvConnectTTSAnalyser() {
+  _vvDisconnectTTSAnalyser();
+  var audio = document.getElementById('audioPlayback');
+  if (!audio) return;
+
+  var AudioCtx = window.AudioContext || window.webkitAudioContext;
+  if (!AudioCtx) return;
+
+  // Reuse existing audioCtx or create one for TTS
+  if (!_vv.audioCtx) _vv.audioCtx = new AudioCtx();
+  if (_vv.audioCtx.state === 'suspended') _vv.audioCtx.resume();
+  var ctx = _vv.audioCtx;
+
+  try {
+    _vv.ttsAnalyser = ctx.createAnalyser();
+    _vv.ttsAnalyser.fftSize = 256;
+    _vv.ttsDataArray = new Uint8Array(_vv.ttsAnalyser.frequencyBinCount);
+
+    // createMediaElementSource can only be called once per element
+    if (!audio._vvSource) {
+      audio._vvSource = ctx.createMediaElementSource(audio);
+    }
+    _vv.ttsSource = audio._vvSource;
+    _vv.ttsSource.connect(_vv.ttsAnalyser);
+    _vv.ttsSource.connect(ctx.destination);
+  } catch(e) {
+    // Fallback: if MediaElementSource fails (e.g. CORS), leave ttsAnalyser null
+    _vv.ttsAnalyser = null;
+    _vv.ttsDataArray = null;
+  }
+}
+
+function _vvDisconnectTTSAnalyser() {
+  if (_vv.ttsSource && _vv.ttsAnalyser) {
+    try { _vv.ttsSource.disconnect(_vv.ttsAnalyser); } catch(e) {}
+  }
+  _vv.ttsAnalyser = null;
+  _vv.ttsDataArray = null;
 }
 
 // --- Voice recognition (voice-view specific, runs alongside the orb) ---
@@ -1716,7 +1744,7 @@ function _vvStartListening() {
   _vv.recognition.interimResults = false;
 
   _vv.recognition.onstart = function() {
-    _vvSetStatus('listening', 'Listening for "Eva"...');
+    _vvSetStatus('listening');
   };
 
   _vv.recognition.onresult = function(event) {
@@ -1729,7 +1757,7 @@ function _vvStartListening() {
   _vv.recognition.onerror = function(event) {
     if (event.error === 'no-speech' || event.error === 'aborted') return;
     if (event.error === 'not-allowed') {
-      _vvSetStatus('error', 'Microphone access denied');
+      _vvSetStatus('error');
       _vv.recognition = null;
       return;
     }
@@ -1778,7 +1806,8 @@ function _vvStopListening() {
   _vv.audioChunks = [];
   _vv.speechDetected = false;
   _vvStopMicAnalyser();
-  if (_vv.open) _vvSetStatus('idle', 'Tap the orb to begin');
+  _vvDisconnectTTSAnalyser();
+  if (_vv.open) _vvSetStatus('idle');
 }
 
 // --- Whisper-based transcription fallback (for Electron / when Web Speech API is unavailable) ---
@@ -1787,7 +1816,7 @@ function _vvStartWhisperListening() {
   if (typeof stopVoiceListener === 'function') stopVoiceListener();
 
   _vv.whisperMode = true;
-  _vvSetStatus('listening', 'Listening for "Eva"...');
+  _vvSetStatus('listening');
   _vvStartMicAnalyser().then(function() {
     if (_vv.open && _vv.whisperMode) _vvWhisperRecord();
   });
@@ -1805,7 +1834,7 @@ function _vvWhisperRecord() {
   try {
     _vv.mediaRecorder = new MediaRecorder(_vv.micStream, { mimeType: mimeType });
   } catch(e) {
-    _vvSetStatus('error', 'MediaRecorder not available');
+    _vvSetStatus('error');
     return;
   }
 
@@ -1877,7 +1906,7 @@ function _vvWhisperMonitor() {
 function _vvWhisperTranscribe(blob) {
   var apiKey = typeof getAuthKey === 'function' ? getAuthKey('OPENAI_API_KEY') : null;
   if (!apiKey) {
-    _vvSetStatus('error', 'OpenAI API key required for voice in standalone mode');
+    _vvSetStatus('error');
     return;
   }
 
@@ -1919,10 +1948,10 @@ function _vvHandleTranscript(transcript) {
       _vvSendCommand(command);
     } else {
       // Just "Eva" -- go awake
-      _vvSetStatus('awake', 'Listening...');
+      _vvSetStatus('awake');
       if (_vv.awakeTimer) clearTimeout(_vv.awakeTimer);
       _vv.awakeTimer = setTimeout(function() {
-        if (_vv.phase === 'awake') _vvSetStatus('listening', 'Listening for "Eva"...');
+        if (_vv.phase === 'awake') _vvSetStatus('listening');
       }, 10000);
     }
     return;
@@ -1933,15 +1962,14 @@ function _vvHandleTranscript(transcript) {
     if (transcript.length > 1) {
       _vvSendCommand(transcript);
     } else {
-      _vvSetStatus('listening', 'Listening for "Eva"...');
+      _vvSetStatus('listening');
     }
   }
 }
 
 function _vvSendCommand(command) {
   _vv.lastTranscript = command;
-  _vvSetStatus('thinking', 'Thinking...');
-  _vvShowTranscript(command, '');
+  _vvSetStatus('thinking');
 
   // Inject the command and send via the normal pipeline
   var txtMsg = document.getElementById('txtMsg');
@@ -1973,16 +2001,17 @@ function _vvWatchForResponse() {
     if (evaResponse && evaResponse !== _vv.lastEvaReply) {
       responded = true;
       _vv.lastEvaReply = evaResponse;
-      _vvSetStatus('speaking', 'Speaking...');
-      _vvShowTranscript(_vv.lastTranscript, evaResponse);
+      _vvSetStatus('speaking');
+      _vvConnectTTSAnalyser();
 
       if (_vv.speakObserver) { _vv.speakObserver.disconnect(); _vv.speakObserver = null; }
 
       // Wait for TTS to finish, then return to listening
       _vvWaitForSpeechEnd(function() {
+        _vvDisconnectTTSAnalyser();
         _vvRestoreAutoSpeak();
         if (_vv.open && (_vv.recognition || _vv.whisperMode)) {
-          _vvSetStatus('listening', 'Listening for "Eva"...');
+          _vvSetStatus('listening');
           if (_vv.whisperMode) _vvWhisperRecord();
         }
       });
@@ -1998,7 +2027,7 @@ function _vvWatchForResponse() {
       _vv.speakObserver = null;
       _vvRestoreAutoSpeak();
       if (_vv.open) {
-        _vvSetStatus('listening', 'Listening for "Eva"...');
+        _vvSetStatus('listening');
         if (_vv.whisperMode) _vvWhisperRecord();
       }
     }

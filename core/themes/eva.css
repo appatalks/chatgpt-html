@@ -936,7 +936,7 @@ body.theme-eva .cog-badge[data-active="true"] {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 24px;
+  justify-content: center;
 }
 
 #voiceViewCanvas {
@@ -944,49 +944,7 @@ body.theme-eva .cog-badge[data-active="true"] {
   cursor: pointer;
 }
 
-.voice-view-label {
-  font-size: 28px;
-  font-weight: 600;
-  color: rgba(255,255,255,0.85);
-  letter-spacing: 0.04em;
-}
-
-.voice-view-status {
-  font-size: 14px;
-  font-weight: 400;
-  color: rgba(255,255,255,0.35);
-  min-height: 20px;
-  transition: color 0.3s;
-}
-.voice-view-status.vv-listening { color: rgba(139,92,246,0.7); }
-.voice-view-status.vv-awake     { color: rgba(139,92,246,1); }
-.voice-view-status.vv-thinking  { color: rgba(59,130,246,0.8); }
-.voice-view-status.vv-speaking  { color: rgba(34,197,94,0.8); }
-.voice-view-status.vv-error     { color: rgba(239,68,68,0.7); }
-
-.voice-view-transcript {
-  max-width: 500px;
-  min-height: 48px;
-  text-align: center;
-  font-size: 16px;
-  color: rgba(255,255,255,0.55);
-  line-height: 1.6;
-  padding: 0 20px;
-  overflow: hidden;
-  word-break: break-word;
-}
-.voice-view-transcript .vv-user {
-  color: rgba(255,255,255,0.4);
-  font-size: 13px;
-}
-.voice-view-transcript .vv-eva {
-  color: rgba(255,255,255,0.7);
-  font-size: 15px;
-}
-
 @media (max-width: 599px) {
   #voiceViewCanvas { width: 220px; height: 220px; }
-  .voice-view-label { font-size: 22px; }
-  .voice-view-transcript { max-width: 90vw; font-size: 14px; }
   .voice-view-close { top: 12px; right: 16px; font-size: 28px; }
 }

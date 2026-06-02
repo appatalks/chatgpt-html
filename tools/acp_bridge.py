@@ -499,6 +499,9 @@ def _ensure_kusto_token():
         return True, ""
     if _refresh_kusto_token():
         return True, ""
+    # Try MSAL silent refresh before falling through to device code
+    if _try_kusto_silent_auth():
+        return True, ""
     try:
         from azure.identity import DeviceCodeCredential, TokenCachePersistenceOptions
         cache_opts = TokenCachePersistenceOptions(allow_unencrypted_storage=True)
@@ -512,6 +515,46 @@ def _ensure_kusto_token():
         return False, "Kusto token request returned no token"
     except Exception as error:
         return False, str(error)
+
+
+def _try_kusto_silent_auth():
+    """Attempt MSAL silent token refresh from cached credentials. Returns True if successful."""
+    global _kusto_token_cache, _kusto_credential
+    try:
+        import msal as _msal
+        _cache_path = os.path.expanduser("~/.azure/msal_token_cache.json")
+        if not os.path.isfile(_cache_path):
+            return False
+        _msal_cache = _msal.SerializableTokenCache()
+        with open(_cache_path) as _cf:
+            _msal_cache.deserialize(_cf.read())
+        _app = _msal.PublicClientApplication(
+            "04b07795-8ddb-461a-bbee-02f9e1bf7b46",
+            authority="https://login.microsoftonline.com/organizations",
+            token_cache=_msal_cache
+        )
+        _accounts = _app.get_accounts()
+        if not _accounts:
+            return False
+        msal_cred = _MSALSilentCredential(
+            app=_app,
+            account=_accounts[0],
+            token_cache=_msal_cache,
+            cache_path=_cache_path,
+            default_scopes=["https://kusto.kusto.windows.net/.default"],
+        )
+        token = msal_cred.get_token("https://kusto.kusto.windows.net/.default")
+        if token and getattr(token, "token", None):
+            _kusto_token_cache = token.token
+            _kusto_credential = msal_cred
+            print(f"[Bridge] Kusto token refreshed silently from MSAL cache (length: {len(token.token)})")
+            return True
+        return False
+    except ImportError:
+        return False
+    except Exception as e:
+        print(f"[Bridge] MSAL silent auth failed: {e}")
+        return False
 
 def _split_kusto_seed_blocks(seed_text):
     """Split seed KQL into executable management command blocks."""
@@ -561,6 +604,7 @@ _candidate_history_cache = {}  # { entity_lower: (timestamp_epoch, mentions, max
 _CANDIDATE_HISTORY_TTL_SECONDS = 60
 _CONVO_CONTENT_CAP = 8000  # Kusto string columns are unbounded, but cap defensively.
 _ARTIFACTS_DIR = os.path.expanduser("~/.config/eva-standalone/artifacts")
+_KUSTO_CLUSTER_CACHE_PATH = os.path.expanduser("~/.config/eva-standalone/kusto_cluster.txt")
 _kusto_table_columns_cache = {}  # (cluster, db, table) -> [columns]
 _kusto_database_locked = _env_truthy("KUSTO_DATABASE_LOCKED") or _env_truthy("EVA_KUSTO_LOCKED")
 _active_kusto_db = os.environ.get("KUSTO_DATABASE", "").strip()
@@ -678,6 +722,37 @@ def _capture_active_kusto_env(mcp_config):
     env = kusto_cfg.get("env", {}) if isinstance(kusto_cfg, dict) else {}
     _active_kusto_db = str(env.get("KUSTO_DATABASE", "") or os.environ.get("KUSTO_DATABASE", "")).strip()
     _active_kusto_cluster = str(env.get("KUSTO_CLUSTER_URL", "") or os.environ.get("KUSTO_CLUSTER_URL", "")).strip()
+    # Persist / restore cluster URL from local cache file
+    if _active_kusto_cluster:
+        _persist_kusto_cluster(_active_kusto_cluster)
+    else:
+        cached = _load_cached_kusto_cluster()
+        if cached:
+            _active_kusto_cluster = cached
+            print(f"[Bridge] Kusto cluster restored from cache: {cached}")
+
+
+def _persist_kusto_cluster(cluster_url):
+    """Save the Kusto cluster URL to a local cache file for future startups."""
+    try:
+        os.makedirs(os.path.dirname(_KUSTO_CLUSTER_CACHE_PATH), exist_ok=True)
+        with open(_KUSTO_CLUSTER_CACHE_PATH, "w") as f:
+            f.write(cluster_url.strip())
+    except OSError:
+        pass
+
+
+def _load_cached_kusto_cluster():
+    """Load a previously cached Kusto cluster URL."""
+    try:
+        if os.path.isfile(_KUSTO_CLUSTER_CACHE_PATH):
+            with open(_KUSTO_CLUSTER_CACHE_PATH) as f:
+                url = f.read().strip()
+            if url and url.startswith("https://"):
+                return url
+    except OSError:
+        pass
+    return ""
 
 
 class _MSALSilentCredential:
@@ -748,6 +823,11 @@ def _kusto_query_direct(cluster_url, database, query, is_mgmt=False):
                 continue
             elif resp.status_code == 401:
                 print("[Cognition] Kusto query still unauthorized after refresh; verify tenant/account RBAC for cluster/database")
+            else:
+                err_text = resp.text[:200].replace("\n", " ").strip()
+                query_preview = query[:120].replace("\n", " ")
+                print(f"[Cognition] Kusto query HTTP {resp.status_code}: {err_text}")
+                print(f"[Cognition] Failed query: {query_preview}")
             return None
         except (_requests_mod.exceptions.SSLError, _requests_mod.exceptions.ConnectionError) as e:
             if attempt < 2:
@@ -818,23 +898,36 @@ def _kusto_query_with_error(cluster_url, database, query, is_mgmt=False):
 
 
 def _get_table_columns(cluster_url, database, table):
-    """Return known table columns from Kusto schema, cached per cluster/db/table."""
+    """Return known table columns from Kusto schema, cached per cluster/db/table.
+    Returns list of column names, or None if the table does not exist.
+    Negative results (table not found) are cached to avoid repeated queries."""
     key = (cluster_url, database, table)
     cached = _kusto_table_columns_cache.get(key)
     if cached is not None:
-        return cached
+        # Empty list means table confirmed non-existent
+        return cached if cached else None
 
     schema_rows = _kusto_query_direct(
         cluster_url,
         database,
-        f".show table {table} schema | project ColumnName",
+        f".show table {table} cslschema",
         is_mgmt=True,
     )
     if not schema_rows:
+        # Cache negative result so we don't re-query on every call
+        _kusto_table_columns_cache[key] = []
         return None
 
-    cols = [str(r.get("ColumnName", "")).strip() for r in schema_rows if r.get("ColumnName")]
+    # .show table X cslschema returns a single row with a Schema column containing
+    # comma-separated "name:type" pairs. Parse the column names from it.
+    schema_str = schema_rows[0].get("Schema", "") if schema_rows else ""
+    if not schema_str:
+        # Fallback: try extracting ColumnName from each row (older Kusto versions)
+        cols = [str(r.get("ColumnName", "")).strip() for r in schema_rows if r.get("ColumnName")]
+    else:
+        cols = [pair.split(":")[0].strip() for pair in schema_str.split(",") if ":" in pair]
     if not cols:
+        _kusto_table_columns_cache[key] = []
         return None
 
     _kusto_table_columns_cache[key] = cols
@@ -1499,7 +1592,7 @@ def _build_memory_context(user_message):
         context_parts.append("[Memory — Core Facts]\n" + "\n".join(mem_lines))
 
     goals_query = _GOALS_LATEST_QUERY + " | where Status == 'active' | order by Priority desc, UpdatedAt desc | take 10"
-    goals = _kusto_query_direct(cluster, db, goals_query)
+    goals = _kusto_query_direct(cluster, db, goals_query) if _get_table_columns(cluster, db, "Goals") else None
     if goals:
         goal_lines = [f"  [{g.get('Category','?')}] {g.get('Title','?')}: {g.get('Description','?')}" for g in goals]
         context_parts.append("[Active Goals]\nThese are your persistent intentions. Honor them across sessions.\n" + "\n".join(goal_lines))
@@ -2137,8 +2230,31 @@ def _ensure_acp_model(requested_model):
     """Ensure ACP client is running with the requested model."""
     global acp_client
 
-    if not acp_client or not acp_client.alive:
+    if not acp_client:
         return False, "ACP bridge not connected to Copilot"
+
+    # If the CLI process died (stdout closed, crash, idle timeout),
+    # attempt a restart with the current config before giving up.
+    if not acp_client.alive:
+        print("[Bridge] ACP client not alive, attempting restart...")
+        try:
+            old_cwd = acp_client.cwd
+            old_path = acp_client.copilot_path
+            old_mcp = _inject_kusto_token(acp_client.mcp_config)
+            old_model = acp_client.model
+            acp_client.stop()
+            acp_client = ACPClient(
+                copilot_path=old_path,
+                cwd=old_cwd,
+                model=requested_model or old_model or None,
+                mcp_config=old_mcp,
+            )
+            acp_client.start()
+            print(f"[Bridge] ACP client restarted successfully")
+            return True, acp_client.model or "default"
+        except RuntimeError as e:
+            print(f"[Bridge] ACP restart failed: {e}")
+            return False, f"ACP restart failed: {e}"
 
     target_model = requested_model or ""
     current_model = acp_client.model or ""
@@ -2445,7 +2561,7 @@ class BridgeHandler(BaseHTTPRequestHandler):
         query += " | order by CreatedAt desc | take 50"
         rows = _kusto_query_direct(cluster, db, query)
         if rows is None:
-            self._json_response(500, {"error": {"message": "BackgroundProposals query failed"}})
+            self._json_response(200, {"proposals": [], "warning": "BackgroundProposals table may not exist yet; run /v1/kusto/seed to create it"})
             return
         self._json_response(200, {"proposals": rows})
 
@@ -2459,7 +2575,7 @@ class BridgeHandler(BaseHTTPRequestHandler):
         query = "BackgroundActivity | order by StartedAt desc | take 50"
         rows = _kusto_query_direct(cluster, db, query)
         if rows is None:
-            self._json_response(500, {"error": {"message": "BackgroundActivity query failed"}})
+            self._json_response(200, {"activity": [], "warning": "BackgroundActivity table may not exist yet; run /v1/kusto/seed to create it"})
             return
         self._json_response(200, {"activity": rows})
 
@@ -2619,7 +2735,7 @@ class BridgeHandler(BaseHTTPRequestHandler):
         query = _GOALS_LATEST_QUERY + " | order by Priority desc, UpdatedAt desc"
         goals = _kusto_query_direct(cluster, db, query)
         if goals is None:
-            self._json_response(500, {"error": {"message": "Goals query failed"}})
+            self._json_response(200, {"goals": [], "warning": "Goals table may not exist yet; run /v1/kusto/seed to create it"})
             return
         self._json_response(200, {"goals": goals})
 
@@ -2884,12 +3000,18 @@ class BridgeHandler(BaseHTTPRequestHandler):
         print(f"[AIG] Processing: {user_message[:80]}...")
 
         # Step 1: Build memory context + proactive data retrieval
-        memory_context = _build_memory_context(user_message) if _cognition_enabled else ""
-        if memory_context:
-            print(f"[AIG] Injected {len(memory_context)} chars of memory context")
+        # Skip for internal calls (cognition sub-calls already have context)
+        if internal:
+            memory_context = ""
+            print("[AIG] Internal call: skipping memory injection")
+        else:
+            memory_context = _build_memory_context(user_message) if _cognition_enabled else ""
+            if memory_context:
+                print(f"[AIG] Injected {len(memory_context)} chars of memory context")
 
         # Step 2: ACP-first routing — ACP is the default path (it has MCP tools).
-        # Only skip ACP for trivial conversational messages with high confidence.
+        # Skip ACP data retrieval for internal calls (cognition sub-calls)
+        # and for trivial conversational messages with high confidence.
         import re as _re
         msg_lower = user_message.lower()
         msg_stripped = _re.sub(r'[^\w\s]', '', msg_lower).strip()
@@ -2898,10 +3020,13 @@ class BridgeHandler(BaseHTTPRequestHandler):
         skip_acp = False
         _acp_route = "default"
 
-        if model_for_response == "lmstudio":
+        if internal:
+            skip_acp = True
+            _acp_route = "internal-cognition"
+        elif model_for_response == "lmstudio":
             skip_acp = True
             _acp_route = "lmstudio-no-tools"
-        elif not (acp_client and acp_client.alive):
+        elif not acp_client:
             skip_acp = True
             _acp_route = "acp-unavailable"
         elif len(msg_words) <= 4 and _re.match(
@@ -2956,6 +3081,14 @@ class BridgeHandler(BaseHTTPRequestHandler):
         acp_model_used = ""
         if needs_acp_tools:
             print(f"[AIG] Step 2: Using ACP ({_request_type})...")
+            # Ensure ACP is alive before attempting tool calls.
+            # The CLI may have died between requests (idle timeout, crash).
+            if not acp_client.alive:
+                ok, _ = _ensure_acp_model(acp_client.model or "")
+                if not ok:
+                    needs_acp_tools = False
+                    print("[AIG] ACP restart failed, skipping data retrieval")
+        if needs_acp_tools:
             # Use ACP to run the data query (it has MCP tools)
             if raw_output_requested:
                 acp_prompt = (
@@ -3160,8 +3293,19 @@ class BridgeHandler(BaseHTTPRequestHandler):
             # Explicit ACP routing — skip PAT entirely
             github_pat = ""
 
+        # When cognition is active, ACP is the primary path (not a fallback).
+        # This avoids PAT round-trips and keeps model routing through Copilot CLI.
+        # Note: _cognition_enabled is only set at startup when Kusto MCP + token
+        # are confirmed, so ACP availability is guaranteed at that point.
+        # The alive check is deferred to the actual ACP prompt call.
+        if _cognition_enabled and acp_client:
+            if model_for_response not in ("lmstudio",):
+                github_pat = ""
+                acp_response_model = model_for_response if model_for_response != "acp" else ""
+                print(f"[AIG] Cognition active: routing directly to ACP")
+
         # Non-mapped models are not on GitHub Models API and must go through ACP.
-        if model_for_response != "acp" and model_for_response not in _github_model_map:
+        elif model_for_response != "acp" and model_for_response not in _github_model_map:
             print(f"[AIG] {model_for_response} not on GitHub Models API, routing to ACP")
             github_pat = ""
 
@@ -3252,15 +3396,29 @@ class BridgeHandler(BaseHTTPRequestHandler):
                 github_pat = ""
 
         if not response_text:
-            # Fallback: use ACP for response generation (less persona-friendly but functional)
-            print(f"[AIG] Fallback: Using ACP for response generation...")
-            if acp_client and acp_client.alive:
+            # ACP response generation — primary path when cognition is active,
+            # fallback path when PAT is unavailable or failed.
+            print(f"[AIG] Using ACP for response generation...")
+            if acp_client:
                 switched, switch_info = _ensure_acp_model(acp_response_model)
                 if not switched:
                     response_text = f"ACP model switch failed: {switch_info}"
                     model_used = "aig:unavailable"
                 else:
-                    full_prompt = eva_system + "\n\nUser: " + user_message
+                    # Include conversation history so follow-up messages have context
+                    history_lines = []
+                    for msg in messages[-6:]:
+                        if msg.get("role") in ("user", "assistant"):
+                            role_label = "User" if msg["role"] == "user" else "Eva"
+                            history_lines.append(f"{role_label}: {msg.get('content', '')[:500]}")
+                    if history_lines:
+                        full_prompt = eva_system + "\n\n[Conversation]\n" + "\n\n".join(history_lines)
+                        # Append current message if not already the last in history
+                        last_hist = history_lines[-1] if history_lines else ""
+                        if not last_hist.startswith("User: " + user_message[:50]):
+                            full_prompt += "\n\nUser: " + user_message
+                    else:
+                        full_prompt = eva_system + "\n\nUser: " + user_message
                     acp_result = acp_client.prompt(full_prompt, timeout=120)
                     response_text = acp_result.get("text", "I'm having trouble processing that right now.")
                     active_model = acp_client.model or "acp-default"
@@ -3487,6 +3645,9 @@ class BridgeHandler(BaseHTTPRequestHandler):
             kusto_env["KUSTO_DATABASE_LOCKED"] = "1"
 
         # Inject cached Kusto token if kusto-mcp-server is being configured
+        # If no token is cached yet, attempt MSAL silent refresh (same as --enable-kusto-mcp startup)
+        if "kusto-mcp-server" in mcp_servers and not _kusto_token_cache:
+            _try_kusto_silent_auth()
         mcp_servers = _inject_kusto_token(mcp_servers)
         _capture_active_kusto_env(mcp_servers)
 
@@ -3673,14 +3834,22 @@ def main():
 
     # Build MCP config
     mcp_config = {}
-    if args.mcp_config:
+    mcp_config_source = args.mcp_config
+    # Auto-discover mcp.json from project root when no explicit --mcp-config
+    if not mcp_config_source:
+        project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        auto_path = os.path.join(project_root, "mcp.json")
+        if os.path.isfile(auto_path):
+            mcp_config_source = auto_path
+            print(f"[Bridge] Auto-discovered MCP config: {auto_path}")
+    if mcp_config_source:
         try:
-            if os.path.isfile(args.mcp_config):
-                with open(args.mcp_config) as f:
+            if os.path.isfile(mcp_config_source):
+                with open(mcp_config_source) as f:
                     cfg = json.load(f)
                 mcp_config = cfg.get("mcpServers", cfg)
             else:
-                cfg = json.loads(args.mcp_config)
+                cfg = json.loads(mcp_config_source)
                 mcp_config = cfg.get("mcpServers", cfg)
         except (json.JSONDecodeError, IOError) as e:
             print(f"[Bridge] Warning: Failed to parse MCP config: {e}")
@@ -3711,6 +3880,7 @@ def main():
         kusto_env = {}
         if args.kusto_cluster:
             kusto_env["KUSTO_CLUSTER_URL"] = args.kusto_cluster
+            _persist_kusto_cluster(args.kusto_cluster)
         if args.kusto_database:
             kusto_env["KUSTO_DATABASE"] = args.kusto_database
         if _kusto_database_locked:
@@ -3771,6 +3941,20 @@ def main():
             _kusto_token_cache = token.token
             _kusto_credential = cred
             print(f"[Bridge] Kusto token obtained and cached (length: {len(token.token)})")
+
+            # Auto-discover cluster URL from local cache if not explicitly provided
+            if "KUSTO_CLUSTER_URL" not in kusto_env:
+                cached_cluster = _load_cached_kusto_cluster()
+                if cached_cluster:
+                    # Validate the cached cluster URL with a lightweight query
+                    test_rows = _kusto_query_direct(cached_cluster, "Eva", ".show databases", is_mgmt=True)
+                    if test_rows is not None:
+                        kusto_env["KUSTO_CLUSTER_URL"] = cached_cluster
+                        print(f"[Bridge] Kusto cluster restored and validated from cache")
+                    else:
+                        print(f"[Bridge] Cached Kusto cluster failed validation, ignoring")
+                else:
+                    print(f"[Bridge] No cached Kusto cluster URL (pass --kusto-cluster once to seed)")
         except Exception as e:
             print(f"[Bridge] Warning: Could not pre-fetch Kusto token: {e}")
             print("[Bridge] The MCP server will try to authenticate on its own.")

@@ -164,13 +164,23 @@ async function aigSend() {
   try {
     var url = bridgeUrl.replace(/\/+$/, '') + '/v1/aig/chat';
 
+    // Prefer cognition evaModel when cognition is configured,
+    // otherwise fall back to the AIG backend selector dropdown.
+    var aigModel = (document.getElementById('selAIGBackend') || {}).value || 'gpt-4.1';
+    if (typeof Cognition !== 'undefined' && Cognition.getCfg) {
+      var cogModelCfg = Cognition.getCfg();
+      if (cogModelCfg.enabled && cogModelCfg.evaModel) {
+        aigModel = cogModelCfg.evaModel;
+      }
+    }
+
     var resp = await fetch(url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         messages: existingMessages,
         user_message: sQuestion,
-        model: (document.getElementById('selAIGBackend') || {}).value || 'gpt-4.1',
+        model: aigModel,
         lmstudio_base_url: (typeof getLmStudioBaseUrl === 'function') ? getLmStudioBaseUrl() : '',
         lmstudio_model: (typeof getLmStudioModel === 'function') ? getLmStudioModel() : '',
         github_pat: (typeof getAuthKey === 'function') ? getAuthKey('GITHUB_PAT') : ''

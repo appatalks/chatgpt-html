@@ -37,6 +37,7 @@
           "README-2.md",
           "config.example.json",
           "config.local.example.js",
+          "mcp.json",
           "core/**",
           "tools/acp_bridge.py",
           "tools/kusto_mcp.py",
