@@ -74,6 +74,11 @@ This project is a simple web UI for interacting with OpenAI, Google Generative m
 ## Versioning
 - Update `README.md` Features list when adding models or user-visible features.
 
+## Build
+- After every completed code iteration, rebuild the Electron AppImage: `cd standalone && npm run dist`.
+- This ensures the standalone build stays current for immediate testing.
+- The build command is `npm run dist` inside `standalone/`.
+
 ## ACP Infrastructure Roadmap
 - Keep ACP deployment assumptions aligned with `README-2.md` under **ACP Infrastructure Roadmap (tracking)**.
 - Until roadmap completion, treat split deployment as the default: static web tier may run on legacy hosts, while ACP Bridge runs on a compatible host.
