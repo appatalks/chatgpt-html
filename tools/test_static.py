@@ -399,11 +399,11 @@ def test_background_static_contract():
 
 
 def test_mcp_config():
-    """mcp.json is valid and contains well-formed server entries."""
+    """mcp.json is valid and contains well-formed server entries (local-only, skipped in CI)."""
     mcp_path = "mcp.json"
     exists = os.path.isfile(mcp_path)
-    report("mcp_json_exists", exists, "missing mcp.json" if not exists else "")
     if not exists:
+        # mcp.json is local-only (like config.json); skip when absent
         return
     try:
         with open(mcp_path) as f:
