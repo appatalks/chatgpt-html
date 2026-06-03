@@ -852,6 +852,22 @@ _GOALS_LATEST_QUERY = (
 )
 _BG_JOB_TYPE = "memory_consolidation"
 _BG_TARGET_TABLE = "MemorySummaries"
+# Additional automation job types dispatched by the background tick.
+_BG_JOB_GOAL_CHECKIN = "goal_checkin"
+_BG_JOB_DAILY_DIGEST = "daily_digest"
+# Per-job enable switches. All on by default; the loop still respects the
+# global _bg_loop_enabled flag and the recent-activity pause.
+_BG_JOBS_ENABLED = {
+    _BG_JOB_TYPE: True,
+    _BG_JOB_GOAL_CHECKIN: True,
+    _BG_JOB_DAILY_DIGEST: True,
+}
+# Target tables the approve/apply path knows how to write.
+_BG_APPLY_TABLES = {"MemorySummaries", "Reflections"}
+# Goal check-in tuning: a goal is "stalled" after this many days without an
+# update, and at most this many nudges are proposed per tick.
+_GOAL_STALE_DAYS = 3
+_GOAL_CHECKIN_MAX = 2
 _BG_PROPOSAL_STATUSES = {"pending", "approved", "rejected", "applying", "applied", "failed"}
 _BG_ACTIVITY_STATUSES = {"succeeded", "failed", "paused", "skipped"}
 _BG_PROPOSAL_COLUMNS = [
@@ -2278,12 +2294,12 @@ def _set_background_activity(row, error_text=""):
     _bg_last_error = error_text or ""
 
 
-def _record_background_activity(cluster, database, tick_id, started_at, ended_at, status, proposal_count, token_estimate, notes):
+def _record_background_activity(cluster, database, tick_id, started_at, ended_at, status, proposal_count, token_estimate, notes, job_type=_BG_JOB_TYPE):
     row = {
         "TickId": tick_id,
         "StartedAt": _to_utc_iso(started_at),
         "EndedAt": _to_utc_iso(ended_at),
-        "JobType": _BG_JOB_TYPE,
+        "JobType": job_type,
         "Status": status,
         "ProposalCount": int(proposal_count or 0),
         "TokenEstimate": int(token_estimate or 0),
@@ -2388,6 +2404,208 @@ def _background_memory_summary_exists(cluster, database, summary_row):
     return bool(rows), ""
 
 
+def _apply_proposal_payload(cluster, database, target_table, payload):
+    """Apply a background proposal payload to its target table.
+
+    Returns (ok, error, note). Used by both the auto-apply path inside a tick
+    and the manual approve endpoint, so the apply logic lives in one place.
+    """
+    if not isinstance(payload, dict):
+        return False, "proposal payload missing or not an object", ""
+    if target_table == "MemorySummaries":
+        summary_row = {
+            "Period": str(payload.get("Period", "") or ""),
+            "Summary": str(payload.get("Summary", "") or ""),
+            "Timestamp": str(payload.get("Timestamp", "") or ""),
+        }
+        if not summary_row["Period"] or not summary_row["Summary"] or not summary_row["Timestamp"]:
+            return False, "Proposal payload must include Period, Summary, and Timestamp", ""
+        parsed_timestamp = _parse_kusto_datetime(summary_row["Timestamp"])
+        if not parsed_timestamp:
+            return False, "Proposal payload Timestamp must be a valid datetime", ""
+        summary_row["Timestamp"] = _to_utc_iso(parsed_timestamp)
+        summary_exists, error = _background_memory_summary_exists(cluster, database, summary_row)
+        if error:
+            return False, error, ""
+        if not summary_exists and not _kusto_ingest_direct(cluster, database, "MemorySummaries", ["Period", "Summary", "Timestamp"], [summary_row]):
+            return False, "MemorySummaries write failed", ""
+        return True, "", "applied to MemorySummaries"
+    if target_table == "Reflections":
+        observation = str(payload.get("Observation", "") or "").strip()
+        if not observation:
+            return False, "Reflection payload must include Observation", ""
+        parsed_timestamp = _parse_kusto_datetime(payload.get("Timestamp")) or _utc_now()
+        try:
+            effectiveness = float(payload.get("Effectiveness", 0.0) or 0.0)
+        except (TypeError, ValueError):
+            effectiveness = 0.0
+        reflection_row = {
+            "Timestamp": _to_utc_iso(parsed_timestamp),
+            "Trigger": str(payload.get("Trigger", "") or "")[:200],
+            "Observation": observation[:1000],
+            "ActionTaken": str(payload.get("ActionTaken", "") or "")[:500],
+            "Effectiveness": effectiveness,
+        }
+        if not _kusto_ingest_direct(cluster, database, "Reflections", ["Timestamp", "Trigger", "Observation", "ActionTaken", "Effectiveness"], [reflection_row]):
+            return False, "Reflections write failed", ""
+        return True, "", "applied to Reflections"
+    return False, "Unsupported proposal target table", ""
+
+
+def _create_background_proposal_row(job_type, target_table, payload, window_start, window_end, notes, status="pending"):
+    now_iso = _to_utc_iso(_utc_now())
+    return {
+        "ProposalId": "bgp-" + str(uuid.uuid4()),
+        "CreatedAt": now_iso,
+        "JobType": job_type,
+        "TargetTable": target_table,
+        "Payload": payload,
+        "Status": status,
+        "SourceWindowStart": _to_utc_iso(window_start),
+        "SourceWindowEnd": _to_utc_iso(window_end),
+        "Notes": str(notes or "")[:500],
+        "ReviewedAt": "",
+        "ReviewedBy": "",
+    }
+
+
+def _existing_goal_checkin_ids(cluster, database):
+    """GoalIds that already have a pending goal check-in proposal (dedup)."""
+    query = _BG_PROPOSALS_LATEST_QUERY + f" | where Status == 'pending' | where JobType == '{_BG_JOB_GOAL_CHECKIN}' | take 100"
+    rows = _kusto_query_direct(cluster, database, query) or []
+    ids = set()
+    for row in rows:
+        payload, _ = _background_proposal_payload(row)
+        if isinstance(payload, dict) and payload.get("GoalId"):
+            ids.add(str(payload.get("GoalId")))
+    return ids
+
+
+def _build_daily_digest(conversation_rows, goal_rows, period):
+    user_rows = [row for row in conversation_rows if str(row.get("Role", "")).lower() == "user"]
+    assistant_rows = [row for row in conversation_rows if str(row.get("Role", "")).lower() == "assistant"]
+    topics = _background_summary_topics(user_rows)
+    topics_text = ", ".join(topics) if topics else "general conversation"
+    active_goals = [g for g in (goal_rows or []) if str(g.get("Status", "")).lower() == "active"]
+    goal_titles = [str(g.get("Title", "") or "untitled").strip() for g in active_goals[:3]]
+    if active_goals:
+        goals_text = f"{len(active_goals)} active goal(s)"
+        if goal_titles:
+            goals_text += " (" + "; ".join(goal_titles) + ")"
+    else:
+        goals_text = "no active goals"
+    digest = (
+        f"Daily digest for {period}: {len(user_rows)} user message(s) and "
+        f"{len(assistant_rows)} assistant reply(ies). Top topics: {topics_text}. "
+        f"Goals: {goals_text}."
+    )
+    return digest[:800]
+
+
+def _job_memory_consolidation(ctx):
+    conversation_rows = _query_background_conversations(ctx["cluster"], ctx["database"], ctx["window_start"], ctx["window_end"])
+    if conversation_rows is None:
+        return None, "Conversations query failed"
+    if not conversation_rows:
+        return [], "no conversations in source window"
+    summary_text = _build_background_summary(conversation_rows)
+    payload = {
+        "Period": "background-" + ctx["now_iso"][:10],
+        "Summary": summary_text,
+        "Timestamp": ctx["now_iso"],
+    }
+    return [{
+        "target_table": "MemorySummaries",
+        "payload": payload,
+        "auto_apply": False,
+        "notes": f"from {len(conversation_rows)} conversation row(s)",
+    }], f"proposal from {len(conversation_rows)} conversation row(s)"
+
+
+def _job_goal_checkin(ctx):
+    goal_rows = _kusto_query_direct(ctx["cluster"], ctx["database"], _GOALS_LATEST_QUERY)
+    if goal_rows is None:
+        return None, "Goals query failed"
+    active_goals = [g for g in goal_rows if str(g.get("Status", "")).lower() == "active"]
+    if not active_goals:
+        return [], "no active goals"
+    existing_ids = _existing_goal_checkin_ids(ctx["cluster"], ctx["database"])
+    now = _utc_now()
+    stalled = []
+    for goal in active_goals:
+        goal_id = str(goal.get("GoalId", "") or "")
+        if not goal_id or goal_id in existing_ids:
+            continue
+        updated = _parse_kusto_datetime(goal.get("UpdatedAt"))
+        age_days = (now - updated).days if updated else 999
+        if age_days >= _GOAL_STALE_DAYS:
+            stalled.append((age_days, goal))
+    if not stalled:
+        return [], "no stalled active goals"
+    stalled.sort(key=lambda item: -item[0])
+    proposals = []
+    for age_days, goal in stalled[:_GOAL_CHECKIN_MAX]:
+        title = str(goal.get("Title", "") or "untitled goal").strip()
+        category = str(goal.get("Category", "") or "").strip()
+        observation = (
+            f"Goal '{title}'" + (f" ({category})" if category else "") +
+            f" has had no updates for {age_days} day(s). Suggest a concrete next step "
+            "or update its status so it keeps moving."
+        )
+        payload = {
+            "Timestamp": ctx["now_iso"],
+            "Trigger": "goal_checkin:" + str(goal.get("GoalId")),
+            "Observation": observation,
+            "ActionTaken": "",
+            "Effectiveness": 0.0,
+            "GoalId": str(goal.get("GoalId")),
+        }
+        proposals.append({
+            "target_table": "Reflections",
+            "payload": payload,
+            "auto_apply": False,
+            "notes": f"stalled goal '{title}' ({age_days}d)",
+        })
+    return proposals, f"{len(proposals)} goal check-in(s)"
+
+
+def _job_daily_digest(ctx):
+    cluster, database = ctx["cluster"], ctx["database"]
+    now = _utc_now()
+    day_start = (now - datetime.timedelta(days=1)).replace(hour=0, minute=0, second=0, microsecond=0)
+    day_end = now.replace(hour=0, minute=0, second=0, microsecond=0)
+    period = "digest-" + _to_utc_iso(day_start)[:10]
+    existing = _kusto_query_direct(cluster, database, f"MemorySummaries | where Period == '{_safe_kusto_string(period)}' | take 1")
+    if existing:
+        return [], "digest already exists for " + period
+    conversation_rows = _query_background_conversations(cluster, database, day_start, day_end)
+    if conversation_rows is None:
+        return None, "Conversations query failed"
+    if not conversation_rows:
+        return [], "no conversations for " + period
+    goal_rows = _kusto_query_direct(cluster, database, _GOALS_LATEST_QUERY) or []
+    digest_text = _build_daily_digest(conversation_rows, goal_rows, period)
+    payload = {
+        "Period": period,
+        "Summary": digest_text,
+        "Timestamp": ctx["now_iso"],
+    }
+    return [{
+        "target_table": "MemorySummaries",
+        "payload": payload,
+        "auto_apply": True,
+        "notes": f"daily digest from {len(conversation_rows)} conversation row(s)",
+    }], "daily digest for " + period
+
+
+# Ordered registry of automation jobs run on each tick.
+_BG_JOBS = [
+    (_BG_JOB_TYPE, _job_memory_consolidation),
+    (_BG_JOB_GOAL_CHECKIN, _job_goal_checkin),
+    (_BG_JOB_DAILY_DIGEST, _job_daily_digest),
+]
+
+
 def _run_background_tick(trigger="scheduled"):
     trigger = "manual" if trigger == "manual" else "scheduled"
     acquired = _bg_tick_lock.acquire(blocking=False)
@@ -2403,53 +2621,77 @@ def _run_background_tick(trigger="scheduled"):
 
     cluster = None
     database = None
-    note_prefix = f"{trigger} background tick: "
     try:
         cluster, database, context_error = _background_kusto_context()
         if context_error:
-            _record_background_activity(cluster, database, tick_id, started_at, _utc_now(), "failed", 0, 0, note_prefix + context_error)
+            _record_background_activity(cluster, database, tick_id, started_at, _utc_now(), "failed", 0, 0, f"{trigger} background tick: " + context_error)
             return
 
         if trigger != "manual" and time.time() - _last_user_activity_ts < 120:
-            _record_background_activity(cluster, database, tick_id, started_at, _utc_now(), "paused", 0, 0, note_prefix + "recent user activity")
+            _record_background_activity(cluster, database, tick_id, started_at, _utc_now(), "paused", 0, 0, f"{trigger} background tick: recent user activity")
             return
 
         window_end = _utc_now()
         window_start, window_end = _background_source_window(cluster, database, window_end)
-        conversation_rows = _query_background_conversations(cluster, database, window_start, window_end)
-        if conversation_rows is None:
-            _record_background_activity(cluster, database, tick_id, started_at, _utc_now(), "failed", 0, 0, note_prefix + "Conversations query failed")
-            return
-        if not conversation_rows:
-            _record_background_activity(cluster, database, tick_id, started_at, _utc_now(), "skipped", 0, 0, note_prefix + "no conversations in source window")
-            return
+        ctx = {
+            "cluster": cluster,
+            "database": database,
+            "window_start": window_start,
+            "window_end": window_end,
+            "now_iso": _to_utc_iso(_utc_now()),
+            "trigger": trigger,
+        }
 
-        now_iso = _to_utc_iso(_utc_now())
-        summary_text = _build_background_summary(conversation_rows)
-        payload = {
-            "Period": "background-" + now_iso[:10],
-            "Summary": summary_text,
-            "Timestamp": now_iso,
-        }
-        proposal_row = {
-            "ProposalId": "bgp-" + str(uuid.uuid4()),
-            "CreatedAt": now_iso,
-            "JobType": _BG_JOB_TYPE,
-            "TargetTable": _BG_TARGET_TABLE,
-            "Payload": payload,
-            "Status": "pending",
-            "SourceWindowStart": _to_utc_iso(window_start),
-            "SourceWindowEnd": _to_utc_iso(window_end),
-            "Notes": f"generated by {trigger} background tick from {len(conversation_rows)} conversation row(s)",
-            "ReviewedAt": "",
-            "ReviewedBy": "",
-        }
-        if not _write_background_proposal(cluster, database, proposal_row):
-            _record_background_activity(cluster, database, tick_id, started_at, _utc_now(), "failed", 0, 0, note_prefix + "BackgroundProposals write failed")
-            return
-        _record_background_activity(cluster, database, tick_id, started_at, _utc_now(), "succeeded", 1, 0, note_prefix + "proposal created")
+        for job_type, handler in _BG_JOBS:
+            job_started = _utc_now()
+            job_tick_id = tick_id + ":" + job_type
+            note_prefix = f"{trigger} {job_type}: "
+            if not _BG_JOBS_ENABLED.get(job_type, True):
+                _record_background_activity(cluster, database, job_tick_id, job_started, _utc_now(), "skipped", 0, 0, note_prefix + "disabled", job_type=job_type)
+                continue
+            try:
+                proposals, job_note = handler(ctx)
+            except Exception as job_error:
+                _record_background_activity(cluster, database, job_tick_id, job_started, _utc_now(), "failed", 0, 0, note_prefix + str(job_error)[:400], job_type=job_type)
+                continue
+            if proposals is None:
+                _record_background_activity(cluster, database, job_tick_id, job_started, _utc_now(), "failed", 0, 0, note_prefix + (job_note or "job failed"), job_type=job_type)
+                continue
+            if not proposals:
+                _record_background_activity(cluster, database, job_tick_id, job_started, _utc_now(), "skipped", 0, 0, note_prefix + (job_note or "nothing to do"), job_type=job_type)
+                continue
+
+            created = 0
+            applied = 0
+            failed_apply = 0
+            for proposal in proposals:
+                target_table = proposal.get("target_table")
+                payload = proposal.get("payload")
+                notes = proposal.get("notes", "")
+                if proposal.get("auto_apply"):
+                    apply_ok, apply_error, apply_note = _apply_proposal_payload(cluster, database, target_table, payload)
+                    if apply_ok:
+                        applied += 1
+                        row = _create_background_proposal_row(job_type, target_table, payload, window_start, window_end, notes + "; auto-applied (" + apply_note + ")", status="applied")
+                    else:
+                        failed_apply += 1
+                        row = _create_background_proposal_row(job_type, target_table, payload, window_start, window_end, notes + "; auto-apply failed: " + apply_error, status="failed")
+                    row["ReviewedAt"] = _to_utc_iso(_utc_now())
+                    row["ReviewedBy"] = "auto"
+                else:
+                    row = _create_background_proposal_row(job_type, target_table, payload, window_start, window_end, notes)
+                if _write_background_proposal(cluster, database, row):
+                    created += 1
+
+            summary_note = note_prefix + (job_note or "done")
+            if applied:
+                summary_note += f"; auto-applied {applied}"
+            if failed_apply:
+                summary_note += f"; {failed_apply} auto-apply failure(s)"
+            status = "succeeded" if created else "failed"
+            _record_background_activity(cluster, database, job_tick_id, job_started, _utc_now(), status, created, 0, summary_note, job_type=job_type)
     except Exception as error:
-        _record_background_activity(cluster, database, tick_id, started_at, _utc_now(), "failed", 0, 0, note_prefix + str(error)[:500])
+        _record_background_activity(cluster, database, tick_id, started_at, _utc_now(), "failed", 0, 0, f"{trigger} background tick: " + str(error)[:500])
     finally:
         _bg_tick_lock.release()
 
@@ -2991,40 +3233,25 @@ class BridgeHandler(BaseHTTPRequestHandler):
             return
 
         if action == "approve":
-            if current.get("TargetTable") != _BG_TARGET_TABLE:
+            target_table = current.get("TargetTable")
+            if target_table not in _BG_APPLY_TABLES:
                 self._json_response(400, {"error": {"message": "Unsupported proposal target table"}})
                 return
             payload, error = _background_proposal_payload(current)
             if error:
                 self._json_response(400, {"error": {"message": error}})
                 return
-            summary_row = {
-                "Period": str(payload.get("Period", "") or ""),
-                "Summary": str(payload.get("Summary", "") or ""),
-                "Timestamp": str(payload.get("Timestamp", "") or ""),
-            }
-            if not summary_row["Period"] or not summary_row["Summary"] or not summary_row["Timestamp"]:
-                self._json_response(400, {"error": {"message": "Proposal payload must include Period, Summary, and Timestamp"}})
-                return
-            parsed_timestamp = _parse_kusto_datetime(summary_row["Timestamp"])
-            if not parsed_timestamp:
-                self._json_response(400, {"error": {"message": "Proposal payload Timestamp must be a valid datetime"}})
-                return
-            summary_row["Timestamp"] = _to_utc_iso(parsed_timestamp)
             if current_status == "pending":
-                applying_row = _background_proposal_update_row(current, "applying", "loopback", "applying to MemorySummaries")
+                applying_row = _background_proposal_update_row(current, "applying", "loopback", f"applying to {target_table}")
                 if not _write_background_proposal(cluster, db, applying_row):
                     self._json_response(500, {"error": {"message": "BackgroundProposals applying status write failed"}})
                     return
                 current = applying_row
-            summary_exists, error = _background_memory_summary_exists(cluster, db, summary_row)
-            if error:
-                self._json_response(500, {"error": {"message": error + "; proposal remains applying. Retry approve safely after resolving the transient error."}})
+            apply_ok, apply_error, apply_note = _apply_proposal_payload(cluster, db, target_table, payload)
+            if not apply_ok:
+                self._json_response(500, {"error": {"message": apply_error + "; proposal remains applying. Retry approve safely after resolving the transient error."}})
                 return
-            if not summary_exists and not _kusto_ingest_direct(cluster, db, _BG_TARGET_TABLE, ["Period", "Summary", "Timestamp"], [summary_row]):
-                self._json_response(500, {"error": {"message": "MemorySummaries write failed after proposal moved to applying; proposal remains applying. Retry approve safely after resolving the transient error."}})
-                return
-            reviewed_row = _background_proposal_update_row(current, "applied", "loopback", "approved and applied to MemorySummaries")
+            reviewed_row = _background_proposal_update_row(current, "applied", "loopback", apply_note or f"approved and applied to {target_table}")
         else:
             reviewed_row = _background_proposal_update_row(current, "rejected", "loopback", "rejected by user")
 

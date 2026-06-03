@@ -534,6 +534,15 @@ function renderBackgroundStatus() {
   if (intervalEl && status.intervalSeconds) intervalEl.value = String(status.intervalSeconds);
 }
 
+function backgroundJobLabel(jobType) {
+  switch (String(jobType || '').toLowerCase()) {
+    case 'memory_consolidation': return 'Memory summary proposal';
+    case 'goal_checkin': return 'Goal check-in';
+    case 'daily_digest': return 'Daily digest';
+    default: return jobType ? String(jobType) : 'Background proposal';
+  }
+}
+
 function renderBackgroundProposals() {
   var listEl = document.getElementById('backgroundProposals');
   if (!listEl) return;
@@ -556,12 +565,13 @@ function renderBackgroundProposals() {
   _backgroundState.proposals.forEach(function(proposal) {
     var proposalId = String(getBackgroundField(proposal, 'ProposalId', 'proposalId') || '');
     var status = String(getBackgroundField(proposal, 'Status', 'status') || 'pending');
+    var jobType = String(getBackgroundField(proposal, 'JobType', 'jobType') || '');
     var createdAt = getBackgroundField(proposal, 'CreatedAt', 'createdAt');
     var notes = String(getBackgroundField(proposal, 'Notes', 'notes') || '');
     var windowStart = getBackgroundField(proposal, 'SourceWindowStart', 'sourceWindowStart');
     var windowEnd = getBackgroundField(proposal, 'SourceWindowEnd', 'sourceWindowEnd');
     var payload = getBackgroundPayload(proposal);
-    var summary = String(payload.Summary || payload.summary || 'No summary text.');
+    var summary = String(payload.Summary || payload.summary || payload.Observation || payload.observation || 'No summary text.');
 
     var row = document.createElement('div');
     row.className = 'background-row';
@@ -570,7 +580,7 @@ function renderBackgroundProposals() {
     head.className = 'background-row-head';
     var title = document.createElement('div');
     title.className = 'background-title';
-    title.textContent = 'Memory summary proposal';
+    title.textContent = backgroundJobLabel(jobType);
     head.appendChild(title);
 
     var actions = document.createElement('div');
@@ -635,12 +645,13 @@ function renderBackgroundActivity() {
     var row = document.createElement('div');
     row.className = 'background-row background-activity-row';
     var status = String(getBackgroundField(activity, 'Status', 'status') || '');
+    var jobType = String(getBackgroundField(activity, 'JobType', 'jobType') || '');
     var startedAt = getBackgroundField(activity, 'StartedAt', 'startedAt');
     var proposalCount = getBackgroundField(activity, 'ProposalCount', 'proposalCount');
     var notes = String(getBackgroundField(activity, 'Notes', 'notes') || '');
     var title = document.createElement('div');
     title.className = 'background-title';
-    title.textContent = status || 'activity';
+    title.textContent = (jobType ? backgroundJobLabel(jobType) + ': ' : '') + (status || 'activity');
     row.appendChild(title);
     var meta = document.createElement('div');
     meta.className = 'background-meta';
