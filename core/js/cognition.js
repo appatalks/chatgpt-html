@@ -94,15 +94,15 @@
 
   function getDefaultModel() {
     var el = document.getElementById('selAIGBackend');
-    return (el && el.value) ? el.value : 'gpt-4.1';
+    return (el && el.value) ? el.value : 'claude-opus-4.8';
   }
 
   function getCfg() {
     var def = getDefaultModel();
     return {
-      enabled: ls('cogEnabled', '0') === '1',
+      enabled: ls('cogEnabled', '1') === '1',
       evaModel:      ls('cogEvaModel', '')      || def,
-      reviewerModel: ls('cogReviewerModel', '') || def,
+      reviewerModel: ls('cogReviewerModel', '') || 'gpt-5.5',
       maxCycles: Math.max(0, parseInt(ls('cogMaxCycles', '1'), 10) || 0),
       evaPrompt:      ls('cogEvaPrompt', '')      || DEFAULT_PROMPTS.eva,
       reviewerPrompt: ls('cogReviewerPrompt', '') || DEFAULT_PROMPTS.reviewer,

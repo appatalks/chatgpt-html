@@ -166,7 +166,7 @@ async function aigSend() {
 
     // Prefer cognition evaModel when cognition is configured,
     // otherwise fall back to the AIG backend selector dropdown.
-    var aigModel = (document.getElementById('selAIGBackend') || {}).value || 'gpt-4.1';
+    var aigModel = (document.getElementById('selAIGBackend') || {}).value || 'claude-opus-4.8';
     if (typeof Cognition !== 'undefined' && Cognition.getCfg) {
       var cogModelCfg = Cognition.getCfg();
       if (cogModelCfg.enabled && cogModelCfg.evaModel) {
@@ -183,7 +183,8 @@ async function aigSend() {
         model: aigModel,
         lmstudio_base_url: (typeof getLmStudioBaseUrl === 'function') ? getLmStudioBaseUrl() : '',
         lmstudio_model: (typeof getLmStudioModel === 'function') ? getLmStudioModel() : '',
-        github_pat: (typeof getAuthKey === 'function') ? getAuthKey('GITHUB_PAT') : ''
+        github_pat: (typeof getAuthKey === 'function') ? getAuthKey('GITHUB_PAT') : '',
+        openai_api_key: (typeof getAuthKey === 'function') ? getAuthKey('OPENAI_API_KEY') : ''
       })
     });
 

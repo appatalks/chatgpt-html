@@ -53,6 +53,9 @@
       <button id="evaNewChatBtn" class="eva-nav-item" type="button" title="New Chat">
         <span class="eva-nav-icon">+</span> New Chat
       </button>
+      <button id="evaVoiceViewBtn" class="eva-nav-item eva-nav-eva" type="button" title="Eva Voice" onclick="toggleVoiceView()">
+        <span class="eva-nav-icon">&#x25C9;</span> Eva
+      </button>
       <button id="evaChatsBtn" class="eva-nav-item" type="button" title="Chats" onclick="toggleSessionPanel()">
         <span class="eva-nav-icon">&#x1F4AC;</span> Chats
       </button>
@@ -61,9 +64,6 @@
       </button>
       <button id="evaModelsBtn" class="eva-nav-item" type="button" title="Models">
         <span class="eva-nav-icon">&#x1F916;</span> Models
-      </button>
-      <button id="evaVoiceViewBtn" class="eva-nav-item" type="button" title="Voice View" onclick="toggleVoiceView()">
-        <span class="eva-nav-icon">&#x1F399;&#xFE0F;</span> Voice
       </button>
       <button id="evaSettingsBtn" class="eva-nav-item" type="button" title="Settings">
         <span class="eva-nav-icon">&#x2699;&#xFE0F;</span> Settings
@@ -234,14 +234,12 @@
             <option value="o1-preview" title="o1-preview">o1-preview</option>
             <option value="o1-mini" title="o1-mini">o1-mini</option>
             <option value="o3-mini" title="o3-mini">o3-mini</option>
-            <option value="gpt-5-mini" title="gpt-5-mini">gpt-5-mini</option>
             <option value="latest" title="OpenAI latest model alias">latest</option>
           </optgroup>
           <optgroup label="GitHub Copilot">
             <option value="copilot-gpt-4o" title="GitHub Models GPT-4o">Copilot GPT-4o</option>
             <option value="copilot-gpt-4o-mini" title="GitHub Models GPT-4o Mini">Copilot GPT-4o Mini</option>
             <option value="copilot-o3-mini" title="GitHub Models o3-mini">Copilot o3-mini</option>
-            <option value="copilot-gpt-4.1" title="GitHub Models GPT-4.1 — 1M context, tool-calling">Copilot GPT-4.1</option>
             <option value="copilot-gpt-5" title="GitHub Models GPT-5 — 200K context, 100K output, reasoning">Copilot GPT-5</option>
             <option value="copilot-o4-mini" title="GitHub Models o4-mini — 200K context, reasoning">Copilot o4-mini</option>
             <option value="copilot-deepseek-r1" title="GitHub Models DeepSeek-R1 — 128K context, reasoning">Copilot DeepSeek-R1</option>
@@ -284,28 +282,17 @@
           <div id="opt-aigBackend" class="model-opt" style="display:none">
             <label for="selAIGBackend">Eva Backend Model:</label>
             <select id="selAIGBackend">
-              <option value="gpt-4.1" selected>GPT-4.1 (Default)</option>
               <optgroup label="Claude (via ACP)">
-                <option value="claude-opus-4.7">Claude Opus 4.7</option>
-                <option value="claude-opus-4.7-high">Claude Opus 4.7 (high reasoning)</option>
-                <option value="claude-opus-4.7-xhigh">Claude Opus 4.7 (xhigh reasoning)</option>
+                <option value="claude-opus-4.8" selected>Claude Opus 4.8 (Default)</option>
                 <option value="claude-opus-4.6">Claude Opus 4.6</option>
                 <option value="claude-opus-4.6-1m">Claude Opus 4.6 (1M context)</option>
                 <option value="claude-opus-4.5">Claude Opus 4.5</option>
                 <option value="claude-sonnet-4.6">Claude Sonnet 4.6</option>
-                <option value="claude-sonnet-4.5">Claude Sonnet 4.5</option>
-                <option value="claude-sonnet-4">Claude Sonnet 4</option>
                 <option value="claude-haiku-4.5">Claude Haiku 4.5</option>
               </optgroup>
               <optgroup label="GPT (via ACP)">
                 <option value="gpt-5.5">GPT-5.5</option>
-                <option value="gpt-5.4">GPT-5.4</option>
-                <option value="gpt-5.4-mini">GPT-5.4 Mini</option>
                 <option value="gpt-5.3-codex">GPT-5.3 Codex</option>
-                <option value="gpt-5.2-codex">GPT-5.2 Codex</option>
-                <option value="gpt-5.2">GPT-5.2</option>
-                <option value="gpt-5-mini">GPT-5 Mini</option>
-                <option value="gpt-4.1">GPT-4.1</option>
               </optgroup>
               <optgroup label="Fallback">
                 <option value="acp">ACP Bridge (Copilot CLI default)</option>
@@ -749,8 +736,36 @@
   <!-- Voice View — ambient, always-listening mode -->
   <div id="voiceView" class="voice-view" aria-hidden="true">
     <button id="voiceViewClose" class="voice-view-close" type="button" aria-label="Exit voice view">&times;</button>
+    <!-- Scanline overlay -->
+    <div class="vv-scanline"></div>
+    <!-- Top HUD bar -->
+    <div class="vv-hud-top">
+      <div class="vv-hud-cell">
+        <span class="vv-hud-label">STATUS</span>
+        <span id="vvHudPhase" class="vv-hud-value">IDLE</span>
+      </div>
+      <div class="vv-hud-cell">
+        <span class="vv-hud-label">MODEL</span>
+        <span id="vvHudModel" class="vv-hud-value">--</span>
+      </div>
+      <div class="vv-hud-cell">
+        <span class="vv-hud-label">SIGNAL</span>
+        <span id="vvHudSignal" class="vv-hud-value">--</span>
+      </div>
+      <div class="vv-hud-cell">
+        <span class="vv-hud-label">LATENCY</span>
+        <span id="vvHudLatency" class="vv-hud-value">-- ms</span>
+      </div>
+    </div>
+    <!-- Core orb -->
     <div class="voice-view-center">
-      <canvas id="voiceViewCanvas" width="320" height="320"></canvas>
+      <canvas id="voiceViewCanvas" width="480" height="480"></canvas>
+    </div>
+    <!-- Transcript + waveform bar -->
+    <div class="vv-hud-bottom">
+      <canvas id="vvWaveBar" class="vv-wave-bar" width="600" height="48"></canvas>
+      <div id="vvTranscript" class="vv-transcript"></div>
+      <div class="vv-hint">tap orb to listen &middot; say <em>Eva</em> to wake</div>
     </div>
   </div>
 

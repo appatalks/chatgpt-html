@@ -1197,6 +1197,21 @@ document.addEventListener('DOMContentLoaded', () => {
   applyStandaloneSurface();
   initStandaloneFirstRun();
 
+  // Persist and restore the AIG backend selection across restarts.
+  var aigBackendSel = document.getElementById('selAIGBackend');
+  if (aigBackendSel) {
+    var savedAigBackend = localStorage.getItem('aigBackend');
+    if (savedAigBackend) {
+      var hasOpt = Array.from(aigBackendSel.options).some(function (o) { return o.value === savedAigBackend; });
+      if (hasOpt) aigBackendSel.value = savedAigBackend;
+    }
+    aigBackendSel.addEventListener('change', function () {
+      localStorage.setItem('aigBackend', aigBackendSel.value);
+      // Keep cognition model selectors in sync with the live catalog.
+      if (typeof cogInit === 'function') cogInit();
+    });
+  }
+
   function toggleSettings(event) {
     event.stopPropagation();
     var overlay = document.getElementById('settingsOverlay');
@@ -1444,12 +1459,13 @@ function showWelcome() {
 }
 
 // ═══════════════════════════════════════════════════════════════
-//  Voice View — ambient, always-listening mode
+//  Voice View — ambient, always-listening mode (sci-fi HUD)
 // ═══════════════════════════════════════════════════════════════
 
 var _vv = {
   open: false,
   animFrame: null,
+  waveFrame: null,
   audioCtx: null,
   analyser: null,
   micStream: null,
@@ -1462,7 +1478,10 @@ var _vv = {
   speakObserver: null,
   ttsSource: null,
   ttsAnalyser: null,
-  ttsDataArray: null
+  ttsDataArray: null,
+  particles: [],
+  hudInterval: null,
+  cmdStart: 0
 };
 
 function toggleVoiceView() {
@@ -1481,20 +1500,19 @@ function openVoiceView() {
   el.setAttribute('aria-hidden', 'false');
   _vvSetStatus('idle');
 
-  // Wire close button
   var closeBtn = document.getElementById('voiceViewClose');
   if (closeBtn) closeBtn.onclick = closeVoiceView;
 
-  // Wire canvas tap to start/stop listening
   var canvas = document.getElementById('voiceViewCanvas');
   if (canvas) canvas.onclick = _vvToggleListening;
 
-  // Escape key to close
   _vv._onEscape = function(e) { if (e.key === 'Escape') closeVoiceView(); };
   document.addEventListener('keydown', _vv._onEscape);
 
-  // Start animation loop
+  _vvInitParticles();
   _vvStartCanvas();
+  _vvStartWaveBar();
+  _vvStartHUD();
 }
 
 function closeVoiceView() {
@@ -1503,35 +1521,107 @@ function closeVoiceView() {
   if (el) {
     el.classList.remove('open');
     el.setAttribute('aria-hidden', 'true');
+    el.removeAttribute('data-phase');
   }
-  // Clean up observer and restore auto-speak if a command was pending
   if (_vv.speakObserver) { _vv.speakObserver.disconnect(); _vv.speakObserver = null; }
   if (_vv._wasAutoSpeak !== undefined) {
     var autoSpeak = document.getElementById('autoSpeak');
     if (autoSpeak) autoSpeak.checked = _vv._wasAutoSpeak;
     delete _vv._wasAutoSpeak;
   }
-  // Remove Escape listener
   if (_vv._onEscape) {
     document.removeEventListener('keydown', _vv._onEscape);
     delete _vv._onEscape;
   }
   _vvStopListening();
   _vvStopCanvas();
+  _vvStopWaveBar();
+  _vvStopHUD();
 }
 
 function _vvSetStatus(phase) {
   _vv.phase = phase;
+  var el = document.getElementById('voiceView');
+  if (el) el.setAttribute('data-phase', phase);
+  // Update HUD phase indicator
+  var ph = document.getElementById('vvHudPhase');
+  if (ph) {
+    var labels = { idle: 'IDLE', listening: 'LISTENING', awake: 'AWAKE', thinking: 'PROCESSING', speaking: 'SPEAKING', error: 'ERROR' };
+    ph.textContent = labels[phase] || phase.toUpperCase();
+  }
 }
 
-// --- Canvas waveform ---
+// --- Particle system ---
+
+function _vvInitParticles() {
+  _vv.particles = [];
+  for (var i = 0; i < 60; i++) {
+    _vv.particles.push({
+      angle: Math.random() * Math.PI * 2,
+      dist: 0.5 + Math.random() * 0.6,
+      speed: 0.1 + Math.random() * 0.3,
+      size: 0.5 + Math.random() * 1.5,
+      alpha: 0.1 + Math.random() * 0.3,
+      drift: (Math.random() - 0.5) * 0.02
+    });
+  }
+}
+
+// --- HUD data feeds ---
+
+function _vvStartHUD() {
+  _vvUpdateHUD();
+  _vv.hudInterval = setInterval(_vvUpdateHUD, 1000);
+}
+
+function _vvStopHUD() {
+  if (_vv.hudInterval) { clearInterval(_vv.hudInterval); _vv.hudInterval = null; }
+}
+
+function _vvUpdateHUD() {
+  // Model
+  var modelEl = document.getElementById('vvHudModel');
+  if (modelEl) {
+    var sel = document.getElementById('selModel');
+    var modelName = sel ? (sel.selectedOptions && sel.selectedOptions[0] ? sel.selectedOptions[0].text : sel.value) : '--';
+    if (modelName.length > 16) modelName = modelName.substring(0, 14) + '..';
+    modelEl.textContent = modelName;
+  }
+  // Signal level from mic
+  var sigEl = document.getElementById('vvHudSignal');
+  if (sigEl) {
+    if (_vv.analyser && _vv.dataArray && (_vv.phase === 'listening' || _vv.phase === 'awake')) {
+      _vv.analyser.getByteFrequencyData(_vv.dataArray);
+      var sum = 0;
+      for (var i = 0; i < _vv.dataArray.length; i++) sum += _vv.dataArray[i];
+      var avg = sum / _vv.dataArray.length;
+      var db = Math.round(20 * Math.log10(Math.max(avg, 1) / 255));
+      sigEl.textContent = db + ' dB';
+    } else {
+      sigEl.textContent = '--';
+    }
+  }
+  // Latency
+  var latEl = document.getElementById('vvHudLatency');
+  if (latEl) {
+    if (_vv.phase === 'thinking' && _vv.cmdStart) {
+      latEl.textContent = Math.round(performance.now() - _vv.cmdStart) + ' ms';
+    } else if (typeof _netStats !== 'undefined' && _netStats.lastLatency) {
+      latEl.textContent = _netStats.lastLatency + ' ms';
+    } else {
+      latEl.textContent = '-- ms';
+    }
+  }
+}
+
+// --- Main orb canvas ---
 
 function _vvStartCanvas() {
   var canvas = document.getElementById('voiceViewCanvas');
   if (!canvas) return;
   var ctx = canvas.getContext('2d');
   var w = canvas.width, h = canvas.height;
-  var cx = w / 2, cy = h / 2, baseR = w * 0.34;
+  var cx = w / 2, cy = h / 2, baseR = w * 0.28;
 
   function draw() {
     if (!_vv.open) return;
@@ -1540,13 +1630,12 @@ function _vvStartCanvas() {
     var t = performance.now() / 1000;
     var phase = _vv.phase;
 
-    // Get audio data if available
+    // Audio data
     var freqData = null;
     if (_vv.analyser && _vv.dataArray) {
       _vv.analyser.getByteFrequencyData(_vv.dataArray);
       freqData = _vv.dataArray;
     }
-    // Prefer TTS analyser data when speaking
     var ttsData = null;
     if (_vv.ttsAnalyser && _vv.ttsDataArray && phase === 'speaking') {
       _vv.ttsAnalyser.getByteFrequencyData(_vv.ttsDataArray);
@@ -1554,71 +1643,177 @@ function _vvStartCanvas() {
     }
     var activeData = ttsData || freqData;
 
-    // Color by state
-    var hue, sat, light, glowAlpha;
-    if (phase === 'awake') {
-      hue = 265; sat = 80; light = 65; glowAlpha = 0.5;
-    } else if (phase === 'thinking') {
-      hue = 220; sat = 70; light = 55; glowAlpha = 0.4;
-    } else if (phase === 'speaking') {
-      hue = 145; sat = 60; light = 50; glowAlpha = 0.45;
-    } else if (phase === 'listening') {
-      hue = 265; sat = 55; light = 50; glowAlpha = 0.3;
-    } else if (phase === 'error') {
-      hue = 0; sat = 65; light = 50; glowAlpha = 0.3;
-    } else {
-      hue = 220; sat = 30; light = 35; glowAlpha = 0.15;
-    }
+    // Phase colors
+    var hue, sat, light, glowAlpha, ringHue;
+    if (phase === 'awake')      { hue = 270; sat = 75; light = 65; glowAlpha = 0.6; ringHue = 265; }
+    else if (phase === 'thinking') { hue = 210; sat = 80; light = 60; glowAlpha = 0.5; ringHue = 200; }
+    else if (phase === 'speaking') { hue = 155; sat = 65; light = 55; glowAlpha = 0.55; ringHue = 145; }
+    else if (phase === 'listening'){ hue = 250; sat = 55; light = 50; glowAlpha = 0.35; ringHue = 240; }
+    else if (phase === 'error')    { hue = 0; sat = 60; light = 50; glowAlpha = 0.35; ringHue = 350; }
+    else                           { hue = 220; sat = 25; light = 35; glowAlpha = 0.15; ringHue = 215; }
 
-    // Outer glow
-    var gradient = ctx.createRadialGradient(cx, cy, baseR * 0.8, cx, cy, baseR * 1.6);
-    gradient.addColorStop(0, 'hsla(' + hue + ',' + sat + '%,' + light + '%,' + (glowAlpha * 0.4) + ')');
-    gradient.addColorStop(1, 'transparent');
-    ctx.fillStyle = gradient;
+    var col = function(h, s, l, a) { return 'hsla(' + h + ',' + s + '%,' + l + '%,' + a + ')'; };
+
+    // === Background radial glow ===
+    var bgGrad = ctx.createRadialGradient(cx, cy, baseR * 0.3, cx, cy, baseR * 2.5);
+    bgGrad.addColorStop(0, col(hue, sat, light, glowAlpha * 0.15));
+    bgGrad.addColorStop(0.5, col(hue, sat, light * 0.5, glowAlpha * 0.05));
+    bgGrad.addColorStop(1, 'transparent');
+    ctx.fillStyle = bgGrad;
     ctx.fillRect(0, 0, w, h);
 
-    // Draw radial waveform
-    var segments = 128;
+    // === Outer ring 3 (thin, far, slow rotate) ===
+    ctx.save();
+    ctx.translate(cx, cy);
+    ctx.rotate(t * 0.08);
     ctx.beginPath();
-    for (var i = 0; i <= segments; i++) {
-      var angle = (i / segments) * Math.PI * 2 - Math.PI / 2;
+    var r3 = baseR * 1.7;
+    for (var i = 0; i < 72; i++) {
+      var a = (i / 72) * Math.PI * 2;
+      var gap = (i % 6 === 0) ? 0.3 : 1;
+      if (gap < 1) continue;
+      var x1 = Math.cos(a) * (r3 - 1), y1 = Math.sin(a) * (r3 - 1);
+      var x2 = Math.cos(a) * (r3 + 1), y2 = Math.sin(a) * (r3 + 1);
+      ctx.moveTo(x1, y1);
+      ctx.lineTo(x2, y2);
+    }
+    ctx.strokeStyle = col(ringHue, 40, 50, 0.08);
+    ctx.lineWidth = 0.5;
+    ctx.stroke();
+    ctx.restore();
+
+    // === Outer ring 2 (dashed, counter-rotate) ===
+    ctx.save();
+    ctx.translate(cx, cy);
+    ctx.rotate(-t * 0.15);
+    ctx.beginPath();
+    ctx.setLineDash([8, 16]);
+    ctx.arc(0, 0, baseR * 1.45, 0, Math.PI * 2);
+    ctx.strokeStyle = col(ringHue, 40, 50, 0.1);
+    ctx.lineWidth = 0.8;
+    ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.restore();
+
+    // === Outer ring 1 (solid, subtle) ===
+    ctx.save();
+    ctx.translate(cx, cy);
+    ctx.rotate(t * 0.25);
+    ctx.beginPath();
+    ctx.arc(0, 0, baseR * 1.2, 0, Math.PI * 2);
+    ctx.strokeStyle = col(ringHue, sat, light, 0.12);
+    ctx.lineWidth = 1;
+    ctx.stroke();
+    // Tick marks every 30 deg
+    for (var d = 0; d < 12; d++) {
+      var ta = (d / 12) * Math.PI * 2;
+      ctx.beginPath();
+      ctx.moveTo(Math.cos(ta) * baseR * 1.18, Math.sin(ta) * baseR * 1.18);
+      ctx.lineTo(Math.cos(ta) * baseR * 1.24, Math.sin(ta) * baseR * 1.24);
+      ctx.strokeStyle = col(ringHue, sat, light, 0.2);
+      ctx.lineWidth = d % 3 === 0 ? 1.5 : 0.7;
+      ctx.stroke();
+    }
+    ctx.restore();
+
+    // === Scanning beam (thinking/awake only) ===
+    if (phase === 'thinking' || phase === 'awake') {
+      ctx.save();
+      ctx.translate(cx, cy);
+      var sweepAngle = (t * 1.5) % (Math.PI * 2);
+      var sweepGrad = ctx.createConicGradient(sweepAngle, 0, 0);
+      sweepGrad.addColorStop(0, col(hue, sat, light, 0.25));
+      sweepGrad.addColorStop(0.15, 'transparent');
+      sweepGrad.addColorStop(1, 'transparent');
+      ctx.beginPath();
+      ctx.arc(0, 0, baseR * 1.15, 0, Math.PI * 2);
+      ctx.fillStyle = sweepGrad;
+      ctx.fill();
+      ctx.restore();
+    }
+
+    // === Particles ===
+    for (var pi = 0; pi < _vv.particles.length; pi++) {
+      var p = _vv.particles[pi];
+      p.angle += p.speed * 0.008;
+      p.dist += p.drift * 0.005;
+      if (p.dist < 0.35 || p.dist > 1.3) p.drift = -p.drift;
+      var pr = baseR * p.dist * 1.6;
+      var px = cx + Math.cos(p.angle + t * 0.1) * pr;
+      var py = cy + Math.sin(p.angle + t * 0.1) * pr;
+      var pa = p.alpha * (0.5 + 0.5 * Math.sin(t * 2 + pi));
+      ctx.beginPath();
+      ctx.arc(px, py, p.size, 0, Math.PI * 2);
+      ctx.fillStyle = col(hue, sat - 10, light + 20, pa);
+      ctx.fill();
+    }
+
+    // === Main waveform orb ===
+    var segments = 180;
+    ctx.beginPath();
+    for (var si = 0; si <= segments; si++) {
+      var angle = (si / segments) * Math.PI * 2 - Math.PI / 2;
       var amp = 0;
       if (activeData && activeData.length > 0) {
-        var fi = Math.floor((i / segments) * activeData.length);
+        var fi = Math.floor((si / segments) * activeData.length);
         amp = activeData[fi] / 255;
       }
-      // Add organic motion even when quiet
-      var breathe = Math.sin(t * 1.2 + angle * 3) * 0.02 + Math.sin(t * 0.7 + angle * 7) * 0.01;
-      var pulse = (phase === 'awake' || phase === 'speaking') ? Math.sin(t * 4) * 0.03 : 0;
-      var r = baseR * (1 + amp * 0.35 + breathe + pulse);
+      var breathe = Math.sin(t * 1.2 + angle * 3) * 0.015 + Math.sin(t * 0.7 + angle * 7) * 0.008;
+      var pulse = (phase === 'awake' || phase === 'speaking') ? Math.sin(t * 4) * 0.02 : 0;
+      var think = (phase === 'thinking') ? Math.sin(t * 6 + angle * 12) * 0.025 : 0;
+      var r = baseR * (1 + amp * 0.4 + breathe + pulse + think);
       var x = cx + Math.cos(angle) * r;
       var y = cy + Math.sin(angle) * r;
-      if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+      if (si === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
     }
     ctx.closePath();
 
-    // Fill
-    var fillGrad = ctx.createRadialGradient(cx, cy, 0, cx, cy, baseR * 1.2);
-    fillGrad.addColorStop(0, 'hsla(' + hue + ',' + sat + '%,' + (light + 15) + '%,0.12)');
-    fillGrad.addColorStop(0.7, 'hsla(' + hue + ',' + sat + '%,' + light + '%,0.06)');
+    // Orb fill
+    var fillGrad = ctx.createRadialGradient(cx, cy - baseR * 0.2, 0, cx, cy, baseR * 1.3);
+    fillGrad.addColorStop(0, col(hue, sat, light + 20, 0.1));
+    fillGrad.addColorStop(0.5, col(hue, sat, light, 0.04));
     fillGrad.addColorStop(1, 'transparent');
     ctx.fillStyle = fillGrad;
     ctx.fill();
 
-    // Stroke
-    ctx.strokeStyle = 'hsla(' + hue + ',' + sat + '%,' + light + '%,' + (0.5 + glowAlpha) + ')';
-    ctx.lineWidth = 2;
-    ctx.shadowColor = 'hsla(' + hue + ',' + sat + '%,' + light + '%,' + glowAlpha + ')';
-    ctx.shadowBlur = 20;
+    // Orb stroke (double glow)
+    ctx.strokeStyle = col(hue, sat, light, 0.5 + glowAlpha * 0.4);
+    ctx.lineWidth = 1.5;
+    ctx.shadowColor = col(hue, sat, light, glowAlpha);
+    ctx.shadowBlur = 24;
+    ctx.stroke();
+    ctx.shadowColor = col(hue, sat, light + 10, glowAlpha * 0.5);
+    ctx.shadowBlur = 60;
     ctx.stroke();
     ctx.shadowBlur = 0;
 
-    // Inner ring (subtle)
+    // === Inner ring (heartbeat) ===
+    var innerPulse = 0.55 + Math.sin(t * 2) * 0.02;
     ctx.beginPath();
-    ctx.arc(cx, cy, baseR * 0.6, 0, Math.PI * 2);
-    ctx.strokeStyle = 'hsla(' + hue + ',' + sat + '%,' + light + '%,0.08)';
-    ctx.lineWidth = 1;
+    ctx.arc(cx, cy, baseR * innerPulse, 0, Math.PI * 2);
+    ctx.strokeStyle = col(hue, sat, light, 0.07);
+    ctx.lineWidth = 0.5;
     ctx.stroke();
+
+    // === Center dot ===
+    var dotR = 3 + Math.sin(t * 3) * 1;
+    ctx.beginPath();
+    ctx.arc(cx, cy, dotR, 0, Math.PI * 2);
+    ctx.fillStyle = col(hue, sat, light + 20, 0.4 + glowAlpha * 0.3);
+    ctx.shadowColor = col(hue, sat, light, 0.6);
+    ctx.shadowBlur = 15;
+    ctx.fill();
+    ctx.shadowBlur = 0;
+
+    // === Phase label under orb ===
+    var phaseLabel = { idle: '', listening: 'LISTENING', awake: 'AWAKE', thinking: 'PROCESSING', speaking: 'SPEAKING', error: 'MIC ERROR' }[phase] || '';
+    if (phaseLabel) {
+      ctx.font = '600 10px "SF Mono", "Fira Code", monospace';
+      ctx.textAlign = 'center';
+      ctx.fillStyle = col(hue, sat, light, 0.4);
+      ctx.letterSpacing = '3px';
+      ctx.fillText(phaseLabel, cx, cy + baseR * 1.35);
+    }
 
     _vv.animFrame = requestAnimationFrame(draw);
   }
@@ -1633,7 +1828,77 @@ function _vvStopCanvas() {
   }
 }
 
-// --- Mic analyser (for waveform visualization, separate from speech recognition) ---
+// --- Linear waveform bar (bottom HUD) ---
+
+function _vvStartWaveBar() {
+  var canvas = document.getElementById('vvWaveBar');
+  if (!canvas) return;
+  var ctx = canvas.getContext('2d');
+  var w = canvas.width, h = canvas.height;
+
+  function draw() {
+    if (!_vv.open) return;
+    ctx.clearRect(0, 0, w, h);
+
+    var activeData = null;
+    if (_vv.ttsAnalyser && _vv.ttsDataArray && _vv.phase === 'speaking') {
+      _vv.ttsAnalyser.getByteFrequencyData(_vv.ttsDataArray);
+      activeData = _vv.ttsDataArray;
+    } else if (_vv.analyser && _vv.dataArray) {
+      _vv.analyser.getByteFrequencyData(_vv.dataArray);
+      activeData = _vv.dataArray;
+    }
+
+    var bars = 80;
+    var barW = w / bars;
+    var phase = _vv.phase;
+    var hue = phase === 'speaking' ? 155 : phase === 'awake' ? 270 : phase === 'thinking' ? 210 : 220;
+    var t = performance.now() / 1000;
+
+    // Center baseline
+    var mid = h / 2;
+
+    for (var i = 0; i < bars; i++) {
+      var val = 0;
+      if (activeData && activeData.length > 0) {
+        var fi = Math.floor((i / bars) * activeData.length);
+        val = activeData[fi] / 255;
+      }
+      // Subtle idle animation
+      if (val < 0.01) val = Math.abs(Math.sin(t * 0.8 + i * 0.15)) * 0.03;
+
+      var barH = val * mid * 0.85;
+      var x = i * barW + 1;
+      var alpha = 0.15 + val * 0.6;
+
+      ctx.fillStyle = 'hsla(' + hue + ',60%,55%,' + alpha + ')';
+      ctx.fillRect(x, mid - barH, barW - 2, barH); // top half
+      ctx.fillStyle = 'hsla(' + hue + ',60%,55%,' + alpha * 0.5 + ')';
+      ctx.fillRect(x, mid, barW - 2, barH * 0.5); // mirror (dimmer)
+    }
+
+    // Center line
+    ctx.beginPath();
+    ctx.moveTo(0, mid);
+    ctx.lineTo(w, mid);
+    ctx.strokeStyle = 'hsla(' + hue + ',50%,50%,0.08)';
+    ctx.lineWidth = 0.5;
+    ctx.stroke();
+
+    _vv.waveFrame = requestAnimationFrame(draw);
+  }
+
+  _vv.waveFrame = requestAnimationFrame(draw);
+}
+
+function _vvStopWaveBar() {
+  if (_vv.waveFrame) {
+    cancelAnimationFrame(_vv.waveFrame);
+    _vv.waveFrame = null;
+  }
+}
+
+// --- Mic analyser ---
 
 function _vvStartMicAnalyser() {
   if (_vv.analyser) return Promise.resolve();
@@ -1659,7 +1924,6 @@ function _vvStopMicAnalyser() {
     _vv.micStream.getTracks().forEach(function(t) { t.stop(); });
     _vv.micStream = null;
   }
-  // Suspend (don't close) so cached TTS MediaElementSource stays valid
   if (_vv.audioCtx && _vv.audioCtx.state === 'running') {
     try { _vv.audioCtx.suspend(); } catch(e) {}
   }
@@ -1667,7 +1931,7 @@ function _vvStopMicAnalyser() {
   _vv.dataArray = null;
 }
 
-// --- TTS audio analyser (connects to <audio> element during speech) ---
+// --- TTS audio analyser ---
 
 function _vvConnectTTSAnalyser() {
   _vvDisconnectTTSAnalyser();
@@ -1677,7 +1941,6 @@ function _vvConnectTTSAnalyser() {
   var AudioCtx = window.AudioContext || window.webkitAudioContext;
   if (!AudioCtx) return;
 
-  // Reuse existing audioCtx or create one for TTS
   if (!_vv.audioCtx) _vv.audioCtx = new AudioCtx();
   if (_vv.audioCtx.state === 'suspended') _vv.audioCtx.resume();
   var ctx = _vv.audioCtx;
@@ -1686,8 +1949,6 @@ function _vvConnectTTSAnalyser() {
     _vv.ttsAnalyser = ctx.createAnalyser();
     _vv.ttsAnalyser.fftSize = 256;
     _vv.ttsDataArray = new Uint8Array(_vv.ttsAnalyser.frequencyBinCount);
-
-    // createMediaElementSource can only be called once per element
     if (!audio._vvSource) {
       audio._vvSource = ctx.createMediaElementSource(audio);
     }
@@ -1695,7 +1956,6 @@ function _vvConnectTTSAnalyser() {
     _vv.ttsSource.connect(_vv.ttsAnalyser);
     _vv.ttsSource.connect(ctx.destination);
   } catch(e) {
-    // Fallback: if MediaElementSource fails (e.g. CORS), leave ttsAnalyser null
     _vv.ttsAnalyser = null;
     _vv.ttsDataArray = null;
   }
@@ -1709,7 +1969,7 @@ function _vvDisconnectTTSAnalyser() {
   _vv.ttsDataArray = null;
 }
 
-// --- Voice recognition (voice-view specific, runs alongside the orb) ---
+// --- Voice recognition ---
 
 function _vvToggleListening() {
   if (_vv.recognition || _vv.whisperMode) {
@@ -1720,8 +1980,6 @@ function _vvToggleListening() {
 }
 
 function _vvStartListening() {
-  // In Electron, Web Speech API can't reach Google's servers (missing API key).
-  // Go straight to Whisper-based transcription.
   if (window.evaStandalone && window.evaStandalone.isStandalone) {
     _vvStartWhisperListening();
     return;
@@ -1733,7 +1991,6 @@ function _vvStartListening() {
     return;
   }
 
-  // Stop the chat-mode listener if active so we don't conflict
   if (typeof stopVoiceListener === 'function') stopVoiceListener();
 
   _vvStartMicAnalyser();
@@ -1770,14 +2027,13 @@ function _vvStartListening() {
   };
 
   _vv.recognition.onend = function() {
-    // Auto-restart unless we intentionally stopped
     if (_vv.recognition && _vv.open) {
       try { _vv.recognition.start(); }
       catch(e) {
         setTimeout(function() {
           if (_vv.recognition && _vv.open) {
             try { _vv.recognition.start(); } catch(e2) {
-              _vvSetStatus('error', 'Recognition stopped');
+              _vvSetStatus('error');
               _vv.recognition = null;
             }
           }
@@ -1795,7 +2051,7 @@ function _vvStopListening() {
   if (_vv.recordingCap) { clearTimeout(_vv.recordingCap); _vv.recordingCap = null; }
   if (_vv.recognition) {
     var rec = _vv.recognition;
-    _vv.recognition = null; // prevent auto-restart
+    _vv.recognition = null;
     try { rec.stop(); } catch(e) {}
   }
   if (_vv.mediaRecorder) {
@@ -1810,7 +2066,7 @@ function _vvStopListening() {
   if (_vv.open) _vvSetStatus('idle');
 }
 
-// --- Whisper-based transcription fallback (for Electron / when Web Speech API is unavailable) ---
+// --- Whisper fallback ---
 
 function _vvStartWhisperListening() {
   if (typeof stopVoiceListener === 'function') stopVoiceListener();
@@ -1858,7 +2114,6 @@ function _vvWhisperRecord() {
 
   _vv.mediaRecorder.start(250);
 
-  // Cap recording at 30 seconds to prevent unbounded memory growth
   _vv.recordingCap = setTimeout(function() {
     _vv.recordingCap = null;
     if (_vv.mediaRecorder && _vv.mediaRecorder.state === 'recording') {
@@ -1935,9 +2190,14 @@ function _vvWhisperTranscribe(blob) {
   });
 }
 
+// --- Transcript + command handling ---
+
 function _vvHandleTranscript(transcript) {
-  // Ignore input while processing a command
   if (_vv.phase === 'thinking' || _vv.phase === 'speaking') return;
+
+  // Show transcript in HUD
+  var transcriptEl = document.getElementById('vvTranscript');
+  if (transcriptEl) transcriptEl.textContent = transcript;
 
   var lower = transcript.toLowerCase();
   var evaIdx = lower.indexOf('eva');
@@ -1947,7 +2207,6 @@ function _vvHandleTranscript(transcript) {
     if (command.length > 1) {
       _vvSendCommand(command);
     } else {
-      // Just "Eva" -- go awake
       _vvSetStatus('awake');
       if (_vv.awakeTimer) clearTimeout(_vv.awakeTimer);
       _vv.awakeTimer = setTimeout(function() {
@@ -1969,18 +2228,20 @@ function _vvHandleTranscript(transcript) {
 
 function _vvSendCommand(command) {
   _vv.lastTranscript = command;
+  _vv.cmdStart = performance.now();
   _vvSetStatus('thinking');
 
-  // Inject the command and send via the normal pipeline
+  // Show command in transcript area
+  var transcriptEl = document.getElementById('vvTranscript');
+  if (transcriptEl) transcriptEl.textContent = '\u25B8 ' + command;
+
   var txtMsg = document.getElementById('txtMsg');
   if (txtMsg) txtMsg.textContent = command;
 
-  // Force auto-speak on for voice view responses
   var autoSpeak = document.getElementById('autoSpeak');
   _vv._wasAutoSpeak = autoSpeak ? autoSpeak.checked : false;
   if (autoSpeak) autoSpeak.checked = true;
 
-  // Watch for Eva's response to appear in txtOutput
   _vvWatchForResponse();
 
   if (typeof sendData === 'function') sendData();
@@ -1990,13 +2251,11 @@ function _vvWatchForResponse() {
   var txtOutput = document.getElementById('txtOutput');
   if (!txtOutput) return;
 
-  // Use a MutationObserver to detect when Eva's reply bubble appears
   if (_vv.speakObserver) { _vv.speakObserver.disconnect(); _vv.speakObserver = null; }
 
   var responded = false;
   _vv.speakObserver = new MutationObserver(function() {
     if (responded || !_vv.open) return;
-    // Check for a new Eva response
     var evaResponse = (typeof lastResponse === 'string') ? lastResponse.trim() : '';
     if (evaResponse && evaResponse !== _vv.lastEvaReply) {
       responded = true;
@@ -2004,9 +2263,15 @@ function _vvWatchForResponse() {
       _vvSetStatus('speaking');
       _vvConnectTTSAnalyser();
 
+      // Show a snippet of the reply in transcript area
+      var transcriptEl = document.getElementById('vvTranscript');
+      if (transcriptEl) {
+        var snippet = evaResponse.length > 80 ? evaResponse.substring(0, 77) + '...' : evaResponse;
+        transcriptEl.textContent = snippet;
+      }
+
       if (_vv.speakObserver) { _vv.speakObserver.disconnect(); _vv.speakObserver = null; }
 
-      // Wait for TTS to finish, then return to listening
       _vvWaitForSpeechEnd(function() {
         _vvDisconnectTTSAnalyser();
         _vvRestoreAutoSpeak();
@@ -2020,7 +2285,6 @@ function _vvWatchForResponse() {
 
   _vv.speakObserver.observe(txtOutput, { childList: true, subtree: true, characterData: true });
 
-  // Safety timeout: if no response in 60 seconds, go back to listening
   setTimeout(function() {
     if (!responded && _vv.speakObserver) {
       _vv.speakObserver.disconnect();
@@ -2044,22 +2308,19 @@ function _vvRestoreAutoSpeak() {
 function _vvWaitForSpeechEnd(callback) {
   var audio = document.getElementById('audioPlayback');
 
-  // For browser-native TTS, check speechSynthesis.speaking
   var synth = window.speechSynthesis;
   if (synth && synth.speaking) {
     var synthCheck = setInterval(function() {
       if (!synth.speaking) { clearInterval(synthCheck); setTimeout(callback, 500); }
     }, 500);
-    // Cap at 30 seconds
     setTimeout(function() { clearInterval(synthCheck); callback(); }, 30000);
     return;
   }
 
   if (!audio) { setTimeout(callback, 2000); return; }
 
-  // Check if audio is currently playing or about to play
   var checkCount = 0;
-  var maxChecks = 30; // 30 seconds max
+  var maxChecks = 30;
   function check() {
     if (!_vv.open) { callback(); return; }
     checkCount++;
@@ -2073,7 +2334,6 @@ function _vvWaitForSpeechEnd(callback) {
       setTimeout(check, 1000);
     }
   }
-  // Give TTS a moment to start
   setTimeout(check, 1500);
 }
 
