@@ -38,7 +38,15 @@ import threading
 import time
 import urllib.parse
 import uuid
-from http.server import HTTPServer, BaseHTTPRequestHandler
+from http.server import HTTPServer, ThreadingHTTPServer, BaseHTTPRequestHandler
+
+# Vision browser agent (Playwright is imported lazily inside the module, so this
+# import never fails even when Playwright is not installed).
+try:
+    import browser_agent as _BROWSER_AGENT
+except Exception as _ba_err:  # pragma: no cover - defensive
+    _BROWSER_AGENT = None
+    print(f"[Bridge] Browser agent module unavailable: {_ba_err}")
 
 # ---------------------------------------------------------------------------
 # ACP Client — manages the copilot subprocess and JSON-RPC communication
@@ -2627,6 +2635,8 @@ class BridgeHandler(BaseHTTPRequestHandler):
             self._background_activity()
         elif parsed_path == "/v1/memory/context":
             self._memory_context()
+        elif parsed_path == "/v1/browser/status":
+            self._browser_status()
         elif parsed_path.startswith("/v1/files/"):
             requested_name = urllib.parse.unquote(parsed_path.split("/v1/files/", 1)[1])
             self._serve_artifact(requested_name)
@@ -2643,6 +2653,12 @@ class BridgeHandler(BaseHTTPRequestHandler):
             self._memory_reflect()
         elif parsed_path == "/v1/aig/chat":
             self._aig_chat()
+        elif parsed_path == "/v1/browser/run":
+            self._browser_run()
+        elif parsed_path == "/v1/browser/confirm":
+            self._browser_confirm()
+        elif parsed_path == "/v1/browser/cancel":
+            self._browser_cancel()
         elif parsed_path == "/v1/kusto/seed":
             self._kusto_seed()
         elif parsed_path == "/v1/goals":
@@ -4089,6 +4105,97 @@ class BridgeHandler(BaseHTTPRequestHandler):
                            args=(last_user_msg, response_text, model_label),
                            daemon=True).start()
 
+    # ------------------------------------------------------------------
+    # Vision browser agent endpoints
+    # ------------------------------------------------------------------
+
+    def _make_director(self):
+        """Wire Claude Opus 4.8 (via ACP) as the text-only director. Returns a
+        callback(goal, state) -> subgoal string, or None when ACP is unavailable."""
+        client = acp_client
+        if not client:
+            return None
+
+        def director(goal, state):
+            prompt = (
+                "You are the director for a browser automation agent. You plan; a "
+                "separate vision model looks at the screen and clicks.\n"
+                f"User goal: {goal}\n"
+                f"Current state: {state}\n"
+                "Reply with ONE short imperative subgoal (a single sentence) for the "
+                "executor's next few actions. No preamble, no markdown, no lists."
+            )
+            try:
+                res = client.prompt(prompt, timeout=60)
+                if isinstance(res, dict):
+                    return (res.get("text") or "").strip()[:300]
+            except Exception as e:
+                print(f"[Bridge] director prompt failed: {e}")
+            return ""
+
+        return director
+
+    def _browser_run(self):
+        data, err = self._read_json_body()
+        if err:
+            self._json_response(400, {"error": {"message": err}})
+            return
+        if _BROWSER_AGENT is None:
+            self._json_response(503, {"error": {"message": "Browser agent module not loaded"}})
+            return
+        ok, detail = _BROWSER_AGENT.playwright_available()
+        if not ok:
+            self._json_response(503, {"error": {"message":
+                detail + ". Install with: python3 -m pip install --user --break-system-packages "
+                "playwright && python3 -m playwright install chromium"}})
+            return
+        api_key = _set_openai_key_from(data)
+        use_director = data.get("use_director", True)
+        director = self._make_director() if use_director else None
+        try:
+            status = _BROWSER_AGENT.start_run(
+                goal=(data.get("goal") or "").strip(),
+                api_key=api_key,
+                vision_model=(data.get("vision_model") or None),
+                director=director,
+                autonomy=(data.get("autonomy") or "pause"),
+                max_steps=data.get("max_steps", 25),
+                start_url=(data.get("start_url") or ""),
+                headless=bool(data.get("headless", False)),
+            )
+        except Exception as e:
+            self._json_response(400, {"error": {"message": str(e)}})
+            return
+        self._json_response(202, status)
+
+    def _browser_status(self):
+        qs = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
+        run_id = (qs.get("run_id") or [""])[0]
+        status = _BROWSER_AGENT.public_status(run_id) if _BROWSER_AGENT else None
+        if not status:
+            self._json_response(404, {"error": {"message": "unknown run_id"}})
+            return
+        self._json_response(200, status)
+
+    def _browser_confirm(self):
+        data, err = self._read_json_body()
+        if err:
+            self._json_response(400, {"error": {"message": err}})
+            return
+        run_id = (data.get("run_id") or "").strip()
+        ok = bool(_BROWSER_AGENT) and _BROWSER_AGENT.resolve(
+            run_id, approve=bool(data.get("approve", True)), text=(data.get("text") or ""))
+        self._json_response(200 if ok else 404, {"ok": ok})
+
+    def _browser_cancel(self):
+        data, err = self._read_json_body()
+        if err:
+            self._json_response(400, {"error": {"message": err}})
+            return
+        run_id = (data.get("run_id") or "").strip()
+        ok = bool(_BROWSER_AGENT) and _BROWSER_AGENT.cancel(run_id)
+        self._json_response(200 if ok else 404, {"ok": ok})
+
     def _json_response(self, status, data):
         body = json.dumps(data).encode("utf-8")
         try:
@@ -4304,8 +4411,9 @@ def main():
     else:
         print(f"[Bridge] Cognition layer disabled (no Kusto MCP or token)")
 
-    # Start HTTP server
-    server = HTTPServer((args.bind, args.port), BridgeHandler)
+    # Start HTTP server. Threaded so a long-running browser agent run does not
+    # block status/cancel/confirm polling on other connections.
+    server = ThreadingHTTPServer((args.bind, args.port), BridgeHandler)
     print(f"[Bridge] Listening on http://{args.bind}:{args.port}")
     print(f"[Bridge] Endpoints:")
     print(f"  POST /v1/chat/completions   - Send chat messages")
@@ -4323,6 +4431,10 @@ def main():
     print(f"  POST /v1/background/proposals/<id>/approve - Apply a memory proposal")
     print(f"  POST /v1/background/proposals/<id>/reject - Reject a memory proposal")
     print(f"  POST /v1/kusto/seed         - Apply Eva Kusto schema seed")
+    print(f"  POST /v1/browser/run        - Start a vision browser agent run")
+    print(f"  GET  /v1/browser/status     - Poll a browser agent run")
+    print(f"  POST /v1/browser/confirm    - Approve/answer a parked browser run")
+    print(f"  POST /v1/browser/cancel     - Cancel a browser agent run")
     print(f"  GET  /v1/files/<name>       - Download a generated artifact")
     print(f"  POST /v1/files/purge        - Delete all artifacts")
     print(f"  GET  /health                - Health check")
