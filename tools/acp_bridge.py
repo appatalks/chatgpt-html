@@ -580,6 +580,21 @@ def _split_kusto_seed_blocks(seed_text):
     return blocks
 
 
+def _is_kusto_schema_block(block):
+    """True when a seed block defines a table rather than ingesting rows.
+
+    Used by the schema-only seed path so existing databases can be backfilled
+    with any missing tables without re-ingesting (and duplicating) seed rows.
+    """
+    first_line = ""
+    for line in (block or "").splitlines():
+        stripped = line.strip()
+        if stripped:
+            first_line = stripped.lower()
+            break
+    return first_line.startswith(".create")
+
+
 def _env_truthy(name):
     """Return True when an environment flag uses the shared truthy form."""
     return os.environ.get(name, "").strip().lower() in ("1", "true", "yes")
@@ -4112,6 +4127,7 @@ class BridgeHandler(BaseHTTPRequestHandler):
         if not cluster_url or not database:
             self._json_response(400, {"error": {"message": "cluster_url and database are required"}})
             return
+        schema_only = bool(data.get("schema_only", False))
 
         expected_cluster = os.environ.get("KUSTO_CLUSTER_URL", "").strip()
         if expected_cluster and not _same_kusto_cluster(cluster_url, expected_cluster):
@@ -4154,6 +4170,8 @@ class BridgeHandler(BaseHTTPRequestHandler):
         failed = 0
         errors = []
         blocks = _split_kusto_seed_blocks(seed_text)
+        if schema_only:
+            blocks = [block for block in blocks if _is_kusto_schema_block(block)]
         # TODO: The inline seed rows use fixed values, so repeated runs can duplicate rows.
         for index, block in enumerate(blocks, start=1):
             result, kusto_error = _kusto_query_with_error(cluster_url, database, block, is_mgmt=True)
@@ -4164,7 +4182,7 @@ class BridgeHandler(BaseHTTPRequestHandler):
             else:
                 applied += 1
 
-        warning = "Re-running this seed will duplicate inline rows."
+        warning = "Schema-only seed: existing tables are unchanged and no rows were ingested." if schema_only else "Re-running this seed will duplicate inline rows."
         mcp_config = getattr(acp_client, "mcp_config", {}) if acp_client is not None else {}
         if (
             failed == 0
