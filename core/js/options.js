@@ -3743,6 +3743,23 @@ async function renderEvaResponse(content, txtOutput) {
 
   var text = content.trim();
   var artifactNames = [];
+
+  // Detect Eva browser-agent launch marker:
+  // [[EVA_BROWSER]]{"goal":"...","start_url":"..."}[[/EVA_BROWSER]]
+  var browserLaunch = null;
+  text = text.replace(/\[\[EVA_BROWSER\]\]\s*(\{[\s\S]*?\})\s*\[\[\/EVA_BROWSER\]\]/, function (full, json) {
+    if (!browserLaunch) {
+      try {
+        var parsed = JSON.parse(json);
+        if (parsed && parsed.goal) browserLaunch = parsed;
+      } catch (e) { /* ignore malformed block */ }
+    }
+    return browserLaunch ? '\n_Opening the browser agent…_\n' : '';
+  });
+  if (browserLaunch) {
+    text = text.replace(/\n{3,}/g, '\n\n').trim();
+  }
+
   text = text.replace(/^\s*\[\[EVA_FILE\]\]\s+([A-Za-z0-9._-]{1,128})\s*$/gm, function(fullMatch, filename) {
     artifactNames.push(filename);
     return '';
@@ -3887,6 +3904,15 @@ async function renderEvaResponse(content, txtOutput) {
 
   appendArtifactLinks();
   txtOutput.scrollTop = txtOutput.scrollHeight;
+
+  // Launch the visual browser agent if Eva requested it.
+  if (browserLaunch && typeof EvaBrowser !== 'undefined' && EvaBrowser && typeof EvaBrowser.launch === 'function') {
+    EvaBrowser.launch(browserLaunch.goal, {
+      start_url: browserLaunch.start_url,
+      vision_model: browserLaunch.vision_model,
+      max_steps: browserLaunch.max_steps
+    });
+  }
 
   // Auto-save session after each response
   if (typeof saveCurrentSession === 'function') saveCurrentSession();

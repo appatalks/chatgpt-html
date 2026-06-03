@@ -96,6 +96,16 @@ def _new_run(goal):
     return rec
 
 
+def latest_screenshot_path(run_id):
+    """Absolute path to the most recent screenshot PNG for a run, or None."""
+    with _runs_lock:
+        rec = _runs.get(run_id)
+        shot = rec.get("last_screenshot") if rec else None
+    if shot and os.path.isfile(shot):
+        return shot
+    return None
+
+
 def public_status(run_id):
     """Serializable status snapshot, or None if unknown."""
     with _runs_lock:

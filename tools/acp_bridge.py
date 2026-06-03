@@ -2637,6 +2637,8 @@ class BridgeHandler(BaseHTTPRequestHandler):
             self._memory_context()
         elif parsed_path == "/v1/browser/status":
             self._browser_status()
+        elif parsed_path == "/v1/browser/screenshot":
+            self._browser_screenshot()
         elif parsed_path.startswith("/v1/files/"):
             requested_name = urllib.parse.unquote(parsed_path.split("/v1/files/", 1)[1])
             self._serve_artifact(requested_name)
@@ -3466,7 +3468,15 @@ class BridgeHandler(BaseHTTPRequestHandler):
             "run and returned. If a browser tool is unavailable or fails, say so plainly and offer a clickable "
             "link instead. Never narrate a click, navigation, or purchase you did not actually perform.\n"
             "- For purchases, account changes, or other irreversible/sensitive actions, stop at the final "
-            "confirmation step and ask the user to confirm before completing it.\n\n"
+            "confirmation step and ask the user to confirm before completing it.\n"
+            "- VISUAL BROWSER AGENT: for a supervised, multi-step visual task (add an item to a cart, fill "
+            "a multi-page form, navigate a flow that needs to be watched), you may launch Eva's own vision "
+            "browser agent by emitting a single line of the form: "
+            "[[EVA_BROWSER]]{\"goal\":\"<plain-language task>\",\"start_url\":\"<optional url>\"}[[/EVA_BROWSER]]. "
+            "A floating Eva-themed window opens, drives a real Chromium with screenshots, and pauses for the "
+            "user's approval before any purchase or sign-in. Use this when the user wants to watch the work "
+            "happen; use the direct Playwright tools above for quick one-off navigations. Emit at most one "
+            "EVA_BROWSER block per reply, and only when the user actually asked for a browser task.\n\n"
         )
 
         if memory_context:
@@ -4176,6 +4186,30 @@ class BridgeHandler(BaseHTTPRequestHandler):
             self._json_response(404, {"error": {"message": "unknown run_id"}})
             return
         self._json_response(200, status)
+
+    def _browser_screenshot(self):
+        qs = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
+        run_id = (qs.get("run_id") or [""])[0]
+        path = _BROWSER_AGENT.latest_screenshot_path(run_id) if _BROWSER_AGENT else None
+        if not path:
+            self._json_response(404, {"error": {"message": "no screenshot yet"}})
+            return
+        try:
+            with open(path, "rb") as f:
+                body = f.read()
+        except Exception:
+            self._json_response(404, {"error": {"message": "screenshot unavailable"}})
+            return
+        try:
+            self.send_response(200)
+            self._cors_headers()
+            self.send_header("Content-Type", "image/png")
+            self.send_header("Cache-Control", "no-store")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+        except BrokenPipeError:
+            pass
 
     def _browser_confirm(self):
         data, err = self._read_json_body()
