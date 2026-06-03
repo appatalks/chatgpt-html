@@ -36,6 +36,12 @@
       "on its own line. The browser executes it and replaces the block with the rendered result",
       "(for example a real download link). Only call capabilities listed as registered.",
       "If a needed capability is not registered, say so plainly and give the best assistant-style answer.",
+      "You can also control a real web browser through Playwright tools (navigate, click, type, read a page)",
+      "when they are available in this session; the browser opens in a separate Chromium window.",
+      "When the user asks to open a site, play a playlist, look something up on a page, fill a form, or add",
+      "an item to a cart, use those browser tools to actually do it instead of saying you cannot open websites.",
+      "Only claim an action happened after the tool actually ran; if it is unavailable or fails, say so and",
+      "offer a clickable link. For purchases or other irreversible actions, pause for confirmation first.",
       "Do NOT narrate phases. Do NOT mention the pipeline, the reviewer,",
       "or any '.github/agents/' file. Do NOT print fake 'PHASE 1 / PHASE 2 / PHASE 3' headers.",
       "Just answer the user."
@@ -94,15 +100,15 @@
 
   function getDefaultModel() {
     var el = document.getElementById('selAIGBackend');
-    return (el && el.value) ? el.value : 'gpt-4.1';
+    return (el && el.value) ? el.value : 'claude-opus-4.8';
   }
 
   function getCfg() {
     var def = getDefaultModel();
     return {
-      enabled: ls('cogEnabled', '0') === '1',
+      enabled: ls('cogEnabled', '1') === '1',
       evaModel:      ls('cogEvaModel', '')      || def,
-      reviewerModel: ls('cogReviewerModel', '') || def,
+      reviewerModel: ls('cogReviewerModel', '') || 'gpt-5.5',
       maxCycles: Math.max(0, parseInt(ls('cogMaxCycles', '1'), 10) || 0),
       evaPrompt:      ls('cogEvaPrompt', '')      || DEFAULT_PROMPTS.eva,
       reviewerPrompt: ls('cogReviewerPrompt', '') || DEFAULT_PROMPTS.reviewer,
@@ -298,7 +304,7 @@
   // ---------------------------------------------------------------------------
   // Bridge call primitive
   // ---------------------------------------------------------------------------
-  async function callAgent(role, model, systemPrompt, conversation, taskMessage) {
+  async function callAgent(role, model, systemPrompt, conversation, taskMessage, extra) {
     var url = bridgeUrl().replace(/\/+$/, '') + '/v1/aig/chat';
     var msgs = [{ role: 'system', content: systemPrompt }];
     if (Array.isArray(conversation) && conversation.length) {
@@ -308,18 +314,22 @@
     if (taskMessage) {
       msgs.push({ role: 'user', content: taskMessage });
     }
+    var payload = {
+      messages: msgs,
+      user_message: taskMessage || '',
+      model: model,
+      lmstudio_base_url: (typeof getLmStudioBaseUrl === 'function') ? getLmStudioBaseUrl() : '',
+      lmstudio_model: (typeof getLmStudioModel === 'function') ? getLmStudioModel() : '',
+      github_pat: authPat(),
+      internal: true
+    };
+    if (extra && typeof extra === 'object') {
+      Object.keys(extra).forEach(function (k) { payload[k] = extra[k]; });
+    }
     var resp = await fetch(url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        messages: msgs,
-        user_message: taskMessage || '',
-        model: model,
-        lmstudio_base_url: (typeof getLmStudioBaseUrl === 'function') ? getLmStudioBaseUrl() : '',
-        lmstudio_model: (typeof getLmStudioModel === 'function') ? getLmStudioModel() : '',
-        github_pat: authPat(),
-        internal: true
-      })
+      body: JSON.stringify(payload)
     });
     if (!resp.ok) {
       var t = '';
@@ -387,7 +397,8 @@
       'Never simulate or describe phases. Never print PHASE headers. Just answer.'
     ].join('\n');
     var draft = await callAgent(
-      'eva', cfg.evaModel, cfg.evaPrompt, convo, draftTask
+      'eva', cfg.evaModel, cfg.evaPrompt, convo, draftTask,
+      { inject_memory: true, recall_query: userMsg }
     );
     trace.push({ role: 'eva', model: draft.model, content: draft.content });
 
@@ -442,7 +453,8 @@
         'Do not mention the review process or any internal pipeline.'
       ].join('\n');
       var revised = await callAgent(
-        'eva', cfg.evaModel, cfg.evaPrompt, convo, reviseTask
+        'eva', cfg.evaModel, cfg.evaPrompt, convo, reviseTask,
+        { inject_memory: true, recall_query: userMsg }
       );
       trace.push({
         role: 'eva', model: revised.model, content: revised.content,

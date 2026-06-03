@@ -396,6 +396,43 @@ function _copilotHandleFetchError(err, txtOutput) {
 
 // --- MCP Configuration ---
 
+// Re-apply the saved MCP config to a freshly started bridge.
+// The bridge is a new process on every launch with no MCP servers configured,
+// so without this the user would have to re-Configure Kusto/Azure/GitHub MCP
+// after each restart. Reads the persisted config directly from localStorage so
+// it does not depend on the Settings form fields being populated yet.
+async function autoApplySavedMCPConfig() {
+  var saved;
+  try {
+    saved = JSON.parse(localStorage.getItem('mcp_config') || 'null');
+  } catch (e) {
+    saved = null;
+  }
+  if (!saved || typeof saved !== 'object' || Object.keys(saved).length === 0) return;
+
+  // The standalone window only loads after the bridge reports healthy, but allow
+  // a few short retries in case MCP server startup lags the health check.
+  for (var attempt = 0; attempt < 3; attempt++) {
+    try {
+      var bridgeUrl = await detectACPBridge();
+      var resp = await fetch(bridgeUrl.replace(/\/+$/, '') + '/v1/mcp/configure', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ mcp_servers: saved })
+      });
+      if (resp.ok) {
+        var data = await resp.json();
+        setStatus('info', 'MCP restored: ' + ((data.active_servers || []).join(', ') || 'none'));
+        if (typeof refreshMCPStatus === 'function') refreshMCPStatus();
+        return;
+      }
+    } catch (e) {
+      // Bridge not ready yet; wait briefly and retry.
+    }
+    await new Promise(function (r) { setTimeout(r, 1500); });
+  }
+}
+
 async function applyMCPConfig() {
   var bridgeUrl = await detectACPBridge();
   var mcpServers = {};
@@ -647,4 +684,8 @@ document.addEventListener('DOMContentLoaded', function() {
   if (seedCluster) seedCluster.addEventListener('input', updateKustoSeedButtonState);
   if (seedDatabase) seedDatabase.addEventListener('input', updateKustoSeedButtonState);
   updateKustoSeedButtonState();
+
+  // Re-push saved MCP servers (Kusto cluster/db, Azure, GitHub) to the freshly
+  // started bridge so they persist across restarts without manual reconfigure.
+  autoApplySavedMCPConfig();
 });

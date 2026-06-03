@@ -20,6 +20,8 @@ npm run dist
 Prereqs on the host: Node.js 24+, Python 3.12+, GitHub Copilot CLI authenticated (`copilot auth login`). See [standalone/README.md](standalone/README.md).
 
 > **Tip:** For the full Eva experience (persistent memory, emotion tracking, knowledge graph), point Settings > MCP at an Azure Data Explorer cluster you can sign in to. The bridge uses `azure-identity` device code or interactive login on first use, so no keys are stored. Browser-only setup and the manual ACP bridge launch are documented in [README-2.md](README-2.md).
+>
+> **Semantic recall:** When an OpenAI API key is set in Settings > Auth, Eva ranks stored facts by meaning (OpenAI `text-embedding-3-small`, cached on disk) so relevant memories surface even when worded differently. Without a key, recall falls back to synonym-expanded keyword matching.
 
 ## Documentation
 

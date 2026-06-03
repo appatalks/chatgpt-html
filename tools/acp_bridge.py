@@ -38,7 +38,15 @@ import threading
 import time
 import urllib.parse
 import uuid
-from http.server import HTTPServer, BaseHTTPRequestHandler
+from http.server import HTTPServer, ThreadingHTTPServer, BaseHTTPRequestHandler
+
+# Vision browser agent (Playwright is imported lazily inside the module, so this
+# import never fails even when Playwright is not installed).
+try:
+    import browser_agent as _BROWSER_AGENT
+except Exception as _ba_err:  # pragma: no cover - defensive
+    _BROWSER_AGENT = None
+    print(f"[Bridge] Browser agent module unavailable: {_ba_err}")
 
 # ---------------------------------------------------------------------------
 # ACP Client — manages the copilot subprocess and JSON-RPC communication
@@ -612,11 +620,229 @@ _active_kusto_cluster = os.environ.get("KUSTO_CLUSTER_URL", "").strip()
 _bridge_bind_address = "127.0.0.1"
 _LMSTUDIO_ALLOWED_PORTS = {1234, 8000, 8080, 11434}
 _HTTP_CONTENT_TYPE_RE = re.compile(r"^[A-Za-z0-9!#$&^_.+-]+/[A-Za-z0-9!#$&^_.+-]+$")
+
+# ── Semantic memory (embeddings) ───────────────────────────────────────
+# Recall ranks stored facts by semantic similarity to the user's message.
+# Embeddings are computed on demand via the OpenAI embeddings API and cached
+# on disk keyed by text hash, so the Knowledge table needs no schema change and
+# facts written by any path (regex backstop or the LLM ingest tool) are covered.
+_openai_api_key_cache = ""
+_EMBEDDING_MODEL = "text-embedding-3-small"
+_EMBEDDING_CACHE_PATH = os.path.expanduser("~/.config/eva-standalone/embeddings_cache.json")
+_embedding_cache = None  # lazy-loaded dict: sha1(text) -> [floats]
+_embedding_cache_lock = threading.Lock()
+_embedding_disabled_logged = False
+_SEMANTIC_MIN_SCORE = 0.30  # cosine threshold for a fact to count as relevant
+_SEMANTIC_POOL_SIZE = 150   # max facts ranked per recall (Knowledge is small)
+
+# Synonyms expand a query term so lexical recall matches differently-worded facts
+# (e.g. "playlist" should surface a fact stored under relation "favorite_songs").
+_MEMORY_SYNONYMS = {
+    "playlist": ["playlist", "playlists", "song", "songs", "music", "track", "tracks", "tunes"],
+    "song": ["song", "songs", "track", "tracks", "music", "playlist"],
+    "music": ["music", "song", "songs", "playlist", "tracks", "artist", "band"],
+    "trip": ["trip", "travel", "vacation", "holiday", "journey"],
+    "favorite": ["favorite", "favourite", "favorites", "favourites"],
+    "pet": ["pet", "pets", "dog", "cat"],
+    "kid": ["kid", "kids", "child", "children", "son", "daughter"],
+    "job": ["job", "work", "employer", "company", "occupation", "career"],
+    "home": ["home", "location", "address", "city", "based"],
+    "phone": ["phone", "mobile", "cell"],
+    "email": ["email"],
+    "birthday": ["birthday", "birthdate", "born"],
+}
+
+
+def _set_openai_key_from(data):
+    """Cache the OpenAI API key from a request body or environment for embeddings.
+    Background threads (reflection/recall) reuse the cached value."""
+    global _openai_api_key_cache
+    key = ""
+    if isinstance(data, dict):
+        key = (data.get("openai_api_key") or "").strip()
+    if not key:
+        key = os.environ.get("OPENAI_API_KEY", "").strip()
+    if key:
+        _openai_api_key_cache = key
+    return _openai_api_key_cache
+
+
+def _load_embedding_cache():
+    global _embedding_cache
+    if _embedding_cache is not None:
+        return _embedding_cache
+    with _embedding_cache_lock:
+        if _embedding_cache is not None:
+            return _embedding_cache
+        try:
+            with open(_EMBEDDING_CACHE_PATH) as f:
+                loaded = json.load(f)
+            _embedding_cache = loaded if isinstance(loaded, dict) else {}
+        except Exception:
+            _embedding_cache = {}
+    return _embedding_cache
+
+
+def _save_embedding_cache():
+    cache = _embedding_cache
+    if cache is None:
+        return
+    try:
+        os.makedirs(os.path.dirname(_EMBEDDING_CACHE_PATH), exist_ok=True)
+        tmp = _EMBEDDING_CACHE_PATH + ".tmp"
+        with open(tmp, "w") as f:
+            json.dump(cache, f)
+        os.replace(tmp, _EMBEDDING_CACHE_PATH)
+    except Exception as e:
+        print(f"[Cognition] Embedding cache save failed: {e}")
+
+
+def _embed_texts(texts):
+    """Return {text: vector} for the given texts using a persistent cache and a
+    single batched OpenAI embeddings call for cache misses. Returns whatever is
+    available (possibly empty) without raising, so recall degrades to lexical."""
+    global _embedding_disabled_logged
+    import hashlib
+    key = _openai_api_key_cache or os.environ.get("OPENAI_API_KEY", "").strip()
+
+    unique = []
+    seen = set()
+    for t in texts:
+        t = (t or "").strip()
+        if t and t not in seen:
+            seen.add(t)
+            unique.append(t)
+    if not unique:
+        return {}
+
+    cache = _load_embedding_cache()
+    result = {}
+    missing = []
+    for t in unique:
+        h = hashlib.sha1(t.encode("utf-8")).hexdigest()
+        vec = cache.get(h)
+        if vec is not None:
+            result[t] = vec
+        else:
+            missing.append(t)
+
+    if missing:
+        if not key:
+            if not _embedding_disabled_logged:
+                print("[Cognition] No OpenAI key for embeddings; recall uses lexical match only")
+                _embedding_disabled_logged = True
+            return result
+        try:
+            import requests as _req
+            resp = _req.post(
+                "https://api.openai.com/v1/embeddings",
+                headers={"Authorization": f"Bearer {key}", "Content-Type": "application/json"},
+                json={"model": _EMBEDDING_MODEL, "input": missing},
+                timeout=30,
+            )
+            if resp.status_code == 200:
+                for item in resp.json().get("data", []):
+                    idx = item.get("index", -1)
+                    emb = item.get("embedding")
+                    if emb and 0 <= idx < len(missing):
+                        t = missing[idx]
+                        result[t] = emb
+                        cache[hashlib.sha1(t.encode("utf-8")).hexdigest()] = emb
+                _save_embedding_cache()
+            else:
+                print(f"[Cognition] Embedding API failed ({resp.status_code}): {resp.text[:160]}")
+        except Exception as e:
+            print(f"[Cognition] Embedding request error: {e}")
+    return result
+
+
+def _cosine_similarity(a, b):
+    import math
+    if not a or not b or len(a) != len(b):
+        return 0.0
+    dot = na = nb = 0.0
+    for x, y in zip(a, b):
+        dot += x * y
+        na += x * x
+        nb += y * y
+    if na == 0.0 or nb == 0.0:
+        return 0.0
+    return dot / (math.sqrt(na) * math.sqrt(nb))
+
+
+def _expand_query_terms(message):
+    """Tokenize a message and expand each token with memory synonyms, dropping
+    stopwords. Used to build a lexical Knowledge recall filter."""
+    toks = [w.lower().strip("?.,!'\"()[]") for w in (message or "").split()]
+    terms = set()
+    for w in toks:
+        if len(w) <= 2:
+            continue
+        terms.add(w)
+        for base, syns in _MEMORY_SYNONYMS.items():
+            if w == base or w in syns:
+                terms.update(syns)
+    return {t for t in terms if len(t) > 2 and t not in _ENTITY_IGNORE_WORDS}
+
+
+def _classify_request_type(msg_lower):
+    """Classify a message into a coarse request type for prompt tuning.
+
+    Uses phrase patterns and guards ambiguous single words (open/close/share/
+    market/result) that previously misrouted everyday messages. Defaults to
+    'general', which lets the agentic ACP layer pick its own tools."""
+    m = msg_lower or ""
+
+    finance_strong = re.search(
+        r'\b(stock price|share price|stock market|stock quote|market cap|ticker symbol|'
+        r'nasdaq|s&p ?500|dow jones|earnings report)\b', m
+    ) or re.search(r'(?:^|\s)\$[a-z]{1,5}\b', m)
+    finance_noun = re.search(r'\b(stock|stocks|shares?|ticker|equit(?:y|ies)|crypto|bitcoin|etf)\b', m)
+    finance_action = re.search(r'\b(price|prices|quote|quotes|market|trading|trade|buy|sell|invest|worth|value)\b', m)
+    if finance_strong or (finance_noun and finance_action):
+        return "financial-data"
+
+    if re.search(r'\b(weather|forecast|temperature|raining|snowing|humidity|wind speed)\b', m):
+        return "weather-search"
+
+    if re.search(r'\b(news|headlines?|breaking news|current events?)\b', m) or \
+       re.search(r'\blatest\b.*\b(update|report|story|stories|happening|developments?)\b', m):
+        return "news-search"
+
+    if re.search(r'\b(kql|kusto|run a query|execute a query|table schema|sample rows|show me data)\b', m):
+        return "kusto-query"
+    if re.search(r'\b(count|summarize|filter by|group by|\bjoin\b|distinct|top \d|take \d)\b', m):
+        return "kusto-operator"
+
+    if re.search(r'\b(search the web|web search|look up|google|what happened|who won|search for)\b', m):
+        return "web-search"
+
+    return "general"
 _MEMORY_TABLES = [
     "Knowledge", "Conversations", "EmotionState", "MemorySummaries", "Reflections",
     "Goals", "SelfState", "HeuristicsIndex", "EmotionBaseline", "BackgroundProposals",
     "BackgroundActivity",
 ]
+
+# Injected into tool-active ACP prompts so Eva persists durable facts herself.
+# The model decides salience (not regex), and writes via the kusto_ingest_inline MCP tool.
+_MEMORY_CAPTURE_DIRECTIVE = (
+    "\n\n[Memory Capture — act before answering]\n"
+    "If this message states a durable fact about the user (preferences, plans, relationships, "
+    "possessions, identity, or a list such as a music playlist), OR the user asks you to "
+    "remember/save/note something, you MUST persist it first by calling the kusto_ingest_inline tool.\n"
+    "Call it with table=\"Knowledge\" and one row object per fact, using exactly these columns:\n"
+    "  Timestamp = current UTC time in ISO-8601 (e.g. 2026-06-02T12:00:00Z)\n"
+    "  Entity = \"User\" for facts about the user; otherwise the proper-noun subject\n"
+    "  Relation = a short snake_case key (e.g. youtube_music_playlist, favorite_song, upcoming_trip)\n"
+    "  Value = the concrete content; for a list, a single comma-separated string of the items\n"
+    "  Confidence = 0.85 when the user stated it directly\n"
+    "  Source = \"learned\"\n"
+    "  Decay = 0.01\n"
+    "Split distinct facts into separate rows. Do NOT save greetings, one-off questions, or "
+    "ephemeral chit-chat. If nothing durable was shared, do not call the tool. "
+    "After saving, briefly confirm what you stored so the user knows it persisted."
+)
 _GOAL_CATEGORIES = {"self_improvement", "knowledge_curation", "relational"}
 _GOAL_STATUSES = {"active", "paused", "done", "dropped"}
 _GOAL_COLUMNS = ["GoalId", "Title", "Description", "Category", "Status", "Priority", "RelatedTopics", "CreatedAt", "UpdatedAt"]
@@ -1558,7 +1784,25 @@ def _build_memory_context(user_message):
         "When asked about what you know/remember:\n"
         "1. Check the [Memory] facts provided below\n"
         "2. For deeper queries, use kusto-query on the Knowledge or Conversations table\n"
-        "3. Be specific — cite what you actually remember, not generic statements"
+        "3. Be specific — cite what you actually remember, not generic statements\n"
+        "\n"
+        "[Workflow: Capturing Knowledge]\n"
+        "You learn continuously. When the user shares a durable fact about themselves "
+        "(preferences, plans, relationships, possessions, lists like a playlist), or explicitly "
+        "asks you to remember/save something, persist it yourself using the kusto_ingest_inline tool.\n"
+        "1. Call kusto_ingest_inline with table=\"Knowledge\" and a data row per fact.\n"
+        "2. Each row must use these columns: Timestamp (current UTC ISO-8601), Entity, Relation, "
+        "Value, Confidence, Source, Decay.\n"
+        "   • Entity: use \"User\" for facts about the user (these surface in [User Profile] next session); "
+        "otherwise the proper-noun subject.\n"
+        "   • Relation: a short snake_case key (e.g. youtube_music_playlist, favorite_song, upcoming_trip).\n"
+        "   • Value: the concrete content (for a list, a comma-separated string of the items).\n"
+        "   • Confidence: 0.85 when the user stated it directly; Source: \"learned\"; Decay: 0.01.\n"
+        "3. Split distinct facts into separate rows. Do NOT save ephemeral chit-chat, one-off questions, "
+        "or anything the user did not actually assert.\n"
+        "4. After saving, briefly confirm what you stored (one short clause) so the user knows it persisted.\n"
+        "5. Recall works only for Entity=\"User\" facts at Confidence >= 0.5 or other entities at "
+        "Confidence >= 0.6 — stay at or above those so you can retrieve it later."
     )
 
     # ── 2. Day lifecycle (first message of the day) ────────────────────
@@ -1628,21 +1872,75 @@ def _build_memory_context(user_message):
             f"Concern:{e.get('Concern',0):.2f} Excitement:{e.get('Excitement',0):.2f} "
             f"Calm:{e.get('Calm',0):.2f} Empathy:{e.get('Empathy',0):.2f}")
 
-    # ── 5. Message-relevant knowledge (on-demand) ──────────────────────
-    words = [w.strip('?.,!') for w in user_message.split() if len(w) > 3][:4]
-    if words:
-        word_filters = " or ".join(f"Entity has '{w}' or Value has '{w}'" for w in words[:3])
-        relevant_query = (
-            "Knowledge "
-            f"| where ({word_filters}) and Confidence >= 0.6 "
-            "and (isnull(Relation) or Relation !in~ ('mentioned', 'candidate_mentioned')) "
-            "| order by Confidence desc | take 5"
+    # ── 5. Message-relevant knowledge (lexical + semantic recall) ──────
+    # Two complementary passes:
+    #   (a) Lexical: synonym-expanded term match across Entity, Relation, AND
+    #       Value. Searching Relation matters because facts are often stored as
+    #       relation="favorite_songs"/"youtube_music_playlist" with a generic
+    #       Value, and Kusto term-splits underscores so 'playlist' matches.
+    #   (b) Semantic: rank a small candidate pool by embedding cosine similarity
+    #       to the message. Catches differently-worded facts the lexical pass
+    #       misses. Skipped gracefully when no OpenAI key is available.
+    relevant_hits = []
+    seen_keys = set()
+
+    def _add_hit(rec):
+        key = (
+            str(rec.get('Entity', '')).lower(),
+            str(rec.get('Relation', '')).lower(),
+            str(rec.get('Value', '')).lower(),
         )
-        knowledge = _kusto_query_direct(cluster, db, relevant_query)
-        if knowledge:
-            extra = [f"  {k.get('Entity','?')} — {k.get('Relation','?')}: {k.get('Value','?')}"
-                     for k in knowledge]
-            context_parts.append("[Memory — Relevant]\n" + "\n".join(extra))
+        if key in seen_keys:
+            return
+        seen_keys.add(key)
+        relevant_hits.append(rec)
+
+    terms = _expand_query_terms(user_message)
+    if terms:
+        safe_terms = [f"'{t.replace(chr(39), chr(39) * 2)}'" for t in sorted(terms)][:24]
+        term_list = ", ".join(safe_terms)
+        lexical_query = (
+            "Knowledge "
+            f"| where (Entity has_any ({term_list}) or Relation has_any ({term_list}) "
+            f"or Value has_any ({term_list})) and Confidence >= 0.6 "
+            "and (isnull(Relation) or Relation !in~ ('mentioned', 'candidate_mentioned')) "
+            "| order by Confidence desc | take 8"
+        )
+        for k in (_kusto_query_direct(cluster, db, lexical_query) or []):
+            _add_hit(k)
+
+    if user_message.strip():
+        pool_query = (
+            "Knowledge "
+            "| where Confidence >= 0.6 "
+            "and (isnull(Relation) or Relation !in~ ('mentioned', 'candidate_mentioned')) "
+            f"| order by Confidence desc | take {_SEMANTIC_POOL_SIZE} "
+            "| project Entity, Relation, Value, Confidence"
+        )
+        pool = _kusto_query_direct(cluster, db, pool_query) or []
+        if pool:
+            texts = [
+                f"{k.get('Entity', '')} {str(k.get('Relation', '')).replace('_', ' ')} "
+                f"{k.get('Value', '')}".strip()
+                for k in pool
+            ]
+            emb_map = _embed_texts([user_message] + texts)
+            query_vec = emb_map.get(user_message.strip())
+            if query_vec:
+                scored = []
+                for rec, txt in zip(pool, texts):
+                    fv = emb_map.get(txt.strip())
+                    if fv:
+                        scored.append((_cosine_similarity(query_vec, fv), rec))
+                scored.sort(key=lambda x: x[0], reverse=True)
+                for score, rec in scored[:6]:
+                    if score >= _SEMANTIC_MIN_SCORE:
+                        _add_hit(rec)
+
+    if relevant_hits:
+        extra = [f"  {k.get('Entity','?')} — {k.get('Relation','?')}: {k.get('Value','?')}"
+                 for k in relevant_hits[:6]]
+        context_parts.append("[Memory — Relevant]\n" + "\n".join(extra))
 
     # ── 6. Proactive data retrieval (on-demand by intent) ──────────────
     msg_lower = user_message.lower()
@@ -2337,6 +2635,10 @@ class BridgeHandler(BaseHTTPRequestHandler):
             self._background_activity()
         elif parsed_path == "/v1/memory/context":
             self._memory_context()
+        elif parsed_path == "/v1/browser/status":
+            self._browser_status()
+        elif parsed_path == "/v1/browser/screenshot":
+            self._browser_screenshot()
         elif parsed_path.startswith("/v1/files/"):
             requested_name = urllib.parse.unquote(parsed_path.split("/v1/files/", 1)[1])
             self._serve_artifact(requested_name)
@@ -2353,6 +2655,12 @@ class BridgeHandler(BaseHTTPRequestHandler):
             self._memory_reflect()
         elif parsed_path == "/v1/aig/chat":
             self._aig_chat()
+        elif parsed_path == "/v1/browser/run":
+            self._browser_run()
+        elif parsed_path == "/v1/browser/confirm":
+            self._browser_confirm()
+        elif parsed_path == "/v1/browser/cancel":
+            self._browser_cancel()
         elif parsed_path == "/v1/kusto/seed":
             self._kusto_seed()
         elif parsed_path == "/v1/goals":
@@ -2984,7 +3292,13 @@ class BridgeHandler(BaseHTTPRequestHandler):
         messages = data.get("messages", [])
         user_message = data.get("user_message", "")
         internal = bool(data.get("internal"))
-        model_for_response = data.get("model", "gpt-4.1")  # frontend-selectable, default gpt-4.1
+        # Cognition draft/revise stages are internal but still want memory recall.
+        # They pass the raw user turn so _build_memory_context runs on the real
+        # message instead of the wrapped task prompt.
+        inject_memory = bool(data.get("inject_memory"))
+        recall_query = (data.get("recall_query") or "").strip()
+        model_for_response = data.get("model", "claude-opus-4.8")  # frontend-selectable, default claude-opus-4.8
+        _set_openai_key_from(data)  # cache key for semantic recall (incl. background threads)
 
         if not user_message and messages:
             for msg in reversed(messages):
@@ -3002,8 +3316,17 @@ class BridgeHandler(BaseHTTPRequestHandler):
         # Step 1: Build memory context + proactive data retrieval
         # Skip for internal calls (cognition sub-calls already have context)
         if internal:
-            memory_context = ""
-            print("[AIG] Internal call: skipping memory injection")
+            # Cognition draft/revise stages opt in to recall via recall_query so
+            # the cognitive layer (default ON) does not bypass persistent memory.
+            if inject_memory and recall_query and _cognition_enabled:
+                memory_context = _build_memory_context(recall_query)
+                if memory_context:
+                    print(f"[AIG] Internal call: injected {len(memory_context)} chars of memory context (recall)")
+                else:
+                    print("[AIG] Internal call: recall requested but no memory context produced")
+            else:
+                memory_context = ""
+                print("[AIG] Internal call: skipping memory injection")
         else:
             memory_context = _build_memory_context(user_message) if _cognition_enabled else ""
             if memory_context:
@@ -3043,19 +3366,7 @@ class BridgeHandler(BaseHTTPRequestHandler):
             _acp_route = "meta-question"
 
         # Classify the request type for logging and prompt tuning
-        _request_type = "general"
-        if _re.search(r'\b(query|run|execute|kql|sample|schema|show me data|rows?|records?)\b', msg_lower):
-            _request_type = "kusto-query"
-        elif _re.search(r'\b(count|sum|average|where|filter|join|extend|project|distinct|top|take \d)\b', msg_lower):
-            _request_type = "kusto-operator"
-        elif _re.search(r'\b(news|headline|current events?|latest.*(?:update|report|story|stories|happening))\b', msg_lower):
-            _request_type = "news-search"
-        elif _re.search(r'\b(weather|forecast|temperature|rain|storm)\b', msg_lower):
-            _request_type = "weather-search"
-        elif _re.search(r'\b(stock|price|ticker|market|close|open|share|nasdaq|s&p|dow)\b', msg_lower):
-            _request_type = "financial-data"
-        elif _re.search(r'\b(search|look up|find out|what happened|who won|score|result)\b', msg_lower):
-            _request_type = "web-search"
+        _request_type = _classify_request_type(msg_lower)
 
         needs_acp_tools = not skip_acp
         if skip_acp:
@@ -3119,6 +3430,10 @@ class BridgeHandler(BaseHTTPRequestHandler):
                     "If no tools are needed, answer directly. Be factual and concise.\n\n"
                     f"{user_message}"
                 )
+            # Continuous learning: while MCP tools are active, persist durable user facts.
+            # Skipped in raw mode so strict query output is not polluted.
+            if not raw_output_requested:
+                acp_prompt += _MEMORY_CAPTURE_DIRECTIVE
             acp_result = acp_client.prompt(acp_prompt, timeout=90)
             if acp_result and "text" in acp_result and acp_result["text"]:
                 acp_data = acp_result["text"]
@@ -3142,6 +3457,26 @@ class BridgeHandler(BaseHTTPRequestHandler):
             "answer using the [Runtime] section below. Do NOT guess or invent a model name.\n"
             "- When the user asks to show, find, or generate an image, do NOT call the web fetch tool to look up image URLs. Instead emit a placeholder of the form [Image of <short description>] on its own line. The browser resolves the placeholder by calling DALL-E (if the user asked to generate) or Wikimedia (if the user asked to find or show). Do not invent image URLs. Do not say you cannot show or generate images. Up to 3 placeholders per response are supported.\n"
             "- If asked to produce a downloadable file (PDF, CSV, image, etc.), write it to the directory in environment variable EVA_ARTIFACTS_DIR using a short descriptive filename. After the file is written, end your message with a single line containing exactly: [[EVA_FILE]] <filename.ext>. Do not claim a file was produced unless you actually wrote it. Do not include the EVA_FILE marker if no file exists.\n\n"
+            "BROWSER CONTROL:\n"
+            "- You CAN control a real web browser through the Playwright tools available in this session "
+            "(navigate to URLs, click elements, type text, read page snapshots). The browser opens in a "
+            "separate Chromium window on the user's machine.\n"
+            "- When the user asks you to open a site, play a playlist, look something up on a specific page, "
+            "fill a form, or add an item to a cart, USE the Playwright browser tools to actually do it. "
+            "Do NOT reply that you 'cannot open websites or apps' — that is false; you can.\n"
+            "- HONESTY: only state that an action happened AFTER the corresponding browser tool has actually "
+            "run and returned. If a browser tool is unavailable or fails, say so plainly and offer a clickable "
+            "link instead. Never narrate a click, navigation, or purchase you did not actually perform.\n"
+            "- For purchases, account changes, or other irreversible/sensitive actions, stop at the final "
+            "confirmation step and ask the user to confirm before completing it.\n"
+            "- VISUAL BROWSER AGENT: for a supervised, multi-step visual task (add an item to a cart, fill "
+            "a multi-page form, navigate a flow that needs to be watched), you may launch Eva's own vision "
+            "browser agent by emitting a single line of the form: "
+            "[[EVA_BROWSER]]{\"goal\":\"<plain-language task>\",\"start_url\":\"<optional url>\"}[[/EVA_BROWSER]]. "
+            "A floating Eva-themed window opens, drives a real Chromium with screenshots, and pauses for the "
+            "user's approval before any purchase or sign-in. Use this when the user wants to watch the work "
+            "happen; use the direct Playwright tools above for quick one-off navigations. Emit at most one "
+            "EVA_BROWSER block per reply, and only when the user actually asked for a browser task.\n\n"
         )
 
         if memory_context:
@@ -3695,8 +4030,7 @@ class BridgeHandler(BaseHTTPRequestHandler):
         if not messages:
             self._json_response(400, {"error": {"message": "No messages provided"}})
             return
-
-        # Check if a specific ACP model was requested
+        _set_openai_key_from(data)  # cache key for semantic recall
         requested_model = data.get("acp_model", "") or ""
         switched, switch_info = _ensure_acp_model(requested_model)
         if not switched:
@@ -3780,6 +4114,121 @@ class BridgeHandler(BaseHTTPRequestHandler):
             threading.Thread(target=_post_response_reflection,
                            args=(last_user_msg, response_text, model_label),
                            daemon=True).start()
+
+    # ------------------------------------------------------------------
+    # Vision browser agent endpoints
+    # ------------------------------------------------------------------
+
+    def _make_director(self):
+        """Wire Claude Opus 4.8 (via ACP) as the text-only director. Returns a
+        callback(goal, state) -> subgoal string, or None when ACP is unavailable."""
+        client = acp_client
+        if not client:
+            return None
+
+        def director(goal, state):
+            prompt = (
+                "You are the director for a browser automation agent. You plan; a "
+                "separate vision model looks at the screen and clicks.\n"
+                f"User goal: {goal}\n"
+                f"Current state: {state}\n"
+                "Reply with ONE short imperative subgoal (a single sentence) for the "
+                "executor's next few actions. No preamble, no markdown, no lists."
+            )
+            try:
+                res = client.prompt(prompt, timeout=60)
+                if isinstance(res, dict):
+                    return (res.get("text") or "").strip()[:300]
+            except Exception as e:
+                print(f"[Bridge] director prompt failed: {e}")
+            return ""
+
+        return director
+
+    def _browser_run(self):
+        data, err = self._read_json_body()
+        if err:
+            self._json_response(400, {"error": {"message": err}})
+            return
+        if _BROWSER_AGENT is None:
+            self._json_response(503, {"error": {"message": "Browser agent module not loaded"}})
+            return
+        ok, detail = _BROWSER_AGENT.playwright_available()
+        if not ok:
+            self._json_response(503, {"error": {"message":
+                detail + ". Install with: python3 -m pip install --user --break-system-packages "
+                "playwright && python3 -m playwright install chromium"}})
+            return
+        api_key = _set_openai_key_from(data)
+        use_director = data.get("use_director", True)
+        director = self._make_director() if use_director else None
+        try:
+            status = _BROWSER_AGENT.start_run(
+                goal=(data.get("goal") or "").strip(),
+                api_key=api_key,
+                vision_model=(data.get("vision_model") or None),
+                director=director,
+                autonomy=(data.get("autonomy") or "pause"),
+                max_steps=data.get("max_steps", 25),
+                start_url=(data.get("start_url") or ""),
+                headless=bool(data.get("headless", False)),
+            )
+        except Exception as e:
+            self._json_response(400, {"error": {"message": str(e)}})
+            return
+        self._json_response(202, status)
+
+    def _browser_status(self):
+        qs = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
+        run_id = (qs.get("run_id") or [""])[0]
+        status = _BROWSER_AGENT.public_status(run_id) if _BROWSER_AGENT else None
+        if not status:
+            self._json_response(404, {"error": {"message": "unknown run_id"}})
+            return
+        self._json_response(200, status)
+
+    def _browser_screenshot(self):
+        qs = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
+        run_id = (qs.get("run_id") or [""])[0]
+        path = _BROWSER_AGENT.latest_screenshot_path(run_id) if _BROWSER_AGENT else None
+        if not path:
+            self._json_response(404, {"error": {"message": "no screenshot yet"}})
+            return
+        try:
+            with open(path, "rb") as f:
+                body = f.read()
+        except Exception:
+            self._json_response(404, {"error": {"message": "screenshot unavailable"}})
+            return
+        try:
+            self.send_response(200)
+            self._cors_headers()
+            self.send_header("Content-Type", "image/png")
+            self.send_header("Cache-Control", "no-store")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+        except BrokenPipeError:
+            pass
+
+    def _browser_confirm(self):
+        data, err = self._read_json_body()
+        if err:
+            self._json_response(400, {"error": {"message": err}})
+            return
+        run_id = (data.get("run_id") or "").strip()
+        ok = bool(_BROWSER_AGENT) and _BROWSER_AGENT.resolve(
+            run_id, approve=bool(data.get("approve", True)), text=(data.get("text") or ""))
+        self._json_response(200 if ok else 404, {"ok": ok})
+
+    def _browser_cancel(self):
+        data, err = self._read_json_body()
+        if err:
+            self._json_response(400, {"error": {"message": err}})
+            return
+        run_id = (data.get("run_id") or "").strip()
+        ok = bool(_BROWSER_AGENT) and _BROWSER_AGENT.cancel(run_id)
+        self._json_response(200 if ok else 404, {"ok": ok})
 
     def _json_response(self, status, data):
         body = json.dumps(data).encode("utf-8")
@@ -3996,8 +4445,9 @@ def main():
     else:
         print(f"[Bridge] Cognition layer disabled (no Kusto MCP or token)")
 
-    # Start HTTP server
-    server = HTTPServer((args.bind, args.port), BridgeHandler)
+    # Start HTTP server. Threaded so a long-running browser agent run does not
+    # block status/cancel/confirm polling on other connections.
+    server = ThreadingHTTPServer((args.bind, args.port), BridgeHandler)
     print(f"[Bridge] Listening on http://{args.bind}:{args.port}")
     print(f"[Bridge] Endpoints:")
     print(f"  POST /v1/chat/completions   - Send chat messages")
@@ -4015,6 +4465,10 @@ def main():
     print(f"  POST /v1/background/proposals/<id>/approve - Apply a memory proposal")
     print(f"  POST /v1/background/proposals/<id>/reject - Reject a memory proposal")
     print(f"  POST /v1/kusto/seed         - Apply Eva Kusto schema seed")
+    print(f"  POST /v1/browser/run        - Start a vision browser agent run")
+    print(f"  GET  /v1/browser/status     - Poll a browser agent run")
+    print(f"  POST /v1/browser/confirm    - Approve/answer a parked browser run")
+    print(f"  POST /v1/browser/cancel     - Cancel a browser agent run")
     print(f"  GET  /v1/files/<name>       - Download a generated artifact")
     print(f"  POST /v1/files/purge        - Delete all artifacts")
     print(f"  GET  /health                - Health check")
