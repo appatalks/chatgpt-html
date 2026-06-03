@@ -532,6 +532,16 @@ function renderBackgroundStatus() {
   var intervalEl = document.getElementById('backgroundIntervalSeconds');
   if (enabledEl) enabledEl.checked = !!status.enabled;
   if (intervalEl && status.intervalSeconds) intervalEl.value = String(status.intervalSeconds);
+
+  if (status.jobs && typeof status.jobs === 'object') {
+    var jobInputs = document.querySelectorAll('#backgroundJobs input[data-job]');
+    Array.prototype.forEach.call(jobInputs, function(input) {
+      var jobType = input.getAttribute('data-job');
+      if (Object.prototype.hasOwnProperty.call(status.jobs, jobType)) {
+        input.checked = !!status.jobs[jobType];
+      }
+    });
+  }
 }
 
 function backgroundJobLabel(jobType) {
@@ -724,12 +734,18 @@ async function saveBackgroundControls(runNow) {
   if (saveButton) saveButton.disabled = true;
   if (runButton) runButton.disabled = true;
   try {
+    var jobs = {};
+    var jobInputs = document.querySelectorAll('#backgroundJobs input[data-job]');
+    Array.prototype.forEach.call(jobInputs, function(input) {
+      jobs[input.getAttribute('data-job')] = !!input.checked;
+    });
     var data = await backgroundBridgeRequest('/v1/background/control', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         enabled: enabledEl ? !!enabledEl.checked : true,
         intervalSeconds: intervalValue,
+        jobs: jobs,
         runNow: !!runNow
       })
     });
@@ -750,7 +766,7 @@ async function saveBackgroundControls(runNow) {
 
 async function reviewBackgroundProposal(proposalId, action) {
   if (!proposalId) return;
-  if (action === 'approve' && !confirm('Apply this proposal to MemorySummaries?')) return;
+  if (action === 'approve' && !confirm('Apply this proposal to Eva\u2019s memory?')) return;
   try {
     await backgroundBridgeRequest('/v1/background/proposals/' + encodeURIComponent(proposalId) + '/' + action, { method: 'POST' });
     await loadBackgroundData(true);

@@ -2269,6 +2269,7 @@ def _background_status_dict():
         "lastError": _bg_last_error,
         "lastActivity": _bg_last_activity,
         "running": running,
+        "jobs": {job_type: bool(_BG_JOBS_ENABLED.get(job_type, True)) for job_type, _ in _BG_JOBS},
     }
 
 
@@ -3142,10 +3143,27 @@ class BridgeHandler(BaseHTTPRequestHandler):
         if not isinstance(data, dict):
             self._json_response(400, {"error": {"message": "Request body must be an object"}})
             return
-        unknown = sorted(set(data.keys()) - {"enabled", "intervalSeconds", "runNow"})
+        unknown = sorted(set(data.keys()) - {"enabled", "intervalSeconds", "runNow", "jobs"})
         if unknown:
             self._json_response(400, {"error": {"message": "Unsupported field(s): " + ", ".join(unknown)}})
             return
+
+        requested_jobs = None
+        if "jobs" in data:
+            jobs_value = data.get("jobs")
+            if not isinstance(jobs_value, dict):
+                self._json_response(400, {"error": {"message": "jobs must be an object of jobType -> boolean"}})
+                return
+            valid_job_types = {job_type for job_type, _ in _BG_JOBS}
+            unknown_jobs = sorted(set(jobs_value.keys()) - valid_job_types)
+            if unknown_jobs:
+                self._json_response(400, {"error": {"message": "Unknown job type(s): " + ", ".join(unknown_jobs)}})
+                return
+            for job_type, enabled in jobs_value.items():
+                if not isinstance(enabled, bool):
+                    self._json_response(400, {"error": {"message": "jobs." + job_type + " must be a boolean"}})
+                    return
+            requested_jobs = jobs_value
 
         requested_enabled = _bg_loop_enabled
         if "enabled" in data:
@@ -3185,6 +3203,9 @@ class BridgeHandler(BaseHTTPRequestHandler):
 
         _bg_loop_enabled = requested_enabled
         _bg_loop_interval_seconds = requested_interval
+        if requested_jobs is not None:
+            for job_type, enabled in requested_jobs.items():
+                _BG_JOBS_ENABLED[job_type] = bool(enabled)
         if _bg_loop_enabled:
             if not _start_bg_loop():
                 _bg_last_error = "background loop could not start"
