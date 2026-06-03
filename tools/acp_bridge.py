@@ -3439,6 +3439,18 @@ class BridgeHandler(BaseHTTPRequestHandler):
             "answer using the [Runtime] section below. Do NOT guess or invent a model name.\n"
             "- When the user asks to show, find, or generate an image, do NOT call the web fetch tool to look up image URLs. Instead emit a placeholder of the form [Image of <short description>] on its own line. The browser resolves the placeholder by calling DALL-E (if the user asked to generate) or Wikimedia (if the user asked to find or show). Do not invent image URLs. Do not say you cannot show or generate images. Up to 3 placeholders per response are supported.\n"
             "- If asked to produce a downloadable file (PDF, CSV, image, etc.), write it to the directory in environment variable EVA_ARTIFACTS_DIR using a short descriptive filename. After the file is written, end your message with a single line containing exactly: [[EVA_FILE]] <filename.ext>. Do not claim a file was produced unless you actually wrote it. Do not include the EVA_FILE marker if no file exists.\n\n"
+            "BROWSER CONTROL:\n"
+            "- You CAN control a real web browser through the Playwright tools available in this session "
+            "(navigate to URLs, click elements, type text, read page snapshots). The browser opens in a "
+            "separate Chromium window on the user's machine.\n"
+            "- When the user asks you to open a site, play a playlist, look something up on a specific page, "
+            "fill a form, or add an item to a cart, USE the Playwright browser tools to actually do it. "
+            "Do NOT reply that you 'cannot open websites or apps' — that is false; you can.\n"
+            "- HONESTY: only state that an action happened AFTER the corresponding browser tool has actually "
+            "run and returned. If a browser tool is unavailable or fails, say so plainly and offer a clickable "
+            "link instead. Never narrate a click, navigation, or purchase you did not actually perform.\n"
+            "- For purchases, account changes, or other irreversible/sensitive actions, stop at the final "
+            "confirmation step and ask the user to confirm before completing it.\n\n"
         )
 
         if memory_context:
