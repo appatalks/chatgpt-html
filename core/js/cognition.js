@@ -298,7 +298,7 @@
   // ---------------------------------------------------------------------------
   // Bridge call primitive
   // ---------------------------------------------------------------------------
-  async function callAgent(role, model, systemPrompt, conversation, taskMessage) {
+  async function callAgent(role, model, systemPrompt, conversation, taskMessage, extra) {
     var url = bridgeUrl().replace(/\/+$/, '') + '/v1/aig/chat';
     var msgs = [{ role: 'system', content: systemPrompt }];
     if (Array.isArray(conversation) && conversation.length) {
@@ -308,18 +308,22 @@
     if (taskMessage) {
       msgs.push({ role: 'user', content: taskMessage });
     }
+    var payload = {
+      messages: msgs,
+      user_message: taskMessage || '',
+      model: model,
+      lmstudio_base_url: (typeof getLmStudioBaseUrl === 'function') ? getLmStudioBaseUrl() : '',
+      lmstudio_model: (typeof getLmStudioModel === 'function') ? getLmStudioModel() : '',
+      github_pat: authPat(),
+      internal: true
+    };
+    if (extra && typeof extra === 'object') {
+      Object.keys(extra).forEach(function (k) { payload[k] = extra[k]; });
+    }
     var resp = await fetch(url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        messages: msgs,
-        user_message: taskMessage || '',
-        model: model,
-        lmstudio_base_url: (typeof getLmStudioBaseUrl === 'function') ? getLmStudioBaseUrl() : '',
-        lmstudio_model: (typeof getLmStudioModel === 'function') ? getLmStudioModel() : '',
-        github_pat: authPat(),
-        internal: true
-      })
+      body: JSON.stringify(payload)
     });
     if (!resp.ok) {
       var t = '';
@@ -387,7 +391,8 @@
       'Never simulate or describe phases. Never print PHASE headers. Just answer.'
     ].join('\n');
     var draft = await callAgent(
-      'eva', cfg.evaModel, cfg.evaPrompt, convo, draftTask
+      'eva', cfg.evaModel, cfg.evaPrompt, convo, draftTask,
+      { inject_memory: true, recall_query: userMsg }
     );
     trace.push({ role: 'eva', model: draft.model, content: draft.content });
 
@@ -442,7 +447,8 @@
         'Do not mention the review process or any internal pipeline.'
       ].join('\n');
       var revised = await callAgent(
-        'eva', cfg.evaModel, cfg.evaPrompt, convo, reviseTask
+        'eva', cfg.evaModel, cfg.evaPrompt, convo, reviseTask,
+        { inject_memory: true, recall_query: userMsg }
       );
       trace.push({
         role: 'eva', model: revised.model, content: revised.content,

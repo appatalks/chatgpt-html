@@ -3274,6 +3274,11 @@ class BridgeHandler(BaseHTTPRequestHandler):
         messages = data.get("messages", [])
         user_message = data.get("user_message", "")
         internal = bool(data.get("internal"))
+        # Cognition draft/revise stages are internal but still want memory recall.
+        # They pass the raw user turn so _build_memory_context runs on the real
+        # message instead of the wrapped task prompt.
+        inject_memory = bool(data.get("inject_memory"))
+        recall_query = (data.get("recall_query") or "").strip()
         model_for_response = data.get("model", "claude-opus-4.8")  # frontend-selectable, default claude-opus-4.8
         _set_openai_key_from(data)  # cache key for semantic recall (incl. background threads)
 
@@ -3293,8 +3298,17 @@ class BridgeHandler(BaseHTTPRequestHandler):
         # Step 1: Build memory context + proactive data retrieval
         # Skip for internal calls (cognition sub-calls already have context)
         if internal:
-            memory_context = ""
-            print("[AIG] Internal call: skipping memory injection")
+            # Cognition draft/revise stages opt in to recall via recall_query so
+            # the cognitive layer (default ON) does not bypass persistent memory.
+            if inject_memory and recall_query and _cognition_enabled:
+                memory_context = _build_memory_context(recall_query)
+                if memory_context:
+                    print(f"[AIG] Internal call: injected {len(memory_context)} chars of memory context (recall)")
+                else:
+                    print("[AIG] Internal call: recall requested but no memory context produced")
+            else:
+                memory_context = ""
+                print("[AIG] Internal call: skipping memory injection")
         else:
             memory_context = _build_memory_context(user_message) if _cognition_enabled else ""
             if memory_context:
