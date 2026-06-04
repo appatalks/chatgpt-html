@@ -1515,6 +1515,7 @@ var _vv = {
   ttsSource: null,
   ttsAnalyser: null,
   ttsDataArray: null,
+  ttsDelay: null,
   particles: [],
   hudInterval: null,
   cmdStart: 0
@@ -2014,11 +2015,37 @@ function _vvConnectTTSAnalyser() {
 
     _vv.ttsAnalyser = ctx.createAnalyser();
     _vv.ttsAnalyser.fftSize = 256;
+    // Lower smoothing than the 0.8 default so the bars track speech onsets and
+    // pauses crisply instead of lagging behind and mushing together.
+    _vv.ttsAnalyser.smoothingTimeConstant = 0.6;
     _vv.ttsDataArray = new Uint8Array(_vv.ttsAnalyser.frequencyBinCount);
-    _vv.ttsSource.connect(_vv.ttsAnalyser);
+
+    // The analyser taps the signal at the graph node, which is BEFORE the
+    // device output latency (often 80-200ms on Linux/PulseAudio). Reading it
+    // directly makes the waveform run AHEAD of the audio you hear. Route the
+    // analyser branch (only) through a DelayNode set to the output latency so
+    // the visualization lines up with the heard voice. The speaker path above
+    // stays undelayed.
+    var lat = ctx.outputLatency || ctx.baseLatency || 0;
+    lat = Math.min(0.3, Math.max(0, lat));
+    _vv.ttsDelay = ctx.createDelay(0.5);
+    _vv.ttsDelay.delayTime.value = lat;
+    _vv.ttsSource.connect(_vv.ttsDelay);
+    _vv.ttsDelay.connect(_vv.ttsAnalyser);
+
+    // outputLatency is often 0 until playback actually starts. Refine the
+    // compensation once the device reports a real value.
+    audio.addEventListener('playing', function _vvSyncDelay() {
+      audio.removeEventListener('playing', _vvSyncDelay);
+      if (!_vv.ttsDelay || !_vv.audioCtx) return;
+      var rl = _vv.audioCtx.outputLatency || _vv.audioCtx.baseLatency || 0;
+      rl = Math.min(0.3, Math.max(0, rl));
+      try { _vv.ttsDelay.delayTime.value = rl; } catch (e) {}
+    });
   } catch(e) {
     _vv.ttsAnalyser = null;
     _vv.ttsDataArray = null;
+    _vv.ttsDelay = null;
     // Recovery: guarantee the element can still reach the speakers.
     try {
       if (audio._vvSource && _vv.audioCtx) audio._vvSource.connect(_vv.audioCtx.destination);
@@ -2027,11 +2054,20 @@ function _vvConnectTTSAnalyser() {
 }
 
 function _vvDisconnectTTSAnalyser() {
+  // Tear down the analyser branch (source -> delay -> analyser). The speaker
+  // path (source -> destination) is left intact so audio keeps playing.
+  if (_vv.ttsSource && _vv.ttsDelay) {
+    try { _vv.ttsSource.disconnect(_vv.ttsDelay); } catch(e) {}
+  }
+  if (_vv.ttsDelay && _vv.ttsAnalyser) {
+    try { _vv.ttsDelay.disconnect(_vv.ttsAnalyser); } catch(e) {}
+  }
   if (_vv.ttsSource && _vv.ttsAnalyser) {
     try { _vv.ttsSource.disconnect(_vv.ttsAnalyser); } catch(e) {}
   }
   _vv.ttsAnalyser = null;
   _vv.ttsDataArray = null;
+  _vv.ttsDelay = null;
 }
 
 // --- Voice recognition ---
