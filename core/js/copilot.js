@@ -396,6 +396,28 @@ function _copilotHandleFetchError(err, txtOutput) {
 
 // --- MCP Configuration ---
 
+// Populate the Settings MCP form fields from a saved config object. Shared by the
+// DOMContentLoaded loader and the bridge-restore path so both stay in sync.
+function populateMCPForm(cfg) {
+  if (!cfg || typeof cfg !== 'object') return;
+  var azureCheck = document.getElementById('mcpAzure');
+  var githubCheck = document.getElementById('mcpGitHub');
+  if (azureCheck) azureCheck.checked = !!cfg['azure-mcp-server'];
+  if (githubCheck) githubCheck.checked = !!cfg['github-mcp-server'];
+  var kustoCheckL = document.getElementById('mcpKusto');
+  if (kustoCheckL) kustoCheckL.checked = !!cfg['kusto-mcp-server'];
+  if (cfg['kusto-mcp-server'] && cfg['kusto-mcp-server'].env) {
+    var kc = document.getElementById('mcpKustoCluster');
+    var kd = document.getElementById('mcpKustoDatabase');
+    if (kc && cfg['kusto-mcp-server'].env.KUSTO_CLUSTER_URL) kc.value = cfg['kusto-mcp-server'].env.KUSTO_CLUSTER_URL;
+    if (kd && cfg['kusto-mcp-server'].env.KUSTO_DATABASE) kd.value = cfg['kusto-mcp-server'].env.KUSTO_DATABASE;
+  }
+  var kustoConfig = document.getElementById('mcpKustoConfig');
+  if (kustoCheckL && kustoConfig) {
+    kustoConfig.style.display = kustoCheckL.checked ? 'block' : 'none';
+  }
+}
+
 // Re-apply the saved MCP config to a freshly started bridge.
 // The bridge is a new process on every launch with no MCP servers configured,
 // so without this the user would have to re-Configure Kusto/Azure/GitHub MCP
@@ -408,6 +430,28 @@ async function autoApplySavedMCPConfig() {
   } catch (e) {
     saved = null;
   }
+
+  // localStorage lives under the Electron file:// origin and is wiped across some
+  // app rebuilds/restarts. When it is empty, restore from the bridge's persisted
+  // copy (secrets stripped) so the user does not have to reconfigure MCP.
+  if (!saved || typeof saved !== 'object' || Object.keys(saved).length === 0) {
+    try {
+      var bridgeForRestore = await detectACPBridge();
+      var cfgResp = await fetch(bridgeForRestore.replace(/\/+$/, '') + '/v1/mcp/config');
+      if (cfgResp.ok) {
+        var cfgData = await cfgResp.json();
+        var restored = cfgData && cfgData.mcp_servers;
+        if (restored && typeof restored === 'object' && Object.keys(restored).length > 0) {
+          saved = restored;
+          localStorage.setItem('mcp_config', JSON.stringify(saved));
+          populateMCPForm(saved);
+        }
+      }
+    } catch (e) {
+      // Bridge not ready or no persisted config; nothing to restore.
+    }
+  }
+
   if (!saved || typeof saved !== 'object' || Object.keys(saved).length === 0) return;
 
   // The standalone window only loads after the bridge reports healthy, but allow
@@ -690,20 +734,7 @@ document.addEventListener('DOMContentLoaded', function() {
   try {
     var saved = localStorage.getItem('mcp_config');
     if (saved) {
-      var cfg = JSON.parse(saved);
-      var azureCheck = document.getElementById('mcpAzure');
-      var githubCheck = document.getElementById('mcpGitHub');
-      if (azureCheck) azureCheck.checked = !!cfg['azure-mcp-server'];
-      if (githubCheck) githubCheck.checked = !!cfg['github-mcp-server'];
-      // Kusto
-      var kustoCheckL = document.getElementById('mcpKusto');
-      if (kustoCheckL) kustoCheckL.checked = !!cfg['kusto-mcp-server'];
-      if (cfg['kusto-mcp-server'] && cfg['kusto-mcp-server'].env) {
-        var kc = document.getElementById('mcpKustoCluster');
-        var kd = document.getElementById('mcpKustoDatabase');
-        if (kc && cfg['kusto-mcp-server'].env.KUSTO_CLUSTER_URL) kc.value = cfg['kusto-mcp-server'].env.KUSTO_CLUSTER_URL;
-        if (kd && cfg['kusto-mcp-server'].env.KUSTO_DATABASE) kd.value = cfg['kusto-mcp-server'].env.KUSTO_DATABASE;
-      }
+      populateMCPForm(JSON.parse(saved));
     }
   } catch (e) {}
 
