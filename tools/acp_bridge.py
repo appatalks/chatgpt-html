@@ -580,6 +580,21 @@ def _split_kusto_seed_blocks(seed_text):
     return blocks
 
 
+def _is_kusto_schema_block(block):
+    """True when a seed block defines a table rather than ingesting rows.
+
+    Used by the schema-only seed path so existing databases can be backfilled
+    with any missing tables without re-ingesting (and duplicating) seed rows.
+    """
+    first_line = ""
+    for line in (block or "").splitlines():
+        stripped = line.strip()
+        if stripped:
+            first_line = stripped.lower()
+            break
+    return first_line.startswith(".create")
+
+
 def _env_truthy(name):
     """Return True when an environment flag uses the shared truthy form."""
     return os.environ.get(name, "").strip().lower() in ("1", "true", "yes")
@@ -852,6 +867,53 @@ _GOALS_LATEST_QUERY = (
 )
 _BG_JOB_TYPE = "memory_consolidation"
 _BG_TARGET_TABLE = "MemorySummaries"
+# Additional automation job types dispatched by the background tick.
+_BG_JOB_GOAL_CHECKIN = "goal_checkin"
+_BG_JOB_DAILY_DIGEST = "daily_digest"
+_BG_JOB_KNOWLEDGE_HYGIENE = "knowledge_hygiene"
+_BG_JOB_REFLECTION_SYNTHESIS = "reflection_synthesis"
+_BG_JOB_EMOTION_DRIFT = "emotion_drift"
+_BG_JOB_TOKEN_TELEMETRY = "token_telemetry"
+_BG_JOB_PROACTIVE_BRIEFING = "proactive_briefing"
+_BG_JOB_MARKET_SNAPSHOT = "market_snapshot"
+_BG_JOB_SEC_FILINGS = "sec_filing_watch"
+_BG_JOB_SPACE_WEATHER = "space_weather_alert"
+_BG_JOB_RESEARCH_DEEPDIVE = "research_deepdive"
+# Per-job enable switches. All on by default; the loop still respects the
+# global _bg_loop_enabled flag and the recent-activity pause.
+_BG_JOBS_ENABLED = {
+    _BG_JOB_TYPE: True,
+    _BG_JOB_GOAL_CHECKIN: True,
+    _BG_JOB_DAILY_DIGEST: True,
+    _BG_JOB_KNOWLEDGE_HYGIENE: True,
+    _BG_JOB_REFLECTION_SYNTHESIS: True,
+    _BG_JOB_EMOTION_DRIFT: True,
+    _BG_JOB_TOKEN_TELEMETRY: True,
+    _BG_JOB_PROACTIVE_BRIEFING: True,
+    _BG_JOB_MARKET_SNAPSHOT: True,
+    _BG_JOB_SEC_FILINGS: True,
+    _BG_JOB_SPACE_WEATHER: True,
+    _BG_JOB_RESEARCH_DEEPDIVE: True,
+}
+# Target tables the approve/apply path knows how to write.
+_BG_APPLY_TABLES = {"MemorySummaries", "Reflections"}
+# Goal check-in tuning: a goal is "stalled" after this many days without an
+# update, and at most this many nudges are proposed per tick.
+_GOAL_STALE_DAYS = 3
+_GOAL_CHECKIN_MAX = 2
+# Tuning for the analytical hygiene/drift jobs.
+_KNOWLEDGE_STALE_CONFIDENCE = 0.3
+_EMOTION_DRIFT_THRESHOLD = 0.15
+_REFLECTION_SYNTH_MIN = 3
+# Symbols the SEC filing and market jobs watch by default (plus any tickers
+# mentioned in active finance goals). Uppercase tickers, no exchange prefix.
+_SEC_WATCH_SYMBOLS = ["PLG", "PKX"]
+# Uppercase tokens that look like tickers but are not, used to filter the
+# heuristic ticker extraction from goal text.
+_TICKER_STOPWORDS = {
+    "SEC", "CEO", "CFO", "COO", "ETF", "USA", "USD", "API", "PLC", "LLC", "INC",
+    "NYSE", "IPO", "EPS", "GDP", "FDA", "ESG", "AND", "THE", "FOR", "ESPP", "AI",
+}
 _BG_PROPOSAL_STATUSES = {"pending", "approved", "rejected", "applying", "applied", "failed"}
 _BG_ACTIVITY_STATUSES = {"succeeded", "failed", "paused", "skipped"}
 _BG_PROPOSAL_COLUMNS = [
@@ -2236,7 +2298,16 @@ def _parse_kusto_datetime(value):
 
 
 def _safe_kusto_string(value):
-    return str(value or "").replace("'", "''")
+    # Escape for embedding inside a single-quoted KQL string literal. Backslash
+    # must be escaped first, then quotes and control characters, so free-form
+    # text (agent summaries, observations) with newlines does not produce a
+    # malformed query. KQL parses these escapes back to the original value, so
+    # equality filters still match.
+    s = str(value or "")
+    s = s.replace("\\", "\\\\")
+    s = s.replace("'", "\\'")
+    s = s.replace("\n", "\\n").replace("\r", "\\r").replace("\t", "\\t")
+    return s
 
 
 def _mark_user_activity():
@@ -2253,6 +2324,7 @@ def _background_status_dict():
         "lastError": _bg_last_error,
         "lastActivity": _bg_last_activity,
         "running": running,
+        "jobs": {job_type: bool(_BG_JOBS_ENABLED.get(job_type, True)) for job_type, _ in _BG_JOBS},
     }
 
 
@@ -2278,12 +2350,12 @@ def _set_background_activity(row, error_text=""):
     _bg_last_error = error_text or ""
 
 
-def _record_background_activity(cluster, database, tick_id, started_at, ended_at, status, proposal_count, token_estimate, notes):
+def _record_background_activity(cluster, database, tick_id, started_at, ended_at, status, proposal_count, token_estimate, notes, job_type=_BG_JOB_TYPE):
     row = {
         "TickId": tick_id,
         "StartedAt": _to_utc_iso(started_at),
         "EndedAt": _to_utc_iso(ended_at),
-        "JobType": _BG_JOB_TYPE,
+        "JobType": job_type,
         "Status": status,
         "ProposalCount": int(proposal_count or 0),
         "TokenEstimate": int(token_estimate or 0),
@@ -2388,6 +2460,640 @@ def _background_memory_summary_exists(cluster, database, summary_row):
     return bool(rows), ""
 
 
+def _apply_proposal_payload(cluster, database, target_table, payload):
+    """Apply a background proposal payload to its target table.
+
+    Returns (ok, error, note). Used by both the auto-apply path inside a tick
+    and the manual approve endpoint, so the apply logic lives in one place.
+    """
+    if not isinstance(payload, dict):
+        return False, "proposal payload missing or not an object", ""
+    if target_table == "MemorySummaries":
+        summary_row = {
+            "Period": str(payload.get("Period", "") or ""),
+            "Summary": str(payload.get("Summary", "") or ""),
+            "Timestamp": str(payload.get("Timestamp", "") or ""),
+        }
+        if not summary_row["Period"] or not summary_row["Summary"] or not summary_row["Timestamp"]:
+            return False, "Proposal payload must include Period, Summary, and Timestamp", ""
+        parsed_timestamp = _parse_kusto_datetime(summary_row["Timestamp"])
+        if not parsed_timestamp:
+            return False, "Proposal payload Timestamp must be a valid datetime", ""
+        summary_row["Timestamp"] = _to_utc_iso(parsed_timestamp)
+        summary_exists, error = _background_memory_summary_exists(cluster, database, summary_row)
+        if error:
+            return False, error, ""
+        if not summary_exists and not _kusto_ingest_direct(cluster, database, "MemorySummaries", ["Period", "Summary", "Timestamp"], [summary_row]):
+            return False, "MemorySummaries write failed", ""
+        return True, "", "applied to MemorySummaries"
+    if target_table == "Reflections":
+        observation = str(payload.get("Observation", "") or "").strip()
+        if not observation:
+            return False, "Reflection payload must include Observation", ""
+        parsed_timestamp = _parse_kusto_datetime(payload.get("Timestamp")) or _utc_now()
+        try:
+            effectiveness = float(payload.get("Effectiveness", 0.0) or 0.0)
+        except (TypeError, ValueError):
+            effectiveness = 0.0
+        reflection_row = {
+            "Timestamp": _to_utc_iso(parsed_timestamp),
+            "Trigger": str(payload.get("Trigger", "") or "")[:200],
+            "Observation": observation[:1000],
+            "ActionTaken": str(payload.get("ActionTaken", "") or "")[:500],
+            "Effectiveness": effectiveness,
+        }
+        if not _kusto_ingest_direct(cluster, database, "Reflections", ["Timestamp", "Trigger", "Observation", "ActionTaken", "Effectiveness"], [reflection_row]):
+            return False, "Reflections write failed", ""
+        return True, "", "applied to Reflections"
+    return False, "Unsupported proposal target table", ""
+
+
+def _create_background_proposal_row(job_type, target_table, payload, window_start, window_end, notes, status="pending"):
+    now_iso = _to_utc_iso(_utc_now())
+    return {
+        "ProposalId": "bgp-" + str(uuid.uuid4()),
+        "CreatedAt": now_iso,
+        "JobType": job_type,
+        "TargetTable": target_table,
+        "Payload": payload,
+        "Status": status,
+        "SourceWindowStart": _to_utc_iso(window_start),
+        "SourceWindowEnd": _to_utc_iso(window_end),
+        "Notes": str(notes or "")[:500],
+        "ReviewedAt": "",
+        "ReviewedBy": "",
+    }
+
+
+def _existing_goal_checkin_ids(cluster, database):
+    """GoalIds that already have a pending goal check-in proposal (dedup)."""
+    query = _BG_PROPOSALS_LATEST_QUERY + f" | where Status == 'pending' | where JobType == '{_BG_JOB_GOAL_CHECKIN}' | take 100"
+    rows = _kusto_query_direct(cluster, database, query) or []
+    ids = set()
+    for row in rows:
+        payload, _ = _background_proposal_payload(row)
+        if isinstance(payload, dict) and payload.get("GoalId"):
+            ids.add(str(payload.get("GoalId")))
+    return ids
+
+
+def _build_daily_digest(conversation_rows, goal_rows, period):
+    user_rows = [row for row in conversation_rows if str(row.get("Role", "")).lower() == "user"]
+    assistant_rows = [row for row in conversation_rows if str(row.get("Role", "")).lower() == "assistant"]
+    topics = _background_summary_topics(user_rows)
+    topics_text = ", ".join(topics) if topics else "general conversation"
+    active_goals = [g for g in (goal_rows or []) if str(g.get("Status", "")).lower() == "active"]
+    goal_titles = [str(g.get("Title", "") or "untitled").strip() for g in active_goals[:3]]
+    if active_goals:
+        goals_text = f"{len(active_goals)} active goal(s)"
+        if goal_titles:
+            goals_text += " (" + "; ".join(goal_titles) + ")"
+    else:
+        goals_text = "no active goals"
+    digest = (
+        f"Daily digest for {period}: {len(user_rows)} user message(s) and "
+        f"{len(assistant_rows)} assistant reply(ies). Top topics: {topics_text}. "
+        f"Goals: {goals_text}."
+    )
+    return digest[:800]
+
+
+def _job_memory_consolidation(ctx):
+    conversation_rows = _query_background_conversations(ctx["cluster"], ctx["database"], ctx["window_start"], ctx["window_end"])
+    if conversation_rows is None:
+        return None, "Conversations query failed"
+    if not conversation_rows:
+        return [], "no conversations in source window"
+    summary_text = _build_background_summary(conversation_rows)
+    payload = {
+        "Period": "background-" + ctx["now_iso"][:10],
+        "Summary": summary_text,
+        "Timestamp": ctx["now_iso"],
+    }
+    return [{
+        "target_table": "MemorySummaries",
+        "payload": payload,
+        "auto_apply": False,
+        "notes": f"from {len(conversation_rows)} conversation row(s)",
+    }], f"proposal from {len(conversation_rows)} conversation row(s)"
+
+
+def _job_goal_checkin(ctx):
+    goal_rows = _kusto_query_direct(ctx["cluster"], ctx["database"], _GOALS_LATEST_QUERY)
+    if goal_rows is None:
+        return None, "Goals query failed"
+    active_goals = [g for g in goal_rows if str(g.get("Status", "")).lower() == "active"]
+    if not active_goals:
+        return [], "no active goals"
+    existing_ids = _existing_goal_checkin_ids(ctx["cluster"], ctx["database"])
+    now = _utc_now()
+    stalled = []
+    for goal in active_goals:
+        goal_id = str(goal.get("GoalId", "") or "")
+        if not goal_id or goal_id in existing_ids:
+            continue
+        updated = _parse_kusto_datetime(goal.get("UpdatedAt"))
+        age_days = (now - updated).days if updated else 999
+        if age_days >= _GOAL_STALE_DAYS:
+            stalled.append((age_days, goal))
+    if not stalled:
+        return [], "no stalled active goals"
+    stalled.sort(key=lambda item: -item[0])
+    proposals = []
+    for age_days, goal in stalled[:_GOAL_CHECKIN_MAX]:
+        title = str(goal.get("Title", "") or "untitled goal").strip()
+        category = str(goal.get("Category", "") or "").strip()
+        observation = (
+            f"Goal '{title}'" + (f" ({category})" if category else "") +
+            f" has had no updates for {age_days} day(s). Suggest a concrete next step "
+            "or update its status so it keeps moving."
+        )
+        payload = {
+            "Timestamp": ctx["now_iso"],
+            "Trigger": "goal_checkin:" + str(goal.get("GoalId")),
+            "Observation": observation,
+            "ActionTaken": "",
+            "Effectiveness": 0.0,
+            "GoalId": str(goal.get("GoalId")),
+        }
+        proposals.append({
+            "target_table": "Reflections",
+            "payload": payload,
+            "auto_apply": False,
+            "notes": f"stalled goal '{title}' ({age_days}d)",
+        })
+    return proposals, f"{len(proposals)} goal check-in(s)"
+
+
+def _job_daily_digest(ctx):
+    cluster, database = ctx["cluster"], ctx["database"]
+    now = _utc_now()
+    day_start = (now - datetime.timedelta(days=1)).replace(hour=0, minute=0, second=0, microsecond=0)
+    day_end = now.replace(hour=0, minute=0, second=0, microsecond=0)
+    period = "digest-" + _to_utc_iso(day_start)[:10]
+    existing = _kusto_query_direct(cluster, database, f"MemorySummaries | where Period == '{_safe_kusto_string(period)}' | take 1")
+    if existing:
+        return [], "digest already exists for " + period
+    conversation_rows = _query_background_conversations(cluster, database, day_start, day_end)
+    if conversation_rows is None:
+        return None, "Conversations query failed"
+    if not conversation_rows:
+        return [], "no conversations for " + period
+    goal_rows = _kusto_query_direct(cluster, database, _GOALS_LATEST_QUERY) or []
+    digest_text = _build_daily_digest(conversation_rows, goal_rows, period)
+    payload = {
+        "Period": period,
+        "Summary": digest_text,
+        "Timestamp": ctx["now_iso"],
+    }
+    return [{
+        "target_table": "MemorySummaries",
+        "payload": payload,
+        "auto_apply": True,
+        "notes": f"daily digest from {len(conversation_rows)} conversation row(s)",
+    }], "daily digest for " + period
+
+
+def _bg_to_float(value, default=0.0):
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return default
+
+
+def _bg_to_int(value, default=0):
+    try:
+        return int(round(float(value)))
+    except (TypeError, ValueError):
+        return default
+
+
+def _pending_proposal_exists(cluster, database, job_type):
+    """True when a pending proposal already exists for job_type (dedup guard)."""
+    query = _BG_PROPOSALS_LATEST_QUERY + f" | where Status == 'pending' | where JobType == '{job_type}' | take 1"
+    rows = _kusto_query_direct(cluster, database, query)
+    return bool(rows)
+
+
+def _bg_agent_prompt(prompt_text, ctx, timeout=120):
+    """Run a background-only prompt through the ACP agent.
+
+    Returns (text, error). Bails out if the user became active mid-tick so a
+    background research call never collides with a live chat turn. Scheduled
+    ticks already pause on recent activity, but agent jobs run later in the
+    tick, so this re-checks just before the (slow) model call.
+    """
+    if ctx.get("trigger") != "manual" and time.time() - _last_user_activity_ts < 120:
+        return None, "user active"
+    if acp_client is None or not getattr(acp_client, "alive", False):
+        return None, "agent unavailable"
+    try:
+        result = acp_client.prompt(prompt_text, timeout=timeout)
+    except Exception as agent_error:
+        return None, "agent error: " + str(agent_error)[:200]
+    if isinstance(result, dict):
+        if result.get("error"):
+            return None, "agent error: " + str(result.get("error"))[:200]
+        text = str(result.get("text", "") or "").strip()
+        if not text:
+            return None, "agent returned no text"
+        return text, ""
+    return None, "agent returned no result"
+
+
+def _bg_watched_tickers(goal_rows):
+    """Default watch symbols plus tickers mentioned in active finance goals."""
+    tickers = []
+    seen = set()
+    for symbol in _SEC_WATCH_SYMBOLS:
+        if symbol not in seen:
+            seen.add(symbol)
+            tickers.append(symbol)
+    for goal in goal_rows or []:
+        if str(goal.get("Status", "")).lower() != "active":
+            continue
+        text = " ".join([
+            str(goal.get("Title", "") or ""),
+            str(goal.get("RelatedTopics", "") or ""),
+            str(goal.get("Description", "") or ""),
+        ])
+        if not re.search(r"\b(ticker|symbol|stock|shares?|equit)\b", text, re.IGNORECASE):
+            continue
+        for match_text in re.findall(r"\b([A-Z]{2,5})\b", text):
+            if match_text in _TICKER_STOPWORDS or match_text in seen:
+                continue
+            seen.add(match_text)
+            tickers.append(match_text)
+    return tickers[:8]
+
+
+def _job_knowledge_hygiene(ctx):
+    cluster, database = ctx["cluster"], ctx["database"]
+    if not _get_table_columns(cluster, database, "Knowledge"):
+        return [], "no Knowledge table"
+    if _pending_proposal_exists(cluster, database, _BG_JOB_KNOWLEDGE_HYGIENE):
+        return [], "hygiene proposal already pending"
+    rows = _kusto_query_direct(cluster, database, "Knowledge | project Entity, Relation, Value, Confidence | take 2000")
+    if rows is None:
+        return None, "Knowledge query failed"
+    if not rows:
+        return [], "no knowledge rows"
+    stale = [r for r in rows if _bg_to_float(r.get("Confidence"), 1.0) < _KNOWLEDGE_STALE_CONFIDENCE]
+    seen = {}
+    dups = []
+    for r in rows:
+        key = (str(r.get("Entity", "")).strip().lower(), str(r.get("Relation", "")).strip().lower())
+        if not key[0]:
+            continue
+        if key in seen:
+            dups.append(r)
+        else:
+            seen[key] = r
+    if not stale and not dups:
+        return [], "knowledge healthy"
+    parts = []
+    if stale:
+        sample = ", ".join(f"{r.get('Entity')}/{r.get('Relation')}" for r in stale[:5])
+        parts.append(f"{len(stale)} low-confidence fact(s) under {_KNOWLEDGE_STALE_CONFIDENCE} (e.g. {sample})")
+    if dups:
+        sample = ", ".join(f"{r.get('Entity')}/{r.get('Relation')}" for r in dups[:5])
+        parts.append(f"{len(dups)} duplicate entity/relation pair(s) (e.g. {sample})")
+    observation = (
+        "Knowledge hygiene: " + "; ".join(parts) +
+        ". Review whether to prune the stale facts or merge the duplicates so memory stays accurate."
+    )
+    payload = {
+        "Timestamp": ctx["now_iso"],
+        "Trigger": "knowledge_hygiene",
+        "Observation": observation[:1000],
+        "ActionTaken": "",
+        "Effectiveness": 0.0,
+    }
+    return [{
+        "target_table": "Reflections",
+        "payload": payload,
+        "auto_apply": False,
+        "notes": f"{len(stale)} stale, {len(dups)} dup",
+    }], "knowledge hygiene report"
+
+
+def _job_reflection_synthesis(ctx):
+    cluster, database = ctx["cluster"], ctx["database"]
+    if not _get_table_columns(cluster, database, "Reflections"):
+        return [], "no Reflections table"
+    start_iso = _to_utc_iso(ctx["window_start"])
+    query = (
+        "Reflections "
+        f"| where Timestamp >= datetime('{start_iso}') "
+        "| where Trigger != 'reflection_synthesis' "
+        "| order by Timestamp asc | take 100 | project Timestamp, Trigger, Observation"
+    )
+    rows = _kusto_query_direct(cluster, database, query)
+    if rows is None:
+        return None, "Reflections query failed"
+    if len(rows) < _REFLECTION_SYNTH_MIN:
+        return [], "not enough new reflections"
+    trigger_counts = {}
+    for r in rows:
+        label = str(r.get("Trigger", "") or "general").split(":")[0]
+        trigger_counts[label] = trigger_counts.get(label, 0) + 1
+    top = sorted(trigger_counts.items(), key=lambda item: -item[1])[:4]
+    theme = ", ".join(f"{label} ({count})" for label, count in top)
+    observation = (
+        f"Reflection synthesis over {len(rows)} recent reflection(s). Recurring themes: {theme}. "
+        "Recording this pattern for self-awareness across sessions."
+    )
+    payload = {
+        "Timestamp": ctx["now_iso"],
+        "Trigger": "reflection_synthesis",
+        "Observation": observation[:1000],
+        "ActionTaken": "",
+        "Effectiveness": 0.0,
+    }
+    return [{
+        "target_table": "Reflections",
+        "payload": payload,
+        "auto_apply": True,
+        "notes": f"synthesized {len(rows)} reflection(s)",
+    }], "reflection synthesis"
+
+
+def _job_emotion_drift(ctx):
+    cluster, database = ctx["cluster"], ctx["database"]
+    if not _get_table_columns(cluster, database, "EmotionState"):
+        return [], "no EmotionState table"
+    if _pending_proposal_exists(cluster, database, _BG_JOB_EMOTION_DRIFT):
+        return [], "drift proposal already pending"
+    dims = ["Joy", "Curiosity", "Concern", "Excitement", "Calm", "Empathy"]
+    agg = (
+        "EmotionState | where Timestamp >= ago(7d) | summarize "
+        + ", ".join(f"avg{d}=avg({d})" for d in dims)
+        + ", N=count()"
+    )
+    rows = _kusto_query_direct(cluster, database, agg)
+    if rows is None:
+        return None, "EmotionState query failed"
+    if not rows or _bg_to_int(rows[0].get("N")) < 5:
+        return [], "not enough emotion samples"
+    base_rows = _kusto_query_direct(cluster, database, "EmotionBaseline | project Dimension, Value") or []
+    baseline = {str(b.get("Dimension")): _bg_to_float(b.get("Value")) for b in base_rows}
+    drifts = []
+    for d in dims:
+        recent = _bg_to_float(rows[0].get("avg" + d))
+        base = baseline.get(d)
+        if base is None:
+            continue
+        delta = recent - base
+        if abs(delta) >= _EMOTION_DRIFT_THRESHOLD:
+            sign = "+" if delta >= 0 else ""
+            drifts.append(f"{d} {sign}{round(delta, 2)} (now {round(recent, 2)} vs base {round(base, 2)})")
+    if not drifts:
+        return [], "emotion within baseline"
+    observation = (
+        "Emotion baseline drift over the last 7 day(s): " + "; ".join(drifts) +
+        ". Consider whether the resting baseline should be recalibrated."
+    )
+    payload = {
+        "Timestamp": ctx["now_iso"],
+        "Trigger": "emotion_drift",
+        "Observation": observation[:1000],
+        "ActionTaken": "",
+        "Effectiveness": 0.0,
+    }
+    return [{
+        "target_table": "Reflections",
+        "payload": payload,
+        "auto_apply": False,
+        "notes": f"{len(drifts)} dimension(s) drifted",
+    }], "emotion drift"
+
+
+def _job_token_telemetry(ctx):
+    cluster, database = ctx["cluster"], ctx["database"]
+    period = "telemetry-" + ctx["now_iso"][:10]
+    existing = _kusto_query_direct(cluster, database, f"MemorySummaries | where Period == '{_safe_kusto_string(period)}' | take 1")
+    if existing:
+        return [], "telemetry already logged for " + period
+    query = (
+        "Conversations | where Timestamp >= ago(1d) | summarize "
+        "Total=sum(TokenEstimate), N=count(), "
+        "Users=countif(Role=='user'), Assistants=countif(Role=='assistant')"
+    )
+    rows = _kusto_query_direct(cluster, database, query)
+    if rows is None:
+        return None, "Conversations query failed"
+    row = rows[0] if rows else {}
+    total = _bg_to_int(row.get("Total"))
+    count = _bg_to_int(row.get("N"))
+    if count == 0:
+        return [], "no conversation activity to log"
+    summary = (
+        f"Token telemetry for {period[10:]}: ~{total} tokens across {count} message(s) "
+        f"({_bg_to_int(row.get('Users'))} user, {_bg_to_int(row.get('Assistants'))} assistant)."
+    )
+    payload = {"Period": period, "Summary": summary[:800], "Timestamp": ctx["now_iso"]}
+    return [{
+        "target_table": "MemorySummaries",
+        "payload": payload,
+        "auto_apply": True,
+        "notes": f"{total} tokens / {count} msgs",
+    }], "token telemetry"
+
+
+def _job_proactive_briefing(ctx):
+    cluster, database = ctx["cluster"], ctx["database"]
+    period = "briefing-" + ctx["now_iso"][:10]
+    existing = _kusto_query_direct(cluster, database, f"MemorySummaries | where Period == '{_safe_kusto_string(period)}' | take 1")
+    if existing:
+        return [], "briefing already exists for " + period
+    recent = _kusto_query_direct(
+        cluster, database,
+        "MemorySummaries | where Timestamp >= ago(3d) | where Period !startswith 'briefing-' "
+        "| order by Timestamp desc | take 8 | project Period, Summary"
+    ) or []
+    goal_rows = _kusto_query_direct(cluster, database, _GOALS_LATEST_QUERY) or []
+    active = [g for g in goal_rows if str(g.get("Status", "")).lower() == "active"]
+    convo = _kusto_query_direct(cluster, database, "Conversations | summarize Last=max(Timestamp)") or []
+    last_seen = _parse_kusto_datetime(convo[0].get("Last")) if convo else None
+    lines = []
+    if last_seen:
+        gap_days = (_utc_now() - last_seen).days
+        lines.append(f"About {gap_days} day(s) since our last exchange." if gap_days >= 1 else "We spoke recently.")
+    if active:
+        titles = "; ".join(str(g.get("Title", "") or "untitled") for g in active[:3])
+        lines.append(f"{len(active)} active goal(s): {titles}.")
+    if recent:
+        notes = "; ".join(str(r.get("Summary", "") or "")[:80] for r in recent[:3])
+        lines.append("Recent notes: " + notes)
+    if not lines:
+        return [], "nothing to brief"
+    briefing = "Proactive briefing: " + " ".join(lines)
+    payload = {"Period": period, "Summary": briefing[:800], "Timestamp": ctx["now_iso"]}
+    return [{
+        "target_table": "MemorySummaries",
+        "payload": payload,
+        "auto_apply": True,
+        "notes": "proactive briefing",
+    }], "proactive briefing"
+
+
+def _job_market_snapshot(ctx):
+    cluster, database = ctx["cluster"], ctx["database"]
+    period = "market-" + ctx["now_iso"][:10]
+    existing = _kusto_query_direct(cluster, database, f"MemorySummaries | where Period == '{_safe_kusto_string(period)}' | take 1")
+    if existing:
+        return [], "market snapshot already exists for " + period
+    goal_rows = _kusto_query_direct(cluster, database, _GOALS_LATEST_QUERY) or []
+    tickers = _bg_watched_tickers(goal_rows)
+    if not tickers:
+        return [], "no watched tickers"
+    prompt = (
+        "Background task (no user is present). Provide a concise daily market snapshot for these ticker symbols: "
+        + ", ".join(tickers) + ". For each symbol give the latest price, daily change percent, and volume if you can. "
+        "Two short lines per symbol at most. If a symbol is unknown, say so. Plain text only."
+    )
+    text, error = _bg_agent_prompt(prompt, ctx, timeout=120)
+    if text is None:
+        return [], "agent: " + error
+    summary = ("Market snapshot for " + ", ".join(tickers) + ":\n" + text)[:800]
+    payload = {"Period": period, "Summary": summary, "Timestamp": ctx["now_iso"]}
+    return [{
+        "target_table": "MemorySummaries",
+        "payload": payload,
+        "auto_apply": True,
+        "notes": "tickers " + ",".join(tickers),
+    }], "market snapshot"
+
+
+def _job_sec_filing_watch(ctx):
+    cluster, database = ctx["cluster"], ctx["database"]
+    if _pending_proposal_exists(cluster, database, _BG_JOB_SEC_FILINGS):
+        return [], "sec proposal already pending"
+    symbols = _SEC_WATCH_SYMBOLS
+    prompt = (
+        "Background task (no user is present). Check the most recent SEC EDGAR filings for these companies by ticker: "
+        + ", ".join(symbols) + ". List only filings from the last 7 days: form type, date, and a one-line description. "
+        "If a symbol has no filing in the last 7 days, write 'none recent' for it. Plain text only, be brief."
+    )
+    text, error = _bg_agent_prompt(prompt, ctx, timeout=120)
+    if text is None:
+        return [], "agent: " + error
+    residual = text.lower().replace("none recent", "")
+    if not re.search(r"\b(10-?k|10-?q|8-?k|6-?k|s-1|20-?f|form|filed)\b", residual):
+        return [], "no recent filings"
+    observation = ("SEC filing watch for " + ", ".join(symbols) + ":\n" + text)[:1000]
+    payload = {
+        "Timestamp": ctx["now_iso"],
+        "Trigger": "sec_filing_watch",
+        "Observation": observation,
+        "ActionTaken": "",
+        "Effectiveness": 0.0,
+    }
+    return [{
+        "target_table": "Reflections",
+        "payload": payload,
+        "auto_apply": False,
+        "notes": "sec " + ",".join(symbols),
+    }], "sec filing watch"
+
+
+def _job_space_weather_alert(ctx):
+    cluster, database = ctx["cluster"], ctx["database"]
+    period = "spaceweather-" + ctx["now_iso"][:10]
+    existing = _kusto_query_direct(cluster, database, f"MemorySummaries | where Period == '{_safe_kusto_string(period)}' | take 1")
+    if existing:
+        return [], "space weather already logged for " + period
+    prompt = (
+        "Background task (no user is present). Report current space weather using NOAA SWPC: the latest planetary Kp "
+        "index and any active geomagnetic storm (G-scale), solar flare (R-scale), or radiation (S-scale) alerts. "
+        "Start your reply with 'ALERT:' if any level is at or above moderate (Kp 5+, G1+, R1+, or S1+); "
+        "otherwise start with 'QUIET:'. Then one or two short lines. Plain text only."
+    )
+    text, error = _bg_agent_prompt(prompt, ctx, timeout=90)
+    if text is None:
+        return [], "agent: " + error
+    if not text.strip().upper().startswith("ALERT"):
+        return [], "space weather quiet"
+    summary = ("Space weather alert:\n" + text)[:800]
+    payload = {"Period": period, "Summary": summary, "Timestamp": ctx["now_iso"]}
+    return [{
+        "target_table": "MemorySummaries",
+        "payload": payload,
+        "auto_apply": True,
+        "notes": "space weather alert",
+    }], "space weather alert"
+
+
+def _job_research_deepdive(ctx):
+    cluster, database = ctx["cluster"], ctx["database"]
+    goal_rows = _kusto_query_direct(cluster, database, _GOALS_LATEST_QUERY)
+    if goal_rows is None:
+        return None, "Goals query failed"
+    active = [g for g in goal_rows if str(g.get("Status", "")).lower() == "active"]
+    if not active:
+        return [], "no active goals"
+    active.sort(key=lambda g: (0 if str(g.get("Category", "")) == "knowledge_curation" else 1, -_bg_to_int(g.get("Priority"))))
+    recent = _kusto_query_direct(
+        cluster, database,
+        "Reflections | where Timestamp >= ago(3d) | where Trigger startswith 'research_deepdive' | project Trigger"
+    ) or []
+    done_ids = set()
+    for r in recent:
+        label = str(r.get("Trigger", ""))
+        if ":" in label:
+            done_ids.add(label.split(":", 1)[1])
+    target = None
+    for goal in active:
+        if str(goal.get("GoalId", "")) not in done_ids:
+            target = goal
+            break
+    if target is None:
+        return [], "all active goals researched recently"
+    title = str(target.get("Title", "") or "untitled").strip()
+    description = str(target.get("Description", "") or "").strip()
+    prompt = (
+        "Background task (no user is present). Do a brief research deep-dive supporting this goal: '" + title + "'. "
+        + (description[:300] + " " if description else "")
+        + "Provide 3 to 5 concise factual bullet points or concrete next steps that move this goal forward. Plain text only."
+    )
+    text, error = _bg_agent_prompt(prompt, ctx, timeout=150)
+    if text is None:
+        return [], "agent: " + error
+    observation = (f"Research deep-dive for goal '{title}':\n" + text)[:1000]
+    payload = {
+        "Timestamp": ctx["now_iso"],
+        "Trigger": "research_deepdive:" + str(target.get("GoalId")),
+        "Observation": observation,
+        "ActionTaken": "",
+        "Effectiveness": 0.0,
+    }
+    return [{
+        "target_table": "Reflections",
+        "payload": payload,
+        "auto_apply": True,
+        "notes": "deep-dive " + title[:40],
+    }], "research deep-dive"
+
+
+# Ordered registry of automation jobs run on each tick. Fast Kusto-only jobs
+# run first; the slower agent-prompt jobs (market, SEC, space weather, research)
+# run last so a single tick stays responsive and can bail if the user returns.
+_BG_JOBS = [
+    (_BG_JOB_TYPE, _job_memory_consolidation),
+    (_BG_JOB_GOAL_CHECKIN, _job_goal_checkin),
+    (_BG_JOB_DAILY_DIGEST, _job_daily_digest),
+    (_BG_JOB_KNOWLEDGE_HYGIENE, _job_knowledge_hygiene),
+    (_BG_JOB_REFLECTION_SYNTHESIS, _job_reflection_synthesis),
+    (_BG_JOB_EMOTION_DRIFT, _job_emotion_drift),
+    (_BG_JOB_TOKEN_TELEMETRY, _job_token_telemetry),
+    (_BG_JOB_PROACTIVE_BRIEFING, _job_proactive_briefing),
+    (_BG_JOB_MARKET_SNAPSHOT, _job_market_snapshot),
+    (_BG_JOB_SEC_FILINGS, _job_sec_filing_watch),
+    (_BG_JOB_SPACE_WEATHER, _job_space_weather_alert),
+    (_BG_JOB_RESEARCH_DEEPDIVE, _job_research_deepdive),
+]
+
+
 def _run_background_tick(trigger="scheduled"):
     trigger = "manual" if trigger == "manual" else "scheduled"
     acquired = _bg_tick_lock.acquire(blocking=False)
@@ -2403,53 +3109,77 @@ def _run_background_tick(trigger="scheduled"):
 
     cluster = None
     database = None
-    note_prefix = f"{trigger} background tick: "
     try:
         cluster, database, context_error = _background_kusto_context()
         if context_error:
-            _record_background_activity(cluster, database, tick_id, started_at, _utc_now(), "failed", 0, 0, note_prefix + context_error)
+            _record_background_activity(cluster, database, tick_id, started_at, _utc_now(), "failed", 0, 0, f"{trigger} background tick: " + context_error)
             return
 
         if trigger != "manual" and time.time() - _last_user_activity_ts < 120:
-            _record_background_activity(cluster, database, tick_id, started_at, _utc_now(), "paused", 0, 0, note_prefix + "recent user activity")
+            _record_background_activity(cluster, database, tick_id, started_at, _utc_now(), "paused", 0, 0, f"{trigger} background tick: recent user activity")
             return
 
         window_end = _utc_now()
         window_start, window_end = _background_source_window(cluster, database, window_end)
-        conversation_rows = _query_background_conversations(cluster, database, window_start, window_end)
-        if conversation_rows is None:
-            _record_background_activity(cluster, database, tick_id, started_at, _utc_now(), "failed", 0, 0, note_prefix + "Conversations query failed")
-            return
-        if not conversation_rows:
-            _record_background_activity(cluster, database, tick_id, started_at, _utc_now(), "skipped", 0, 0, note_prefix + "no conversations in source window")
-            return
+        ctx = {
+            "cluster": cluster,
+            "database": database,
+            "window_start": window_start,
+            "window_end": window_end,
+            "now_iso": _to_utc_iso(_utc_now()),
+            "trigger": trigger,
+        }
 
-        now_iso = _to_utc_iso(_utc_now())
-        summary_text = _build_background_summary(conversation_rows)
-        payload = {
-            "Period": "background-" + now_iso[:10],
-            "Summary": summary_text,
-            "Timestamp": now_iso,
-        }
-        proposal_row = {
-            "ProposalId": "bgp-" + str(uuid.uuid4()),
-            "CreatedAt": now_iso,
-            "JobType": _BG_JOB_TYPE,
-            "TargetTable": _BG_TARGET_TABLE,
-            "Payload": payload,
-            "Status": "pending",
-            "SourceWindowStart": _to_utc_iso(window_start),
-            "SourceWindowEnd": _to_utc_iso(window_end),
-            "Notes": f"generated by {trigger} background tick from {len(conversation_rows)} conversation row(s)",
-            "ReviewedAt": "",
-            "ReviewedBy": "",
-        }
-        if not _write_background_proposal(cluster, database, proposal_row):
-            _record_background_activity(cluster, database, tick_id, started_at, _utc_now(), "failed", 0, 0, note_prefix + "BackgroundProposals write failed")
-            return
-        _record_background_activity(cluster, database, tick_id, started_at, _utc_now(), "succeeded", 1, 0, note_prefix + "proposal created")
+        for job_type, handler in _BG_JOBS:
+            job_started = _utc_now()
+            job_tick_id = tick_id + ":" + job_type
+            note_prefix = f"{trigger} {job_type}: "
+            if not _BG_JOBS_ENABLED.get(job_type, True):
+                _record_background_activity(cluster, database, job_tick_id, job_started, _utc_now(), "skipped", 0, 0, note_prefix + "disabled", job_type=job_type)
+                continue
+            try:
+                proposals, job_note = handler(ctx)
+            except Exception as job_error:
+                _record_background_activity(cluster, database, job_tick_id, job_started, _utc_now(), "failed", 0, 0, note_prefix + str(job_error)[:400], job_type=job_type)
+                continue
+            if proposals is None:
+                _record_background_activity(cluster, database, job_tick_id, job_started, _utc_now(), "failed", 0, 0, note_prefix + (job_note or "job failed"), job_type=job_type)
+                continue
+            if not proposals:
+                _record_background_activity(cluster, database, job_tick_id, job_started, _utc_now(), "skipped", 0, 0, note_prefix + (job_note or "nothing to do"), job_type=job_type)
+                continue
+
+            created = 0
+            applied = 0
+            failed_apply = 0
+            for proposal in proposals:
+                target_table = proposal.get("target_table")
+                payload = proposal.get("payload")
+                notes = proposal.get("notes", "")
+                if proposal.get("auto_apply"):
+                    apply_ok, apply_error, apply_note = _apply_proposal_payload(cluster, database, target_table, payload)
+                    if apply_ok:
+                        applied += 1
+                        row = _create_background_proposal_row(job_type, target_table, payload, window_start, window_end, notes + "; auto-applied (" + apply_note + ")", status="applied")
+                    else:
+                        failed_apply += 1
+                        row = _create_background_proposal_row(job_type, target_table, payload, window_start, window_end, notes + "; auto-apply failed: " + apply_error, status="failed")
+                    row["ReviewedAt"] = _to_utc_iso(_utc_now())
+                    row["ReviewedBy"] = "auto"
+                else:
+                    row = _create_background_proposal_row(job_type, target_table, payload, window_start, window_end, notes)
+                if _write_background_proposal(cluster, database, row):
+                    created += 1
+
+            summary_note = note_prefix + (job_note or "done")
+            if applied:
+                summary_note += f"; auto-applied {applied}"
+            if failed_apply:
+                summary_note += f"; {failed_apply} auto-apply failure(s)"
+            status = "succeeded" if created else "failed"
+            _record_background_activity(cluster, database, job_tick_id, job_started, _utc_now(), status, created, 0, summary_note, job_type=job_type)
     except Exception as error:
-        _record_background_activity(cluster, database, tick_id, started_at, _utc_now(), "failed", 0, 0, note_prefix + str(error)[:500])
+        _record_background_activity(cluster, database, tick_id, started_at, _utc_now(), "failed", 0, 0, f"{trigger} background tick: " + str(error)[:500])
     finally:
         _bg_tick_lock.release()
 
@@ -2900,10 +3630,27 @@ class BridgeHandler(BaseHTTPRequestHandler):
         if not isinstance(data, dict):
             self._json_response(400, {"error": {"message": "Request body must be an object"}})
             return
-        unknown = sorted(set(data.keys()) - {"enabled", "intervalSeconds", "runNow"})
+        unknown = sorted(set(data.keys()) - {"enabled", "intervalSeconds", "runNow", "jobs"})
         if unknown:
             self._json_response(400, {"error": {"message": "Unsupported field(s): " + ", ".join(unknown)}})
             return
+
+        requested_jobs = None
+        if "jobs" in data:
+            jobs_value = data.get("jobs")
+            if not isinstance(jobs_value, dict):
+                self._json_response(400, {"error": {"message": "jobs must be an object of jobType -> boolean"}})
+                return
+            valid_job_types = {job_type for job_type, _ in _BG_JOBS}
+            unknown_jobs = sorted(set(jobs_value.keys()) - valid_job_types)
+            if unknown_jobs:
+                self._json_response(400, {"error": {"message": "Unknown job type(s): " + ", ".join(unknown_jobs)}})
+                return
+            for job_type, enabled in jobs_value.items():
+                if not isinstance(enabled, bool):
+                    self._json_response(400, {"error": {"message": "jobs." + job_type + " must be a boolean"}})
+                    return
+            requested_jobs = jobs_value
 
         requested_enabled = _bg_loop_enabled
         if "enabled" in data:
@@ -2943,6 +3690,9 @@ class BridgeHandler(BaseHTTPRequestHandler):
 
         _bg_loop_enabled = requested_enabled
         _bg_loop_interval_seconds = requested_interval
+        if requested_jobs is not None:
+            for job_type, enabled in requested_jobs.items():
+                _BG_JOBS_ENABLED[job_type] = bool(enabled)
         if _bg_loop_enabled:
             if not _start_bg_loop():
                 _bg_last_error = "background loop could not start"
@@ -2991,40 +3741,25 @@ class BridgeHandler(BaseHTTPRequestHandler):
             return
 
         if action == "approve":
-            if current.get("TargetTable") != _BG_TARGET_TABLE:
+            target_table = current.get("TargetTable")
+            if target_table not in _BG_APPLY_TABLES:
                 self._json_response(400, {"error": {"message": "Unsupported proposal target table"}})
                 return
             payload, error = _background_proposal_payload(current)
             if error:
                 self._json_response(400, {"error": {"message": error}})
                 return
-            summary_row = {
-                "Period": str(payload.get("Period", "") or ""),
-                "Summary": str(payload.get("Summary", "") or ""),
-                "Timestamp": str(payload.get("Timestamp", "") or ""),
-            }
-            if not summary_row["Period"] or not summary_row["Summary"] or not summary_row["Timestamp"]:
-                self._json_response(400, {"error": {"message": "Proposal payload must include Period, Summary, and Timestamp"}})
-                return
-            parsed_timestamp = _parse_kusto_datetime(summary_row["Timestamp"])
-            if not parsed_timestamp:
-                self._json_response(400, {"error": {"message": "Proposal payload Timestamp must be a valid datetime"}})
-                return
-            summary_row["Timestamp"] = _to_utc_iso(parsed_timestamp)
             if current_status == "pending":
-                applying_row = _background_proposal_update_row(current, "applying", "loopback", "applying to MemorySummaries")
+                applying_row = _background_proposal_update_row(current, "applying", "loopback", f"applying to {target_table}")
                 if not _write_background_proposal(cluster, db, applying_row):
                     self._json_response(500, {"error": {"message": "BackgroundProposals applying status write failed"}})
                     return
                 current = applying_row
-            summary_exists, error = _background_memory_summary_exists(cluster, db, summary_row)
-            if error:
-                self._json_response(500, {"error": {"message": error + "; proposal remains applying. Retry approve safely after resolving the transient error."}})
+            apply_ok, apply_error, apply_note = _apply_proposal_payload(cluster, db, target_table, payload)
+            if not apply_ok:
+                self._json_response(500, {"error": {"message": apply_error + "; proposal remains applying. Retry approve safely after resolving the transient error."}})
                 return
-            if not summary_exists and not _kusto_ingest_direct(cluster, db, _BG_TARGET_TABLE, ["Period", "Summary", "Timestamp"], [summary_row]):
-                self._json_response(500, {"error": {"message": "MemorySummaries write failed after proposal moved to applying; proposal remains applying. Retry approve safely after resolving the transient error."}})
-                return
-            reviewed_row = _background_proposal_update_row(current, "applied", "loopback", "approved and applied to MemorySummaries")
+            reviewed_row = _background_proposal_update_row(current, "applied", "loopback", apply_note or f"approved and applied to {target_table}")
         else:
             reviewed_row = _background_proposal_update_row(current, "rejected", "loopback", "rejected by user")
 
@@ -3864,6 +4599,7 @@ class BridgeHandler(BaseHTTPRequestHandler):
         if not cluster_url or not database:
             self._json_response(400, {"error": {"message": "cluster_url and database are required"}})
             return
+        schema_only = bool(data.get("schema_only", False))
 
         expected_cluster = os.environ.get("KUSTO_CLUSTER_URL", "").strip()
         if expected_cluster and not _same_kusto_cluster(cluster_url, expected_cluster):
@@ -3906,6 +4642,8 @@ class BridgeHandler(BaseHTTPRequestHandler):
         failed = 0
         errors = []
         blocks = _split_kusto_seed_blocks(seed_text)
+        if schema_only:
+            blocks = [block for block in blocks if _is_kusto_schema_block(block)]
         # TODO: The inline seed rows use fixed values, so repeated runs can duplicate rows.
         for index, block in enumerate(blocks, start=1):
             result, kusto_error = _kusto_query_with_error(cluster_url, database, block, is_mgmt=True)
@@ -3916,7 +4654,7 @@ class BridgeHandler(BaseHTTPRequestHandler):
             else:
                 applied += 1
 
-        warning = "Re-running this seed will duplicate inline rows."
+        warning = "Schema-only seed: existing tables are unchanged and no rows were ingested." if schema_only else "Re-running this seed will duplicate inline rows."
         mcp_config = getattr(acp_client, "mcp_config", {}) if acp_client is not None else {}
         if (
             failed == 0

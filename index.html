@@ -259,7 +259,7 @@
             <option value="lm-studio" title="lm-studio">lm-studio</option>
           </optgroup>
           <optgroup label="Image Generation">
-            <option value="dall-e-3" title="Image Generation">DALL-E 3</option>
+            <option value="dall-e-3" title="Image Generation">Image (gpt-image-1)</option>
           </optgroup>
         </select>
 
@@ -515,6 +515,21 @@
             <label for="backgroundIntervalSeconds">Interval seconds:</label>
             <input type="number" id="backgroundIntervalSeconds" min="900" max="86400" step="300" value="7200">
           </div>
+          <div class="background-jobs" id="backgroundJobs">
+            <span class="background-jobs-label">Jobs to run each cycle:</span>
+            <label class="background-toggle-row"><input type="checkbox" data-job="memory_consolidation" checked> Memory consolidation</label>
+            <label class="background-toggle-row"><input type="checkbox" data-job="goal_checkin" checked> Goal check-ins</label>
+            <label class="background-toggle-row"><input type="checkbox" data-job="daily_digest" checked> Daily digest</label>
+            <label class="background-toggle-row"><input type="checkbox" data-job="knowledge_hygiene" checked> Knowledge decay / dedup</label>
+            <label class="background-toggle-row"><input type="checkbox" data-job="reflection_synthesis" checked> Reflection synthesis</label>
+            <label class="background-toggle-row"><input type="checkbox" data-job="emotion_drift" checked> Emotion baseline drift</label>
+            <label class="background-toggle-row"><input type="checkbox" data-job="token_telemetry" checked> Token telemetry</label>
+            <label class="background-toggle-row"><input type="checkbox" data-job="proactive_briefing" checked> Proactive briefing</label>
+            <label class="background-toggle-row"><input type="checkbox" data-job="market_snapshot" checked> Market open/close snapshot</label>
+            <label class="background-toggle-row"><input type="checkbox" data-job="sec_filing_watch" checked> SEC filing watch (PLG, PKX)</label>
+            <label class="background-toggle-row"><input type="checkbox" data-job="space_weather_alert" checked> Weather / space-weather alert</label>
+            <label class="background-toggle-row"><input type="checkbox" data-job="research_deepdive" checked> Research deep-dive</label>
+          </div>
           <div class="background-actions">
             <button type="button" class="auth-save" id="backgroundSaveButton">Save controls</button>
             <button type="button" class="auth-toggle" id="backgroundRunNowButton">Run once</button>
@@ -564,6 +579,7 @@
             <label for="mcpKustoDatabase" style="font-size:12px;margin-top:4px">Default Database:</label>
             <input type="text" id="mcpKustoDatabase" placeholder="(optional)" style="font-size:12px">
             <button type="button" id="mcpSeedButton" class="auth-toggle" style="margin-top:8px;width:100%;text-align:center" disabled>Seed Eva Schema</button>
+            <button type="button" id="mcpEnsureTablesButton" class="auth-toggle" style="margin-top:6px;width:100%;text-align:center" disabled>Create missing tables</button>
             <div id="mcpSeedStatus" class="mcp-status" aria-live="polite" style="margin-top:8px"></div>
           </div>
         </div>
@@ -765,10 +781,18 @@
     <!-- Transcript + waveform bar -->
     <div class="vv-hud-bottom">
       <canvas id="vvWaveBar" class="vv-wave-bar" width="600" height="48"></canvas>
-      <div id="vvTranscript" class="vv-transcript"></div>
-      <div class="vv-hint">tap orb to listen &middot; say <em>Eva</em> to wake</div>
+      <div id="vvHudTelemetry" class="vv-hint vv-telemetry">tap orb to listen &middot; say <em>Eva</em> to wake</div>
+    </div>
+    <!-- Asset surface: images/media Eva shows while in voice mode -->
+    <div id="vvAssets" class="vv-assets" aria-hidden="true">
+      <div class="vv-assets-bar">
+        <span class="vv-assets-title">ASSET</span>
+        <button id="vvAssetsClose" class="vv-assets-close" type="button" aria-label="Close asset">&times;</button>
+      </div>
+      <div id="vvAssetsBody" class="vv-assets-body"></div>
     </div>
   </div>
+
 
   <!-- Image lightbox -->
   <div class="eva-lightbox" id="evaLightbox">

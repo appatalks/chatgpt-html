@@ -529,8 +529,11 @@ function setArtifactPurgeStatus(type, text) {
 
 function updateKustoSeedButtonState() {
   var values = getKustoSeedValues();
+  var ready = !!(values.clusterUrl && values.database);
   var button = document.getElementById('mcpSeedButton');
-  if (button) button.disabled = !(values.clusterUrl && values.database);
+  if (button) button.disabled = !ready;
+  var ensureButton = document.getElementById('mcpEnsureTablesButton');
+  if (ensureButton) ensureButton.disabled = !ready;
 }
 
 async function seedEvaSchema(clusterUrl, database, alreadyConfirmed) {
@@ -574,6 +577,41 @@ async function seedEvaSchema(clusterUrl, database, alreadyConfirmed) {
   }
 }
 
+async function ensureEvaTables(clusterUrl, database) {
+  clusterUrl = (clusterUrl || '').trim();
+  database = (database || '').trim();
+  if (!clusterUrl || !database) {
+    setKustoSeedStatus('error', 'Cluster URL and database are required before creating tables.');
+    return { ok: false, error: 'missing_inputs' };
+  }
+
+  var button = document.getElementById('mcpEnsureTablesButton');
+  if (button) button.disabled = true;
+  setKustoSeedStatus('info', 'Creating any missing tables...');
+
+  try {
+    var bridgeUrl = await detectACPBridge();
+    var response = await fetch(bridgeUrl.replace(/\/+$/, '') + '/v1/kusto/seed', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ cluster_url: clusterUrl, database: database, schema_only: true })
+    });
+    var data = await response.json();
+    if (!response.ok || !data.ok) {
+      var errors = (data && data.errors && data.errors.length) ? data.errors.slice(0, 3).join(' ') : (data.error && data.error.message ? data.error.message : 'Unknown error');
+      setKustoSeedStatus('error', 'Table creation failed: ' + errors);
+      return { ok: false, data: data };
+    }
+    setKustoSeedStatus('info', 'Tables ready: ' + data.applied + ' verified, ' + data.failed + ' failed. Existing data was left untouched.');
+    return { ok: true, data: data };
+  } catch (error) {
+    setKustoSeedStatus('error', 'Table creation failed: ' + error.message);
+    return { ok: false, error: error };
+  } finally {
+    updateKustoSeedButtonState();
+  }
+}
+
 async function purgeArtifactsFromSettings() {
   if (!confirm('Delete all generated artifacts? This cannot be undone.')) return { ok: false, skipped: true };
 
@@ -607,6 +645,11 @@ async function purgeArtifactsFromSettings() {
 async function seedEvaSchemaFromSettings() {
   var values = getKustoSeedValues();
   return seedEvaSchema(values.clusterUrl, values.database, false);
+}
+
+async function ensureEvaTablesFromSettings() {
+  var values = getKustoSeedValues();
+  return ensureEvaTables(values.clusterUrl, values.database);
 }
 
 async function refreshMCPStatus() {
@@ -677,6 +720,8 @@ document.addEventListener('DOMContentLoaded', function() {
 
   var seedButton = document.getElementById('mcpSeedButton');
   if (seedButton) seedButton.addEventListener('click', seedEvaSchemaFromSettings);
+  var ensureTablesButton = document.getElementById('mcpEnsureTablesButton');
+  if (ensureTablesButton) ensureTablesButton.addEventListener('click', ensureEvaTablesFromSettings);
   var purgeArtifactsButton = document.getElementById('mcpPurgeArtifactsButton');
   if (purgeArtifactsButton) purgeArtifactsButton.addEventListener('click', purgeArtifactsFromSettings);
   var seedCluster = document.getElementById('mcpKustoCluster');

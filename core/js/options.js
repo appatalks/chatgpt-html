@@ -532,6 +532,34 @@ function renderBackgroundStatus() {
   var intervalEl = document.getElementById('backgroundIntervalSeconds');
   if (enabledEl) enabledEl.checked = !!status.enabled;
   if (intervalEl && status.intervalSeconds) intervalEl.value = String(status.intervalSeconds);
+
+  if (status.jobs && typeof status.jobs === 'object') {
+    var jobInputs = document.querySelectorAll('#backgroundJobs input[data-job]');
+    Array.prototype.forEach.call(jobInputs, function(input) {
+      var jobType = input.getAttribute('data-job');
+      if (Object.prototype.hasOwnProperty.call(status.jobs, jobType)) {
+        input.checked = !!status.jobs[jobType];
+      }
+    });
+  }
+}
+
+function backgroundJobLabel(jobType) {
+  switch (String(jobType || '').toLowerCase()) {
+    case 'memory_consolidation': return 'Memory summary proposal';
+    case 'goal_checkin': return 'Goal check-in';
+    case 'daily_digest': return 'Daily digest';
+    case 'knowledge_hygiene': return 'Knowledge decay / dedup';
+    case 'reflection_synthesis': return 'Reflection synthesis';
+    case 'emotion_drift': return 'Emotion baseline drift';
+    case 'token_telemetry': return 'Token telemetry';
+    case 'proactive_briefing': return 'Proactive briefing';
+    case 'market_snapshot': return 'Market snapshot';
+    case 'sec_filing_watch': return 'SEC filing watch';
+    case 'space_weather_alert': return 'Space weather alert';
+    case 'research_deepdive': return 'Research deep-dive';
+    default: return jobType ? String(jobType) : 'Background proposal';
+  }
 }
 
 function renderBackgroundProposals() {
@@ -556,12 +584,13 @@ function renderBackgroundProposals() {
   _backgroundState.proposals.forEach(function(proposal) {
     var proposalId = String(getBackgroundField(proposal, 'ProposalId', 'proposalId') || '');
     var status = String(getBackgroundField(proposal, 'Status', 'status') || 'pending');
+    var jobType = String(getBackgroundField(proposal, 'JobType', 'jobType') || '');
     var createdAt = getBackgroundField(proposal, 'CreatedAt', 'createdAt');
     var notes = String(getBackgroundField(proposal, 'Notes', 'notes') || '');
     var windowStart = getBackgroundField(proposal, 'SourceWindowStart', 'sourceWindowStart');
     var windowEnd = getBackgroundField(proposal, 'SourceWindowEnd', 'sourceWindowEnd');
     var payload = getBackgroundPayload(proposal);
-    var summary = String(payload.Summary || payload.summary || 'No summary text.');
+    var summary = String(payload.Summary || payload.summary || payload.Observation || payload.observation || 'No summary text.');
 
     var row = document.createElement('div');
     row.className = 'background-row';
@@ -570,7 +599,7 @@ function renderBackgroundProposals() {
     head.className = 'background-row-head';
     var title = document.createElement('div');
     title.className = 'background-title';
-    title.textContent = 'Memory summary proposal';
+    title.textContent = backgroundJobLabel(jobType);
     head.appendChild(title);
 
     var actions = document.createElement('div');
@@ -635,12 +664,13 @@ function renderBackgroundActivity() {
     var row = document.createElement('div');
     row.className = 'background-row background-activity-row';
     var status = String(getBackgroundField(activity, 'Status', 'status') || '');
+    var jobType = String(getBackgroundField(activity, 'JobType', 'jobType') || '');
     var startedAt = getBackgroundField(activity, 'StartedAt', 'startedAt');
     var proposalCount = getBackgroundField(activity, 'ProposalCount', 'proposalCount');
     var notes = String(getBackgroundField(activity, 'Notes', 'notes') || '');
     var title = document.createElement('div');
     title.className = 'background-title';
-    title.textContent = status || 'activity';
+    title.textContent = (jobType ? backgroundJobLabel(jobType) + ': ' : '') + (status || 'activity');
     row.appendChild(title);
     var meta = document.createElement('div');
     meta.className = 'background-meta';
@@ -713,12 +743,18 @@ async function saveBackgroundControls(runNow) {
   if (saveButton) saveButton.disabled = true;
   if (runButton) runButton.disabled = true;
   try {
+    var jobs = {};
+    var jobInputs = document.querySelectorAll('#backgroundJobs input[data-job]');
+    Array.prototype.forEach.call(jobInputs, function(input) {
+      jobs[input.getAttribute('data-job')] = !!input.checked;
+    });
     var data = await backgroundBridgeRequest('/v1/background/control', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         enabled: enabledEl ? !!enabledEl.checked : true,
         intervalSeconds: intervalValue,
+        jobs: jobs,
         runNow: !!runNow
       })
     });
@@ -739,7 +775,7 @@ async function saveBackgroundControls(runNow) {
 
 async function reviewBackgroundProposal(proposalId, action) {
   if (!proposalId) return;
-  if (action === 'approve' && !confirm('Apply this proposal to MemorySummaries?')) return;
+  if (action === 'approve' && !confirm('Apply this proposal to Eva\u2019s memory?')) return;
   try {
     await backgroundBridgeRequest('/v1/background/proposals/' + encodeURIComponent(proposalId) + '/' + action, { method: 'POST' });
     await loadBackgroundData(true);
@@ -1479,6 +1515,7 @@ var _vv = {
   ttsSource: null,
   ttsAnalyser: null,
   ttsDataArray: null,
+  ttsDelay: null,
   particles: [],
   hudInterval: null,
   cmdStart: 0
@@ -1503,6 +1540,9 @@ function openVoiceView() {
   var closeBtn = document.getElementById('voiceViewClose');
   if (closeBtn) closeBtn.onclick = closeVoiceView;
 
+  var assetsClose = document.getElementById('vvAssetsClose');
+  if (assetsClose) assetsClose.onclick = _vvHideAssets;
+
   var canvas = document.getElementById('voiceViewCanvas');
   if (canvas) canvas.onclick = _vvToggleListening;
 
@@ -1524,6 +1564,7 @@ function closeVoiceView() {
     el.removeAttribute('data-phase');
   }
   if (_vv.speakObserver) { _vv.speakObserver.disconnect(); _vv.speakObserver = null; }
+  _vvDetachSpeakStartListeners();
   if (_vv._wasAutoSpeak !== undefined) {
     var autoSpeak = document.getElementById('autoSpeak');
     if (autoSpeak) autoSpeak.checked = _vv._wasAutoSpeak;
@@ -1537,6 +1578,7 @@ function closeVoiceView() {
   _vvStopCanvas();
   _vvStopWaveBar();
   _vvStopHUD();
+  _vvHideAssets();
 }
 
 function _vvSetStatus(phase) {
@@ -1610,6 +1652,25 @@ function _vvUpdateHUD() {
       latEl.textContent = _netStats.lastLatency + ' ms';
     } else {
       latEl.textContent = '-- ms';
+    }
+  }
+  // Live token telemetry replaces the lower-screen hint tidbit
+  var telEl = document.getElementById('vvHudTelemetry');
+  if (telEl) {
+    var ctxTokens = 0, msgCount = 0;
+    try { ctxTokens = computeMessagesTokens() || 0; } catch (e) { ctxTokens = 0; }
+    try { msgCount = _countAllMessages() || 0; } catch (e) { msgCount = 0; }
+    if (ctxTokens > 0 || msgCount > 0) {
+      var ctxStr = ctxTokens >= 1000 ? (ctxTokens / 1000).toFixed(1) + 'k' : String(ctxTokens);
+      var parts = ['CTX ' + ctxStr + ' tok', msgCount + ' msg'];
+      if (typeof _netStats !== 'undefined') {
+        parts.push('REQ ' + (_netStats.requests || 0));
+        if (_netStats.errors) parts.push('ERR ' + _netStats.errors);
+        if (_netStats.lastProvider) parts.push(String(_netStats.lastProvider).toUpperCase());
+      }
+      telEl.innerHTML = parts.join(' &middot; ');
+    } else {
+      telEl.innerHTML = 'tap orb to listen &middot; say <em>Eva</em> to wake';
     }
   }
 }
@@ -1946,28 +2007,114 @@ function _vvConnectTTSAnalyser() {
   var ctx = _vv.audioCtx;
 
   try {
-    _vv.ttsAnalyser = ctx.createAnalyser();
-    _vv.ttsAnalyser.fftSize = 256;
-    _vv.ttsDataArray = new Uint8Array(_vv.ttsAnalyser.frequencyBinCount);
+    // createMediaElementSource permanently reroutes the audio element into the
+    // Web Audio graph. Connect it to the speakers FIRST so Eva is always
+    // audible, even if the analyser wiring below fails. Without this ordering a
+    // failure after the source is created leaves the element hijacked but with
+    // no path to the speakers, which silences all TTS until a reload.
     if (!audio._vvSource) {
       audio._vvSource = ctx.createMediaElementSource(audio);
     }
     _vv.ttsSource = audio._vvSource;
-    _vv.ttsSource.connect(_vv.ttsAnalyser);
-    _vv.ttsSource.connect(ctx.destination);
+    try { _vv.ttsSource.connect(ctx.destination); } catch (e) {}
+
+    _vv.ttsAnalyser = ctx.createAnalyser();
+    _vv.ttsAnalyser.fftSize = 256;
+    // Lower smoothing than the 0.8 default so the bars track speech onsets and
+    // pauses crisply instead of lagging behind and mushing together.
+    _vv.ttsAnalyser.smoothingTimeConstant = 0.6;
+    _vv.ttsDataArray = new Uint8Array(_vv.ttsAnalyser.frequencyBinCount);
+
+    // The analyser taps the signal at the graph node, which is BEFORE the
+    // device output latency (often 80-200ms on Linux/PulseAudio). Reading it
+    // directly makes the waveform run AHEAD of the audio you hear. Route the
+    // analyser branch (only) through a DelayNode set to the output latency so
+    // the visualization lines up with the heard voice. The speaker path above
+    // stays undelayed.
+    var lat = ctx.outputLatency || ctx.baseLatency || 0;
+    lat = Math.min(0.3, Math.max(0, lat));
+    _vv.ttsDelay = ctx.createDelay(0.5);
+    _vv.ttsDelay.delayTime.value = lat;
+    _vv.ttsSource.connect(_vv.ttsDelay);
+    _vv.ttsDelay.connect(_vv.ttsAnalyser);
+
+    // outputLatency is often 0 until playback actually starts. Refine the
+    // compensation once the device reports a real value.
+    audio.addEventListener('playing', function _vvSyncDelay() {
+      audio.removeEventListener('playing', _vvSyncDelay);
+      if (!_vv.ttsDelay || !_vv.audioCtx) return;
+      var rl = _vv.audioCtx.outputLatency || _vv.audioCtx.baseLatency || 0;
+      rl = Math.min(0.3, Math.max(0, rl));
+      try { _vv.ttsDelay.delayTime.value = rl; } catch (e) {}
+    });
   } catch(e) {
     _vv.ttsAnalyser = null;
     _vv.ttsDataArray = null;
+    _vv.ttsDelay = null;
+    // Recovery: guarantee the element can still reach the speakers.
+    try {
+      if (audio._vvSource && _vv.audioCtx) audio._vvSource.connect(_vv.audioCtx.destination);
+    } catch (e2) {}
   }
 }
 
 function _vvDisconnectTTSAnalyser() {
+  // Tear down the analyser branch (source -> delay -> analyser). The speaker
+  // path (source -> destination) is left intact so audio keeps playing.
+  if (_vv.ttsSource && _vv.ttsDelay) {
+    try { _vv.ttsSource.disconnect(_vv.ttsDelay); } catch(e) {}
+  }
+  if (_vv.ttsDelay && _vv.ttsAnalyser) {
+    try { _vv.ttsDelay.disconnect(_vv.ttsAnalyser); } catch(e) {}
+  }
   if (_vv.ttsSource && _vv.ttsAnalyser) {
     try { _vv.ttsSource.disconnect(_vv.ttsAnalyser); } catch(e) {}
   }
   _vv.ttsAnalyser = null;
   _vv.ttsDataArray = null;
+  _vv.ttsDelay = null;
 }
+
+// --- Voice-mode asset surface ---
+
+// Show images (or other media) in the voice view's asset window so the user
+// can see what Eva surfaced without leaving the orb overlay.
+function _vvSurfaceAssets(assets) {
+  if (!assets || !assets.length) return;
+  var panel = document.getElementById('vvAssets');
+  var body = document.getElementById('vvAssetsBody');
+  if (!panel || !body) return;
+
+  body.innerHTML = '';
+  assets.forEach(function(a) {
+    if (!a || !a.url) return;
+    var img = document.createElement('img');
+    img.className = 'eva-inline-img';
+    img.src = a.url;
+    img.alt = a.caption || 'Image';
+    body.appendChild(img);
+    if (a.caption) {
+      var cap = document.createElement('div');
+      cap.className = 'vv-assets-caption';
+      cap.textContent = a.generated ? a.caption + ' (AI generated)' : a.caption;
+      body.appendChild(cap);
+    }
+  });
+
+  panel.classList.add('open');
+  panel.setAttribute('aria-hidden', 'false');
+}
+
+function _vvHideAssets() {
+  var panel = document.getElementById('vvAssets');
+  var body = document.getElementById('vvAssetsBody');
+  if (panel) {
+    panel.classList.remove('open');
+    panel.setAttribute('aria-hidden', 'true');
+  }
+  if (body) body.innerHTML = '';
+}
+
 
 // --- Voice recognition ---
 
@@ -2230,6 +2377,7 @@ function _vvSendCommand(command) {
   _vv.lastTranscript = command;
   _vv.cmdStart = performance.now();
   _vvSetStatus('thinking');
+  _vvHideAssets();
 
   // Show command in transcript area
   var transcriptEl = document.getElementById('vvTranscript');
@@ -2252,50 +2400,81 @@ function _vvWatchForResponse() {
   if (!txtOutput) return;
 
   if (_vv.speakObserver) { _vv.speakObserver.disconnect(); _vv.speakObserver = null; }
+  _vvDetachSpeakStartListeners();
 
   var responded = false;
-  _vv.speakObserver = new MutationObserver(function() {
+  var audio = document.getElementById('audioPlayback');
+  var synth = window.speechSynthesis;
+
+  function cleanupTriggers() {
+    if (_vv.speakObserver) { _vv.speakObserver.disconnect(); _vv.speakObserver = null; }
+    _vvDetachSpeakStartListeners();
+  }
+
+  // Idempotent: whichever signal arrives first (response text seen, audio
+  // element starts playing, or speech synthesis starts) flips us to the
+  // speaking phase. Audio playback is the most reliable trigger because some
+  // providers set lastResponse only after the final DOM mutation, which can
+  // race past the observer and leave the status stuck on PROCESSING.
+  function beginSpeaking() {
     if (responded || !_vv.open) return;
+    responded = true;
+    cleanupTriggers();
+
     var evaResponse = (typeof lastResponse === 'string') ? lastResponse.trim() : '';
-    if (evaResponse && evaResponse !== _vv.lastEvaReply) {
-      responded = true;
-      _vv.lastEvaReply = evaResponse;
-      _vvSetStatus('speaking');
-      _vvConnectTTSAnalyser();
+    if (evaResponse) _vv.lastEvaReply = evaResponse;
 
-      // Show a snippet of the reply in transcript area
-      var transcriptEl = document.getElementById('vvTranscript');
-      if (transcriptEl) {
-        var snippet = evaResponse.length > 80 ? evaResponse.substring(0, 77) + '...' : evaResponse;
-        transcriptEl.textContent = snippet;
-      }
+    _vvSetStatus('speaking');
+    _vvConnectTTSAnalyser();
 
-      if (_vv.speakObserver) { _vv.speakObserver.disconnect(); _vv.speakObserver = null; }
-
-      _vvWaitForSpeechEnd(function() {
-        _vvDisconnectTTSAnalyser();
-        _vvRestoreAutoSpeak();
-        if (_vv.open && (_vv.recognition || _vv.whisperMode)) {
-          _vvSetStatus('listening');
-          if (_vv.whisperMode) _vvWhisperRecord();
-        }
-      });
-    }
-  });
-
-  _vv.speakObserver.observe(txtOutput, { childList: true, subtree: true, characterData: true });
-
-  setTimeout(function() {
-    if (!responded && _vv.speakObserver) {
-      _vv.speakObserver.disconnect();
-      _vv.speakObserver = null;
+    _vvWaitForSpeechEnd(function() {
+      _vvDisconnectTTSAnalyser();
       _vvRestoreAutoSpeak();
-      if (_vv.open) {
+      if (_vv.open && (_vv.recognition || _vv.whisperMode)) {
         _vvSetStatus('listening');
         if (_vv.whisperMode) _vvWhisperRecord();
       }
+    });
+  }
+
+  _vv.speakObserver = new MutationObserver(function() {
+    if (responded || !_vv.open) return;
+    var evaResponse = (typeof lastResponse === 'string') ? lastResponse.trim() : '';
+    if (evaResponse && evaResponse !== _vv.lastEvaReply) beginSpeaking();
+  });
+  _vv.speakObserver.observe(txtOutput, { childList: true, subtree: true, characterData: true });
+
+  // Audio playback as a fallback/parallel trigger.
+  _vv._onSpeakStart = function() { beginSpeaking(); };
+  if (audio) {
+    audio.addEventListener('playing', _vv._onSpeakStart);
+    audio.addEventListener('play', _vv._onSpeakStart);
+  }
+  if (synth) {
+    _vv._synthPoll = setInterval(function() {
+      if (responded || !_vv.open) { clearInterval(_vv._synthPoll); _vv._synthPoll = null; return; }
+      if (synth.speaking) beginSpeaking();
+    }, 200);
+  }
+
+  setTimeout(function() {
+    if (!responded && _vv.open) {
+      cleanupTriggers();
+      _vvRestoreAutoSpeak();
+      _vvSetStatus('listening');
+      if (_vv.whisperMode) _vvWhisperRecord();
     }
   }, 60000);
+}
+
+function _vvDetachSpeakStartListeners() {
+  var audio = document.getElementById('audioPlayback');
+  if (audio && _vv._onSpeakStart) {
+    try { audio.removeEventListener('playing', _vv._onSpeakStart); } catch(e) {}
+    try { audio.removeEventListener('play', _vv._onSpeakStart); } catch(e) {}
+  }
+  _vv._onSpeakStart = null;
+  if (_vv._synthPoll) { clearInterval(_vv._synthPoll); _vv._synthPoll = null; }
 }
 
 function _vvRestoreAutoSpeak() {
@@ -2973,7 +3152,7 @@ function updateSessionMonitor() {
     if (model.indexOf('copilot-') === 0) provEl.textContent = model === 'copilot-acp' ? 'Copilot ACP' : 'GitHub Models';
     else if (model === 'gemini') provEl.textContent = 'Google Gemini';
     else if (model === 'lm-studio') provEl.textContent = 'lm-studio (local)';
-    else if (model === 'dall-e-3') provEl.textContent = 'DALL-E 3';
+    else if (model === 'dall-e-3') provEl.textContent = 'gpt-image-1';
     else provEl.textContent = 'OpenAI';
   }
 
@@ -3691,8 +3870,8 @@ function _isGenerationRequest(text) {
 }
 
 /**
- * Generate an image using DALL-E 3.
- * @returns {Promise<string|null>} Image URL or null
+ * Generate an image using OpenAI's current image model (gpt-image-1).
+ * @returns {Promise<string|null>} Image URL/data URI or null
  */
 async function _generateImage(prompt) {
   var apiKey = (typeof getAuthKey === 'function') ? getAuthKey('OPENAI_API_KEY') : (typeof OPENAI_API_KEY !== 'undefined' ? OPENAI_API_KEY : '');
@@ -3708,7 +3887,7 @@ async function _generateImage(prompt) {
         'Authorization': 'Bearer ' + apiKey
       },
       body: JSON.stringify({
-        model: 'dall-e-3',
+        model: 'gpt-image-1',
         prompt: prompt,
         n: 1,
         size: '1024x1024'
@@ -3720,9 +3899,11 @@ async function _generateImage(prompt) {
     }
 
     var data = await resp.json();
-    if (data.data && data.data[0] && data.data[0].url) {
-      return data.data[0].url;
-    }
+    var item = data.data && data.data[0];
+    if (!item) return null;
+    // gpt-image-1 returns base64; legacy models return a hosted url.
+    if (item.b64_json) return 'data:image/png;base64,' + item.b64_json;
+    if (item.url) return item.url;
     return null;
   } catch (e) {
     return null;
@@ -3743,6 +3924,7 @@ async function renderEvaResponse(content, txtOutput) {
 
   var text = content.trim();
   var artifactNames = [];
+  var surfacedAssets = [];
 
   // Detect Eva browser-agent launch marker:
   // [[EVA_BROWSER]]{"goal":"...","start_url":"..."}[[/EVA_BROWSER]]
@@ -3846,6 +4028,7 @@ async function renderEvaResponse(content, txtOutput) {
           imgTag = '<div class="eva-generated-wrap">' + imgTag + '<span class="eva-generated-badge">AI Generated</span></div>';
         }
         text = text.replace(r.placeholder.full, imgTag);
+        surfacedAssets.push({ url: r.url, caption: r.placeholder.query, generated: r.generated });
       } else {
         // Replace with a styled placeholder showing what was requested
         text = text.replace(r.placeholder.full, '[🖼️ ' + r.placeholder.query + ']');
@@ -3904,6 +4087,12 @@ async function renderEvaResponse(content, txtOutput) {
 
   appendArtifactLinks();
   txtOutput.scrollTop = txtOutput.scrollHeight;
+
+  // In voice/visual mode the chat is hidden behind the orb overlay, so surface
+  // any images Eva resolved into the voice view's asset window.
+  if (typeof _vv !== 'undefined' && _vv.open && surfacedAssets.length) {
+    _vvSurfaceAssets(surfacedAssets);
+  }
 
   // Launch the visual browser agent if Eva requested it.
   if (browserLaunch && typeof EvaBrowser !== 'undefined' && EvaBrowser && typeof EvaBrowser.launch === 'function') {
