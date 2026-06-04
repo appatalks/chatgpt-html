@@ -27,6 +27,7 @@ The server exposes a single endpoint:
 """
 
 import argparse
+import copy
 import datetime
 import json
 import mimetypes
@@ -628,6 +629,7 @@ _CANDIDATE_HISTORY_TTL_SECONDS = 60
 _CONVO_CONTENT_CAP = 8000  # Kusto string columns are unbounded, but cap defensively.
 _ARTIFACTS_DIR = os.path.expanduser("~/.config/eva-standalone/artifacts")
 _KUSTO_CLUSTER_CACHE_PATH = os.path.expanduser("~/.config/eva-standalone/kusto_cluster.txt")
+_MCP_CONFIG_CACHE_PATH = os.path.expanduser("~/.config/eva-standalone/mcp_config.json")
 _kusto_table_columns_cache = {}  # (cluster, db, table) -> [columns]
 _kusto_database_locked = _env_truthy("KUSTO_DATABASE_LOCKED") or _env_truthy("EVA_KUSTO_LOCKED")
 _active_kusto_db = os.environ.get("KUSTO_DATABASE", "").strip()
@@ -1041,6 +1043,60 @@ def _load_cached_kusto_cluster():
     except OSError:
         pass
     return ""
+
+
+_MCP_SECRET_ENV_MARKERS = ("TOKEN", "KEY", "SECRET", "PAT", "PASSWORD", "CREDENTIAL")
+
+
+def _sanitize_mcp_for_persist(mcp_servers):
+    """Return a deep copy of an MCP server config with secret-looking env values
+    removed, so the persisted file never holds tokens or keys. Internal flags
+    such as _useGitHubPAT are kept (they tell the bridge to resolve the PAT from
+    the process environment at apply time)."""
+    safe = {}
+    for srv_name, srv_cfg in (mcp_servers or {}).items():
+        if not isinstance(srv_cfg, dict):
+            continue
+        safe_srv = copy.deepcopy(srv_cfg)
+        env = safe_srv.get("env")
+        if isinstance(env, dict):
+            cleaned = {}
+            for k, v in env.items():
+                upper = str(k).upper()
+                if k.startswith("_"):
+                    cleaned[k] = v  # internal flag, not a secret value
+                elif any(marker in upper for marker in _MCP_SECRET_ENV_MARKERS):
+                    continue  # drop tokens/keys/secrets
+                else:
+                    cleaned[k] = v
+            safe_srv["env"] = cleaned
+        safe[srv_name] = safe_srv
+    return safe
+
+
+def _persist_mcp_config(mcp_servers):
+    """Persist the front-end MCP server selection so it survives bridge restarts
+    even when the Electron file:// localStorage is cleared. Secrets are stripped
+    before writing."""
+    try:
+        os.makedirs(os.path.dirname(_MCP_CONFIG_CACHE_PATH), exist_ok=True)
+        with open(_MCP_CONFIG_CACHE_PATH, "w", encoding="utf-8") as f:
+            json.dump(_sanitize_mcp_for_persist(mcp_servers), f)
+    except (OSError, TypeError) as exc:
+        print(f"[Bridge] Could not persist MCP config: {exc}", file=sys.stderr)
+
+
+def _load_persisted_mcp_config():
+    """Load the persisted MCP server selection (no secrets)."""
+    try:
+        if os.path.isfile(_MCP_CONFIG_CACHE_PATH):
+            with open(_MCP_CONFIG_CACHE_PATH, "r", encoding="utf-8") as f:
+                data = json.load(f)
+            if isinstance(data, dict):
+                return data
+    except (OSError, json.JSONDecodeError) as exc:
+        print(f"[Bridge] Could not load persisted MCP config: {exc}", file=sys.stderr)
+    return {}
 
 
 class _MSALSilentCredential:
@@ -3156,18 +3212,18 @@ def _run_background_tick(trigger="scheduled"):
                 target_table = proposal.get("target_table")
                 payload = proposal.get("payload")
                 notes = proposal.get("notes", "")
-                if proposal.get("auto_apply"):
-                    apply_ok, apply_error, apply_note = _apply_proposal_payload(cluster, database, target_table, payload)
-                    if apply_ok:
-                        applied += 1
-                        row = _create_background_proposal_row(job_type, target_table, payload, window_start, window_end, notes + "; auto-applied (" + apply_note + ")", status="applied")
-                    else:
-                        failed_apply += 1
-                        row = _create_background_proposal_row(job_type, target_table, payload, window_start, window_end, notes + "; auto-apply failed: " + apply_error, status="failed")
-                    row["ReviewedAt"] = _to_utc_iso(_utc_now())
-                    row["ReviewedBy"] = "auto"
+                # Hands-off mode: every proposal is auto-applied regardless of the
+                # job's auto_apply hint. The recent-activity report is the audit
+                # trail, so no proposal sits in a pending state awaiting approval.
+                apply_ok, apply_error, apply_note = _apply_proposal_payload(cluster, database, target_table, payload)
+                if apply_ok:
+                    applied += 1
+                    row = _create_background_proposal_row(job_type, target_table, payload, window_start, window_end, notes + "; auto-applied (" + apply_note + ")", status="applied")
                 else:
-                    row = _create_background_proposal_row(job_type, target_table, payload, window_start, window_end, notes)
+                    failed_apply += 1
+                    row = _create_background_proposal_row(job_type, target_table, payload, window_start, window_end, notes + "; auto-apply failed: " + apply_error, status="failed")
+                row["ReviewedAt"] = _to_utc_iso(_utc_now())
+                row["ReviewedBy"] = "auto"
                 if _write_background_proposal(cluster, database, row):
                     created += 1
 
@@ -3355,6 +3411,8 @@ class BridgeHandler(BaseHTTPRequestHandler):
             self._models()
         elif parsed_path == "/v1/mcp":
             self._mcp_status()
+        elif parsed_path == "/v1/mcp/config":
+            self._mcp_persisted_config()
         elif parsed_path == "/v1/goals":
             self._goals_list()
         elif parsed_path == "/v1/background/status":
@@ -3975,6 +4033,12 @@ class BridgeHandler(BaseHTTPRequestHandler):
             ]
         }
         self._json_response(200, models)
+
+    def _mcp_persisted_config(self):
+        """Return the persisted front-end MCP selection (secrets stripped) so the
+        UI can restore its configuration when the Electron file:// localStorage
+        has been cleared across an app rebuild or restart."""
+        self._json_response(200, {"mcp_servers": _load_persisted_mcp_config()})
 
     def _mcp_status(self):
         """Return current MCP server configuration status."""
@@ -4691,6 +4755,10 @@ class BridgeHandler(BaseHTTPRequestHandler):
             return
 
         mcp_servers = data.get("mcp_servers", {})
+
+        # Persist the raw selection (secrets stripped) so it survives bridge
+        # restarts even if the Electron file:// localStorage is cleared.
+        _persist_mcp_config(mcp_servers)
 
         # Resolve internal flags in MCP server env before passing to copilot
         for srv_name, srv_cfg in mcp_servers.items():
