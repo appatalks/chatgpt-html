@@ -2001,18 +2001,28 @@ function _vvConnectTTSAnalyser() {
   var ctx = _vv.audioCtx;
 
   try {
-    _vv.ttsAnalyser = ctx.createAnalyser();
-    _vv.ttsAnalyser.fftSize = 256;
-    _vv.ttsDataArray = new Uint8Array(_vv.ttsAnalyser.frequencyBinCount);
+    // createMediaElementSource permanently reroutes the audio element into the
+    // Web Audio graph. Connect it to the speakers FIRST so Eva is always
+    // audible, even if the analyser wiring below fails. Without this ordering a
+    // failure after the source is created leaves the element hijacked but with
+    // no path to the speakers, which silences all TTS until a reload.
     if (!audio._vvSource) {
       audio._vvSource = ctx.createMediaElementSource(audio);
     }
     _vv.ttsSource = audio._vvSource;
+    try { _vv.ttsSource.connect(ctx.destination); } catch (e) {}
+
+    _vv.ttsAnalyser = ctx.createAnalyser();
+    _vv.ttsAnalyser.fftSize = 256;
+    _vv.ttsDataArray = new Uint8Array(_vv.ttsAnalyser.frequencyBinCount);
     _vv.ttsSource.connect(_vv.ttsAnalyser);
-    _vv.ttsSource.connect(ctx.destination);
   } catch(e) {
     _vv.ttsAnalyser = null;
     _vv.ttsDataArray = null;
+    // Recovery: guarantee the element can still reach the speakers.
+    try {
+      if (audio._vvSource && _vv.audioCtx) audio._vvSource.connect(_vv.audioCtx.destination);
+    } catch (e2) {}
   }
 }
 
