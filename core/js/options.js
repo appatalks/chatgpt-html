@@ -3152,7 +3152,7 @@ function updateSessionMonitor() {
     if (model.indexOf('copilot-') === 0) provEl.textContent = model === 'copilot-acp' ? 'Copilot ACP' : 'GitHub Models';
     else if (model === 'gemini') provEl.textContent = 'Google Gemini';
     else if (model === 'lm-studio') provEl.textContent = 'lm-studio (local)';
-    else if (model === 'dall-e-3') provEl.textContent = 'DALL-E 3';
+    else if (model === 'dall-e-3') provEl.textContent = 'gpt-image-1';
     else provEl.textContent = 'OpenAI';
   }
 
@@ -3870,8 +3870,8 @@ function _isGenerationRequest(text) {
 }
 
 /**
- * Generate an image using DALL-E 3.
- * @returns {Promise<string|null>} Image URL or null
+ * Generate an image using OpenAI's current image model (gpt-image-1).
+ * @returns {Promise<string|null>} Image URL/data URI or null
  */
 async function _generateImage(prompt) {
   var apiKey = (typeof getAuthKey === 'function') ? getAuthKey('OPENAI_API_KEY') : (typeof OPENAI_API_KEY !== 'undefined' ? OPENAI_API_KEY : '');
@@ -3887,7 +3887,7 @@ async function _generateImage(prompt) {
         'Authorization': 'Bearer ' + apiKey
       },
       body: JSON.stringify({
-        model: 'dall-e-3',
+        model: 'gpt-image-1',
         prompt: prompt,
         n: 1,
         size: '1024x1024'
@@ -3899,9 +3899,11 @@ async function _generateImage(prompt) {
     }
 
     var data = await resp.json();
-    if (data.data && data.data[0] && data.data[0].url) {
-      return data.data[0].url;
-    }
+    var item = data.data && data.data[0];
+    if (!item) return null;
+    // gpt-image-1 returns base64; legacy models return a hosted url.
+    if (item.b64_json) return 'data:image/png;base64,' + item.b64_json;
+    if (item.url) return item.url;
     return null;
   } catch (e) {
     return null;

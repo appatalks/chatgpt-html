@@ -1,4 +1,4 @@
-// dall-e-3
+// OpenAI image generation (gpt-image-1)
 
 function dalle3Send() {
             // Get user input from the form
@@ -35,10 +35,10 @@ function dalle3Send() {
                     "Authorization": "Bearer " + apiKey
                 },
                 body: JSON.stringify({
-                    "model": "dall-e-3",
+                    "model": "gpt-image-1",
                     "prompt": prompt,
                     "n": 1, // Request n images
-                    "size": "1024x1024" // size Must be one of 1024x1024, 1792x1024, or 1024x1792 for dall-e-3 models.
+                    "size": "1024x1024" // 1024x1024, 1536x1024, 1024x1536, or auto for gpt-image-1
                 })
             })
             .then(response => response.json())
@@ -46,12 +46,14 @@ function dalle3Send() {
                 // Display each generated image in the result div
 		data.data.forEach((image, index) => {
     		const imgElement = document.createElement("img");
-    		imgElement.src = image.url;
+    		// gpt-image-1 returns base64; legacy models return a hosted url.
+    		const src = image.b64_json ? ("data:image/png;base64," + image.b64_json) : image.url;
+    		imgElement.src = src;
     		imgElement.alt = `Generated Image ${index + 1}`;
 
     		// Create an anchor element and set attributes for opening in a new tab
     		const linkElement = document.createElement("a");
-    		linkElement.href = image.url; // Set the image URL as the link's destination
+    		linkElement.href = src; // Set the image source as the link's destination
     		linkElement.target = "_blank"; // Ensures the link opens in a new tab
     		linkElement.appendChild(imgElement); // Append the image to the anchor element
 
