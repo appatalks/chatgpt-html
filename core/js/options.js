@@ -1561,6 +1561,7 @@ function closeVoiceView() {
     el.removeAttribute('data-phase');
   }
   if (_vv.speakObserver) { _vv.speakObserver.disconnect(); _vv.speakObserver = null; }
+  _vvDetachSpeakStartListeners();
   if (_vv._wasAutoSpeak !== undefined) {
     var autoSpeak = document.getElementById('autoSpeak');
     if (autoSpeak) autoSpeak.checked = _vv._wasAutoSpeak;
@@ -2353,50 +2354,81 @@ function _vvWatchForResponse() {
   if (!txtOutput) return;
 
   if (_vv.speakObserver) { _vv.speakObserver.disconnect(); _vv.speakObserver = null; }
+  _vvDetachSpeakStartListeners();
 
   var responded = false;
-  _vv.speakObserver = new MutationObserver(function() {
+  var audio = document.getElementById('audioPlayback');
+  var synth = window.speechSynthesis;
+
+  function cleanupTriggers() {
+    if (_vv.speakObserver) { _vv.speakObserver.disconnect(); _vv.speakObserver = null; }
+    _vvDetachSpeakStartListeners();
+  }
+
+  // Idempotent: whichever signal arrives first (response text seen, audio
+  // element starts playing, or speech synthesis starts) flips us to the
+  // speaking phase. Audio playback is the most reliable trigger because some
+  // providers set lastResponse only after the final DOM mutation, which can
+  // race past the observer and leave the status stuck on PROCESSING.
+  function beginSpeaking() {
     if (responded || !_vv.open) return;
+    responded = true;
+    cleanupTriggers();
+
     var evaResponse = (typeof lastResponse === 'string') ? lastResponse.trim() : '';
-    if (evaResponse && evaResponse !== _vv.lastEvaReply) {
-      responded = true;
-      _vv.lastEvaReply = evaResponse;
-      _vvSetStatus('speaking');
-      _vvConnectTTSAnalyser();
+    if (evaResponse) _vv.lastEvaReply = evaResponse;
 
-      // Show a snippet of the reply in transcript area
-      var transcriptEl = document.getElementById('vvTranscript');
-      if (transcriptEl) {
-        var snippet = evaResponse.length > 80 ? evaResponse.substring(0, 77) + '...' : evaResponse;
-        transcriptEl.textContent = snippet;
-      }
+    _vvSetStatus('speaking');
+    _vvConnectTTSAnalyser();
 
-      if (_vv.speakObserver) { _vv.speakObserver.disconnect(); _vv.speakObserver = null; }
-
-      _vvWaitForSpeechEnd(function() {
-        _vvDisconnectTTSAnalyser();
-        _vvRestoreAutoSpeak();
-        if (_vv.open && (_vv.recognition || _vv.whisperMode)) {
-          _vvSetStatus('listening');
-          if (_vv.whisperMode) _vvWhisperRecord();
-        }
-      });
-    }
-  });
-
-  _vv.speakObserver.observe(txtOutput, { childList: true, subtree: true, characterData: true });
-
-  setTimeout(function() {
-    if (!responded && _vv.speakObserver) {
-      _vv.speakObserver.disconnect();
-      _vv.speakObserver = null;
+    _vvWaitForSpeechEnd(function() {
+      _vvDisconnectTTSAnalyser();
       _vvRestoreAutoSpeak();
-      if (_vv.open) {
+      if (_vv.open && (_vv.recognition || _vv.whisperMode)) {
         _vvSetStatus('listening');
         if (_vv.whisperMode) _vvWhisperRecord();
       }
+    });
+  }
+
+  _vv.speakObserver = new MutationObserver(function() {
+    if (responded || !_vv.open) return;
+    var evaResponse = (typeof lastResponse === 'string') ? lastResponse.trim() : '';
+    if (evaResponse && evaResponse !== _vv.lastEvaReply) beginSpeaking();
+  });
+  _vv.speakObserver.observe(txtOutput, { childList: true, subtree: true, characterData: true });
+
+  // Audio playback as a fallback/parallel trigger.
+  _vv._onSpeakStart = function() { beginSpeaking(); };
+  if (audio) {
+    audio.addEventListener('playing', _vv._onSpeakStart);
+    audio.addEventListener('play', _vv._onSpeakStart);
+  }
+  if (synth) {
+    _vv._synthPoll = setInterval(function() {
+      if (responded || !_vv.open) { clearInterval(_vv._synthPoll); _vv._synthPoll = null; return; }
+      if (synth.speaking) beginSpeaking();
+    }, 200);
+  }
+
+  setTimeout(function() {
+    if (!responded && _vv.open) {
+      cleanupTriggers();
+      _vvRestoreAutoSpeak();
+      _vvSetStatus('listening');
+      if (_vv.whisperMode) _vvWhisperRecord();
     }
   }, 60000);
+}
+
+function _vvDetachSpeakStartListeners() {
+  var audio = document.getElementById('audioPlayback');
+  if (audio && _vv._onSpeakStart) {
+    try { audio.removeEventListener('playing', _vv._onSpeakStart); } catch(e) {}
+    try { audio.removeEventListener('play', _vv._onSpeakStart); } catch(e) {}
+  }
+  _vv._onSpeakStart = null;
+  if (_vv._synthPoll) { clearInterval(_vv._synthPoll); _vv._synthPoll = null; }
 }
 
 function _vvRestoreAutoSpeak() {
