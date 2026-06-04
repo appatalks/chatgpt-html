@@ -870,12 +870,30 @@ _BG_TARGET_TABLE = "MemorySummaries"
 # Additional automation job types dispatched by the background tick.
 _BG_JOB_GOAL_CHECKIN = "goal_checkin"
 _BG_JOB_DAILY_DIGEST = "daily_digest"
+_BG_JOB_KNOWLEDGE_HYGIENE = "knowledge_hygiene"
+_BG_JOB_REFLECTION_SYNTHESIS = "reflection_synthesis"
+_BG_JOB_EMOTION_DRIFT = "emotion_drift"
+_BG_JOB_TOKEN_TELEMETRY = "token_telemetry"
+_BG_JOB_PROACTIVE_BRIEFING = "proactive_briefing"
+_BG_JOB_MARKET_SNAPSHOT = "market_snapshot"
+_BG_JOB_SEC_FILINGS = "sec_filing_watch"
+_BG_JOB_SPACE_WEATHER = "space_weather_alert"
+_BG_JOB_RESEARCH_DEEPDIVE = "research_deepdive"
 # Per-job enable switches. All on by default; the loop still respects the
 # global _bg_loop_enabled flag and the recent-activity pause.
 _BG_JOBS_ENABLED = {
     _BG_JOB_TYPE: True,
     _BG_JOB_GOAL_CHECKIN: True,
     _BG_JOB_DAILY_DIGEST: True,
+    _BG_JOB_KNOWLEDGE_HYGIENE: True,
+    _BG_JOB_REFLECTION_SYNTHESIS: True,
+    _BG_JOB_EMOTION_DRIFT: True,
+    _BG_JOB_TOKEN_TELEMETRY: True,
+    _BG_JOB_PROACTIVE_BRIEFING: True,
+    _BG_JOB_MARKET_SNAPSHOT: True,
+    _BG_JOB_SEC_FILINGS: True,
+    _BG_JOB_SPACE_WEATHER: True,
+    _BG_JOB_RESEARCH_DEEPDIVE: True,
 }
 # Target tables the approve/apply path knows how to write.
 _BG_APPLY_TABLES = {"MemorySummaries", "Reflections"}
@@ -883,6 +901,19 @@ _BG_APPLY_TABLES = {"MemorySummaries", "Reflections"}
 # update, and at most this many nudges are proposed per tick.
 _GOAL_STALE_DAYS = 3
 _GOAL_CHECKIN_MAX = 2
+# Tuning for the analytical hygiene/drift jobs.
+_KNOWLEDGE_STALE_CONFIDENCE = 0.3
+_EMOTION_DRIFT_THRESHOLD = 0.15
+_REFLECTION_SYNTH_MIN = 3
+# Symbols the SEC filing and market jobs watch by default (plus any tickers
+# mentioned in active finance goals). Uppercase tickers, no exchange prefix.
+_SEC_WATCH_SYMBOLS = ["PLG", "PKX"]
+# Uppercase tokens that look like tickers but are not, used to filter the
+# heuristic ticker extraction from goal text.
+_TICKER_STOPWORDS = {
+    "SEC", "CEO", "CFO", "COO", "ETF", "USA", "USD", "API", "PLC", "LLC", "INC",
+    "NYSE", "IPO", "EPS", "GDP", "FDA", "ESG", "AND", "THE", "FOR", "ESPP", "AI",
+}
 _BG_PROPOSAL_STATUSES = {"pending", "approved", "rejected", "applying", "applied", "failed"}
 _BG_ACTIVITY_STATUSES = {"succeeded", "failed", "paused", "skipped"}
 _BG_PROPOSAL_COLUMNS = [
@@ -2614,11 +2645,443 @@ def _job_daily_digest(ctx):
     }], "daily digest for " + period
 
 
-# Ordered registry of automation jobs run on each tick.
+def _bg_to_float(value, default=0.0):
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return default
+
+
+def _bg_to_int(value, default=0):
+    try:
+        return int(round(float(value)))
+    except (TypeError, ValueError):
+        return default
+
+
+def _pending_proposal_exists(cluster, database, job_type):
+    """True when a pending proposal already exists for job_type (dedup guard)."""
+    query = _BG_PROPOSALS_LATEST_QUERY + f" | where Status == 'pending' | where JobType == '{job_type}' | take 1"
+    rows = _kusto_query_direct(cluster, database, query)
+    return bool(rows)
+
+
+def _bg_agent_prompt(prompt_text, ctx, timeout=120):
+    """Run a background-only prompt through the ACP agent.
+
+    Returns (text, error). Bails out if the user became active mid-tick so a
+    background research call never collides with a live chat turn. Scheduled
+    ticks already pause on recent activity, but agent jobs run later in the
+    tick, so this re-checks just before the (slow) model call.
+    """
+    if ctx.get("trigger") != "manual" and time.time() - _last_user_activity_ts < 120:
+        return None, "user active"
+    if acp_client is None or not getattr(acp_client, "alive", False):
+        return None, "agent unavailable"
+    try:
+        result = acp_client.prompt(prompt_text, timeout=timeout)
+    except Exception as agent_error:
+        return None, "agent error: " + str(agent_error)[:200]
+    if isinstance(result, dict):
+        if result.get("error"):
+            return None, "agent error: " + str(result.get("error"))[:200]
+        text = str(result.get("text", "") or "").strip()
+        if not text:
+            return None, "agent returned no text"
+        return text, ""
+    return None, "agent returned no result"
+
+
+def _bg_watched_tickers(goal_rows):
+    """Default watch symbols plus tickers mentioned in active finance goals."""
+    tickers = []
+    seen = set()
+    for symbol in _SEC_WATCH_SYMBOLS:
+        if symbol not in seen:
+            seen.add(symbol)
+            tickers.append(symbol)
+    for goal in goal_rows or []:
+        if str(goal.get("Status", "")).lower() != "active":
+            continue
+        text = " ".join([
+            str(goal.get("Title", "") or ""),
+            str(goal.get("RelatedTopics", "") or ""),
+            str(goal.get("Description", "") or ""),
+        ])
+        if not re.search(r"\b(ticker|symbol|stock|shares?|equit)\b", text, re.IGNORECASE):
+            continue
+        for match_text in re.findall(r"\b([A-Z]{2,5})\b", text):
+            if match_text in _TICKER_STOPWORDS or match_text in seen:
+                continue
+            seen.add(match_text)
+            tickers.append(match_text)
+    return tickers[:8]
+
+
+def _job_knowledge_hygiene(ctx):
+    cluster, database = ctx["cluster"], ctx["database"]
+    if not _get_table_columns(cluster, database, "Knowledge"):
+        return [], "no Knowledge table"
+    if _pending_proposal_exists(cluster, database, _BG_JOB_KNOWLEDGE_HYGIENE):
+        return [], "hygiene proposal already pending"
+    rows = _kusto_query_direct(cluster, database, "Knowledge | project Entity, Relation, Value, Confidence | take 2000")
+    if rows is None:
+        return None, "Knowledge query failed"
+    if not rows:
+        return [], "no knowledge rows"
+    stale = [r for r in rows if _bg_to_float(r.get("Confidence"), 1.0) < _KNOWLEDGE_STALE_CONFIDENCE]
+    seen = {}
+    dups = []
+    for r in rows:
+        key = (str(r.get("Entity", "")).strip().lower(), str(r.get("Relation", "")).strip().lower())
+        if not key[0]:
+            continue
+        if key in seen:
+            dups.append(r)
+        else:
+            seen[key] = r
+    if not stale and not dups:
+        return [], "knowledge healthy"
+    parts = []
+    if stale:
+        sample = ", ".join(f"{r.get('Entity')}/{r.get('Relation')}" for r in stale[:5])
+        parts.append(f"{len(stale)} low-confidence fact(s) under {_KNOWLEDGE_STALE_CONFIDENCE} (e.g. {sample})")
+    if dups:
+        sample = ", ".join(f"{r.get('Entity')}/{r.get('Relation')}" for r in dups[:5])
+        parts.append(f"{len(dups)} duplicate entity/relation pair(s) (e.g. {sample})")
+    observation = (
+        "Knowledge hygiene: " + "; ".join(parts) +
+        ". Review whether to prune the stale facts or merge the duplicates so memory stays accurate."
+    )
+    payload = {
+        "Timestamp": ctx["now_iso"],
+        "Trigger": "knowledge_hygiene",
+        "Observation": observation[:1000],
+        "ActionTaken": "",
+        "Effectiveness": 0.0,
+    }
+    return [{
+        "target_table": "Reflections",
+        "payload": payload,
+        "auto_apply": False,
+        "notes": f"{len(stale)} stale, {len(dups)} dup",
+    }], "knowledge hygiene report"
+
+
+def _job_reflection_synthesis(ctx):
+    cluster, database = ctx["cluster"], ctx["database"]
+    if not _get_table_columns(cluster, database, "Reflections"):
+        return [], "no Reflections table"
+    start_iso = _to_utc_iso(ctx["window_start"])
+    query = (
+        "Reflections "
+        f"| where Timestamp >= datetime('{start_iso}') "
+        "| where Trigger != 'reflection_synthesis' "
+        "| order by Timestamp asc | take 100 | project Timestamp, Trigger, Observation"
+    )
+    rows = _kusto_query_direct(cluster, database, query)
+    if rows is None:
+        return None, "Reflections query failed"
+    if len(rows) < _REFLECTION_SYNTH_MIN:
+        return [], "not enough new reflections"
+    trigger_counts = {}
+    for r in rows:
+        label = str(r.get("Trigger", "") or "general").split(":")[0]
+        trigger_counts[label] = trigger_counts.get(label, 0) + 1
+    top = sorted(trigger_counts.items(), key=lambda item: -item[1])[:4]
+    theme = ", ".join(f"{label} ({count})" for label, count in top)
+    observation = (
+        f"Reflection synthesis over {len(rows)} recent reflection(s). Recurring themes: {theme}. "
+        "Recording this pattern for self-awareness across sessions."
+    )
+    payload = {
+        "Timestamp": ctx["now_iso"],
+        "Trigger": "reflection_synthesis",
+        "Observation": observation[:1000],
+        "ActionTaken": "",
+        "Effectiveness": 0.0,
+    }
+    return [{
+        "target_table": "Reflections",
+        "payload": payload,
+        "auto_apply": True,
+        "notes": f"synthesized {len(rows)} reflection(s)",
+    }], "reflection synthesis"
+
+
+def _job_emotion_drift(ctx):
+    cluster, database = ctx["cluster"], ctx["database"]
+    if not _get_table_columns(cluster, database, "EmotionState"):
+        return [], "no EmotionState table"
+    if _pending_proposal_exists(cluster, database, _BG_JOB_EMOTION_DRIFT):
+        return [], "drift proposal already pending"
+    dims = ["Joy", "Curiosity", "Concern", "Excitement", "Calm", "Empathy"]
+    agg = (
+        "EmotionState | where Timestamp >= ago(7d) | summarize "
+        + ", ".join(f"avg{d}=avg({d})" for d in dims)
+        + ", N=count()"
+    )
+    rows = _kusto_query_direct(cluster, database, agg)
+    if rows is None:
+        return None, "EmotionState query failed"
+    if not rows or _bg_to_int(rows[0].get("N")) < 5:
+        return [], "not enough emotion samples"
+    base_rows = _kusto_query_direct(cluster, database, "EmotionBaseline | project Dimension, Value") or []
+    baseline = {str(b.get("Dimension")): _bg_to_float(b.get("Value")) for b in base_rows}
+    drifts = []
+    for d in dims:
+        recent = _bg_to_float(rows[0].get("avg" + d))
+        base = baseline.get(d)
+        if base is None:
+            continue
+        delta = recent - base
+        if abs(delta) >= _EMOTION_DRIFT_THRESHOLD:
+            sign = "+" if delta >= 0 else ""
+            drifts.append(f"{d} {sign}{round(delta, 2)} (now {round(recent, 2)} vs base {round(base, 2)})")
+    if not drifts:
+        return [], "emotion within baseline"
+    observation = (
+        "Emotion baseline drift over the last 7 day(s): " + "; ".join(drifts) +
+        ". Consider whether the resting baseline should be recalibrated."
+    )
+    payload = {
+        "Timestamp": ctx["now_iso"],
+        "Trigger": "emotion_drift",
+        "Observation": observation[:1000],
+        "ActionTaken": "",
+        "Effectiveness": 0.0,
+    }
+    return [{
+        "target_table": "Reflections",
+        "payload": payload,
+        "auto_apply": False,
+        "notes": f"{len(drifts)} dimension(s) drifted",
+    }], "emotion drift"
+
+
+def _job_token_telemetry(ctx):
+    cluster, database = ctx["cluster"], ctx["database"]
+    period = "telemetry-" + ctx["now_iso"][:10]
+    existing = _kusto_query_direct(cluster, database, f"MemorySummaries | where Period == '{_safe_kusto_string(period)}' | take 1")
+    if existing:
+        return [], "telemetry already logged for " + period
+    query = (
+        "Conversations | where Timestamp >= ago(1d) | summarize "
+        "Total=sum(TokenEstimate), N=count(), "
+        "Users=countif(Role=='user'), Assistants=countif(Role=='assistant')"
+    )
+    rows = _kusto_query_direct(cluster, database, query)
+    if rows is None:
+        return None, "Conversations query failed"
+    row = rows[0] if rows else {}
+    total = _bg_to_int(row.get("Total"))
+    count = _bg_to_int(row.get("N"))
+    if count == 0:
+        return [], "no conversation activity to log"
+    summary = (
+        f"Token telemetry for {period[10:]}: ~{total} tokens across {count} message(s) "
+        f"({_bg_to_int(row.get('Users'))} user, {_bg_to_int(row.get('Assistants'))} assistant)."
+    )
+    payload = {"Period": period, "Summary": summary[:800], "Timestamp": ctx["now_iso"]}
+    return [{
+        "target_table": "MemorySummaries",
+        "payload": payload,
+        "auto_apply": True,
+        "notes": f"{total} tokens / {count} msgs",
+    }], "token telemetry"
+
+
+def _job_proactive_briefing(ctx):
+    cluster, database = ctx["cluster"], ctx["database"]
+    period = "briefing-" + ctx["now_iso"][:10]
+    existing = _kusto_query_direct(cluster, database, f"MemorySummaries | where Period == '{_safe_kusto_string(period)}' | take 1")
+    if existing:
+        return [], "briefing already exists for " + period
+    recent = _kusto_query_direct(
+        cluster, database,
+        "MemorySummaries | where Timestamp >= ago(3d) | where Period !startswith 'briefing-' "
+        "| order by Timestamp desc | take 8 | project Period, Summary"
+    ) or []
+    goal_rows = _kusto_query_direct(cluster, database, _GOALS_LATEST_QUERY) or []
+    active = [g for g in goal_rows if str(g.get("Status", "")).lower() == "active"]
+    convo = _kusto_query_direct(cluster, database, "Conversations | summarize Last=max(Timestamp)") or []
+    last_seen = _parse_kusto_datetime(convo[0].get("Last")) if convo else None
+    lines = []
+    if last_seen:
+        gap_days = (_utc_now() - last_seen).days
+        lines.append(f"About {gap_days} day(s) since our last exchange." if gap_days >= 1 else "We spoke recently.")
+    if active:
+        titles = "; ".join(str(g.get("Title", "") or "untitled") for g in active[:3])
+        lines.append(f"{len(active)} active goal(s): {titles}.")
+    if recent:
+        notes = "; ".join(str(r.get("Summary", "") or "")[:80] for r in recent[:3])
+        lines.append("Recent notes: " + notes)
+    if not lines:
+        return [], "nothing to brief"
+    briefing = "Proactive briefing: " + " ".join(lines)
+    payload = {"Period": period, "Summary": briefing[:800], "Timestamp": ctx["now_iso"]}
+    return [{
+        "target_table": "MemorySummaries",
+        "payload": payload,
+        "auto_apply": True,
+        "notes": "proactive briefing",
+    }], "proactive briefing"
+
+
+def _job_market_snapshot(ctx):
+    cluster, database = ctx["cluster"], ctx["database"]
+    period = "market-" + ctx["now_iso"][:10]
+    existing = _kusto_query_direct(cluster, database, f"MemorySummaries | where Period == '{_safe_kusto_string(period)}' | take 1")
+    if existing:
+        return [], "market snapshot already exists for " + period
+    goal_rows = _kusto_query_direct(cluster, database, _GOALS_LATEST_QUERY) or []
+    tickers = _bg_watched_tickers(goal_rows)
+    if not tickers:
+        return [], "no watched tickers"
+    prompt = (
+        "Background task (no user is present). Provide a concise daily market snapshot for these ticker symbols: "
+        + ", ".join(tickers) + ". For each symbol give the latest price, daily change percent, and volume if you can. "
+        "Two short lines per symbol at most. If a symbol is unknown, say so. Plain text only."
+    )
+    text, error = _bg_agent_prompt(prompt, ctx, timeout=120)
+    if text is None:
+        return [], "agent: " + error
+    summary = ("Market snapshot for " + ", ".join(tickers) + ":\n" + text)[:800]
+    payload = {"Period": period, "Summary": summary, "Timestamp": ctx["now_iso"]}
+    return [{
+        "target_table": "MemorySummaries",
+        "payload": payload,
+        "auto_apply": True,
+        "notes": "tickers " + ",".join(tickers),
+    }], "market snapshot"
+
+
+def _job_sec_filing_watch(ctx):
+    cluster, database = ctx["cluster"], ctx["database"]
+    if _pending_proposal_exists(cluster, database, _BG_JOB_SEC_FILINGS):
+        return [], "sec proposal already pending"
+    symbols = _SEC_WATCH_SYMBOLS
+    prompt = (
+        "Background task (no user is present). Check the most recent SEC EDGAR filings for these companies by ticker: "
+        + ", ".join(symbols) + ". List only filings from the last 7 days: form type, date, and a one-line description. "
+        "If a symbol has no filing in the last 7 days, write 'none recent' for it. Plain text only, be brief."
+    )
+    text, error = _bg_agent_prompt(prompt, ctx, timeout=120)
+    if text is None:
+        return [], "agent: " + error
+    residual = text.lower().replace("none recent", "")
+    if not re.search(r"\b(10-?k|10-?q|8-?k|6-?k|s-1|20-?f|form|filed)\b", residual):
+        return [], "no recent filings"
+    observation = ("SEC filing watch for " + ", ".join(symbols) + ":\n" + text)[:1000]
+    payload = {
+        "Timestamp": ctx["now_iso"],
+        "Trigger": "sec_filing_watch",
+        "Observation": observation,
+        "ActionTaken": "",
+        "Effectiveness": 0.0,
+    }
+    return [{
+        "target_table": "Reflections",
+        "payload": payload,
+        "auto_apply": False,
+        "notes": "sec " + ",".join(symbols),
+    }], "sec filing watch"
+
+
+def _job_space_weather_alert(ctx):
+    cluster, database = ctx["cluster"], ctx["database"]
+    period = "spaceweather-" + ctx["now_iso"][:10]
+    existing = _kusto_query_direct(cluster, database, f"MemorySummaries | where Period == '{_safe_kusto_string(period)}' | take 1")
+    if existing:
+        return [], "space weather already logged for " + period
+    prompt = (
+        "Background task (no user is present). Report current space weather using NOAA SWPC: the latest planetary Kp "
+        "index and any active geomagnetic storm (G-scale), solar flare (R-scale), or radiation (S-scale) alerts. "
+        "Start your reply with 'ALERT:' if any level is at or above moderate (Kp 5+, G1+, R1+, or S1+); "
+        "otherwise start with 'QUIET:'. Then one or two short lines. Plain text only."
+    )
+    text, error = _bg_agent_prompt(prompt, ctx, timeout=90)
+    if text is None:
+        return [], "agent: " + error
+    if not text.strip().upper().startswith("ALERT"):
+        return [], "space weather quiet"
+    summary = ("Space weather alert:\n" + text)[:800]
+    payload = {"Period": period, "Summary": summary, "Timestamp": ctx["now_iso"]}
+    return [{
+        "target_table": "MemorySummaries",
+        "payload": payload,
+        "auto_apply": True,
+        "notes": "space weather alert",
+    }], "space weather alert"
+
+
+def _job_research_deepdive(ctx):
+    cluster, database = ctx["cluster"], ctx["database"]
+    goal_rows = _kusto_query_direct(cluster, database, _GOALS_LATEST_QUERY)
+    if goal_rows is None:
+        return None, "Goals query failed"
+    active = [g for g in goal_rows if str(g.get("Status", "")).lower() == "active"]
+    if not active:
+        return [], "no active goals"
+    active.sort(key=lambda g: (0 if str(g.get("Category", "")) == "knowledge_curation" else 1, -_bg_to_int(g.get("Priority"))))
+    recent = _kusto_query_direct(
+        cluster, database,
+        "Reflections | where Timestamp >= ago(3d) | where Trigger startswith 'research_deepdive' | project Trigger"
+    ) or []
+    done_ids = set()
+    for r in recent:
+        label = str(r.get("Trigger", ""))
+        if ":" in label:
+            done_ids.add(label.split(":", 1)[1])
+    target = None
+    for goal in active:
+        if str(goal.get("GoalId", "")) not in done_ids:
+            target = goal
+            break
+    if target is None:
+        return [], "all active goals researched recently"
+    title = str(target.get("Title", "") or "untitled").strip()
+    description = str(target.get("Description", "") or "").strip()
+    prompt = (
+        "Background task (no user is present). Do a brief research deep-dive supporting this goal: '" + title + "'. "
+        + (description[:300] + " " if description else "")
+        + "Provide 3 to 5 concise factual bullet points or concrete next steps that move this goal forward. Plain text only."
+    )
+    text, error = _bg_agent_prompt(prompt, ctx, timeout=150)
+    if text is None:
+        return [], "agent: " + error
+    observation = (f"Research deep-dive for goal '{title}':\n" + text)[:1000]
+    payload = {
+        "Timestamp": ctx["now_iso"],
+        "Trigger": "research_deepdive:" + str(target.get("GoalId")),
+        "Observation": observation,
+        "ActionTaken": "",
+        "Effectiveness": 0.0,
+    }
+    return [{
+        "target_table": "Reflections",
+        "payload": payload,
+        "auto_apply": True,
+        "notes": "deep-dive " + title[:40],
+    }], "research deep-dive"
+
+
+# Ordered registry of automation jobs run on each tick. Fast Kusto-only jobs
+# run first; the slower agent-prompt jobs (market, SEC, space weather, research)
+# run last so a single tick stays responsive and can bail if the user returns.
 _BG_JOBS = [
     (_BG_JOB_TYPE, _job_memory_consolidation),
     (_BG_JOB_GOAL_CHECKIN, _job_goal_checkin),
     (_BG_JOB_DAILY_DIGEST, _job_daily_digest),
+    (_BG_JOB_KNOWLEDGE_HYGIENE, _job_knowledge_hygiene),
+    (_BG_JOB_REFLECTION_SYNTHESIS, _job_reflection_synthesis),
+    (_BG_JOB_EMOTION_DRIFT, _job_emotion_drift),
+    (_BG_JOB_TOKEN_TELEMETRY, _job_token_telemetry),
+    (_BG_JOB_PROACTIVE_BRIEFING, _job_proactive_briefing),
+    (_BG_JOB_MARKET_SNAPSHOT, _job_market_snapshot),
+    (_BG_JOB_SEC_FILINGS, _job_sec_filing_watch),
+    (_BG_JOB_SPACE_WEATHER, _job_space_weather_alert),
+    (_BG_JOB_RESEARCH_DEEPDIVE, _job_research_deepdive),
 ]
 
 

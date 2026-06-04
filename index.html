@@ -520,6 +520,15 @@
             <label class="background-toggle-row"><input type="checkbox" data-job="memory_consolidation" checked> Memory consolidation</label>
             <label class="background-toggle-row"><input type="checkbox" data-job="goal_checkin" checked> Goal check-ins</label>
             <label class="background-toggle-row"><input type="checkbox" data-job="daily_digest" checked> Daily digest</label>
+            <label class="background-toggle-row"><input type="checkbox" data-job="knowledge_hygiene" checked> Knowledge decay / dedup</label>
+            <label class="background-toggle-row"><input type="checkbox" data-job="reflection_synthesis" checked> Reflection synthesis</label>
+            <label class="background-toggle-row"><input type="checkbox" data-job="emotion_drift" checked> Emotion baseline drift</label>
+            <label class="background-toggle-row"><input type="checkbox" data-job="token_telemetry" checked> Token telemetry</label>
+            <label class="background-toggle-row"><input type="checkbox" data-job="proactive_briefing" checked> Proactive briefing</label>
+            <label class="background-toggle-row"><input type="checkbox" data-job="market_snapshot" checked> Market open/close snapshot</label>
+            <label class="background-toggle-row"><input type="checkbox" data-job="sec_filing_watch" checked> SEC filing watch (PLG, PKX)</label>
+            <label class="background-toggle-row"><input type="checkbox" data-job="space_weather_alert" checked> Weather / space-weather alert</label>
+            <label class="background-toggle-row"><input type="checkbox" data-job="research_deepdive" checked> Research deep-dive</label>
           </div>
           <div class="background-actions">
             <button type="button" class="auth-save" id="backgroundSaveButton">Save controls</button>
@@ -773,7 +782,7 @@
     <div class="vv-hud-bottom">
       <canvas id="vvWaveBar" class="vv-wave-bar" width="600" height="48"></canvas>
       <div id="vvTranscript" class="vv-transcript"></div>
-      <div class="vv-hint">tap orb to listen &middot; say <em>Eva</em> to wake</div>
+      <div id="vvHudTelemetry" class="vv-hint vv-telemetry">tap orb to listen &middot; say <em>Eva</em> to wake</div>
     </div>
   </div>
 

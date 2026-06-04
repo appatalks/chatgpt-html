@@ -549,6 +549,15 @@ function backgroundJobLabel(jobType) {
     case 'memory_consolidation': return 'Memory summary proposal';
     case 'goal_checkin': return 'Goal check-in';
     case 'daily_digest': return 'Daily digest';
+    case 'knowledge_hygiene': return 'Knowledge decay / dedup';
+    case 'reflection_synthesis': return 'Reflection synthesis';
+    case 'emotion_drift': return 'Emotion baseline drift';
+    case 'token_telemetry': return 'Token telemetry';
+    case 'proactive_briefing': return 'Proactive briefing';
+    case 'market_snapshot': return 'Market snapshot';
+    case 'sec_filing_watch': return 'SEC filing watch';
+    case 'space_weather_alert': return 'Space weather alert';
+    case 'research_deepdive': return 'Research deep-dive';
     default: return jobType ? String(jobType) : 'Background proposal';
   }
 }
@@ -1637,6 +1646,25 @@ function _vvUpdateHUD() {
       latEl.textContent = _netStats.lastLatency + ' ms';
     } else {
       latEl.textContent = '-- ms';
+    }
+  }
+  // Live token telemetry replaces the lower-screen hint tidbit
+  var telEl = document.getElementById('vvHudTelemetry');
+  if (telEl) {
+    var ctxTokens = 0, msgCount = 0;
+    try { ctxTokens = computeMessagesTokens() || 0; } catch (e) { ctxTokens = 0; }
+    try { msgCount = _countAllMessages() || 0; } catch (e) { msgCount = 0; }
+    if (ctxTokens > 0 || msgCount > 0) {
+      var ctxStr = ctxTokens >= 1000 ? (ctxTokens / 1000).toFixed(1) + 'k' : String(ctxTokens);
+      var parts = ['CTX ' + ctxStr + ' tok', msgCount + ' msg'];
+      if (typeof _netStats !== 'undefined') {
+        parts.push('REQ ' + (_netStats.requests || 0));
+        if (_netStats.errors) parts.push('ERR ' + _netStats.errors);
+        if (_netStats.lastProvider) parts.push(String(_netStats.lastProvider).toUpperCase());
+      }
+      telEl.innerHTML = parts.join(' &middot; ');
+    } else {
+      telEl.innerHTML = 'tap orb to listen &middot; say <em>Eva</em> to wake';
     }
   }
 }
