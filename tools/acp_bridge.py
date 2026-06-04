@@ -2298,7 +2298,16 @@ def _parse_kusto_datetime(value):
 
 
 def _safe_kusto_string(value):
-    return str(value or "").replace("'", "''")
+    # Escape for embedding inside a single-quoted KQL string literal. Backslash
+    # must be escaped first, then quotes and control characters, so free-form
+    # text (agent summaries, observations) with newlines does not produce a
+    # malformed query. KQL parses these escapes back to the original value, so
+    # equality filters still match.
+    s = str(value or "")
+    s = s.replace("\\", "\\\\")
+    s = s.replace("'", "\\'")
+    s = s.replace("\n", "\\n").replace("\r", "\\r").replace("\t", "\\t")
+    return s
 
 
 def _mark_user_activity():
