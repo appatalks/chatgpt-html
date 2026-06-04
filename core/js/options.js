@@ -1540,6 +1540,9 @@ function openVoiceView() {
   var closeBtn = document.getElementById('voiceViewClose');
   if (closeBtn) closeBtn.onclick = closeVoiceView;
 
+  var assetsClose = document.getElementById('vvAssetsClose');
+  if (assetsClose) assetsClose.onclick = _vvHideAssets;
+
   var canvas = document.getElementById('voiceViewCanvas');
   if (canvas) canvas.onclick = _vvToggleListening;
 
@@ -1575,6 +1578,7 @@ function closeVoiceView() {
   _vvStopCanvas();
   _vvStopWaveBar();
   _vvStopHUD();
+  _vvHideAssets();
 }
 
 function _vvSetStatus(phase) {
@@ -2071,6 +2075,47 @@ function _vvDisconnectTTSAnalyser() {
   _vv.ttsDelay = null;
 }
 
+// --- Voice-mode asset surface ---
+
+// Show images (or other media) in the voice view's asset window so the user
+// can see what Eva surfaced without leaving the orb overlay.
+function _vvSurfaceAssets(assets) {
+  if (!assets || !assets.length) return;
+  var panel = document.getElementById('vvAssets');
+  var body = document.getElementById('vvAssetsBody');
+  if (!panel || !body) return;
+
+  body.innerHTML = '';
+  assets.forEach(function(a) {
+    if (!a || !a.url) return;
+    var img = document.createElement('img');
+    img.className = 'eva-inline-img';
+    img.src = a.url;
+    img.alt = a.caption || 'Image';
+    body.appendChild(img);
+    if (a.caption) {
+      var cap = document.createElement('div');
+      cap.className = 'vv-assets-caption';
+      cap.textContent = a.generated ? a.caption + ' (AI generated)' : a.caption;
+      body.appendChild(cap);
+    }
+  });
+
+  panel.classList.add('open');
+  panel.setAttribute('aria-hidden', 'false');
+}
+
+function _vvHideAssets() {
+  var panel = document.getElementById('vvAssets');
+  var body = document.getElementById('vvAssetsBody');
+  if (panel) {
+    panel.classList.remove('open');
+    panel.setAttribute('aria-hidden', 'true');
+  }
+  if (body) body.innerHTML = '';
+}
+
+
 // --- Voice recognition ---
 
 function _vvToggleListening() {
@@ -2332,6 +2377,7 @@ function _vvSendCommand(command) {
   _vv.lastTranscript = command;
   _vv.cmdStart = performance.now();
   _vvSetStatus('thinking');
+  _vvHideAssets();
 
   // Show command in transcript area
   var transcriptEl = document.getElementById('vvTranscript');
@@ -3876,6 +3922,7 @@ async function renderEvaResponse(content, txtOutput) {
 
   var text = content.trim();
   var artifactNames = [];
+  var surfacedAssets = [];
 
   // Detect Eva browser-agent launch marker:
   // [[EVA_BROWSER]]{"goal":"...","start_url":"..."}[[/EVA_BROWSER]]
@@ -3979,6 +4026,7 @@ async function renderEvaResponse(content, txtOutput) {
           imgTag = '<div class="eva-generated-wrap">' + imgTag + '<span class="eva-generated-badge">AI Generated</span></div>';
         }
         text = text.replace(r.placeholder.full, imgTag);
+        surfacedAssets.push({ url: r.url, caption: r.placeholder.query, generated: r.generated });
       } else {
         // Replace with a styled placeholder showing what was requested
         text = text.replace(r.placeholder.full, '[🖼️ ' + r.placeholder.query + ']');
@@ -4037,6 +4085,12 @@ async function renderEvaResponse(content, txtOutput) {
 
   appendArtifactLinks();
   txtOutput.scrollTop = txtOutput.scrollHeight;
+
+  // In voice/visual mode the chat is hidden behind the orb overlay, so surface
+  // any images Eva resolved into the voice view's asset window.
+  if (typeof _vv !== 'undefined' && _vv.open && surfacedAssets.length) {
+    _vvSurfaceAssets(surfacedAssets);
+  }
 
   // Launch the visual browser agent if Eva requested it.
   if (browserLaunch && typeof EvaBrowser !== 'undefined' && EvaBrowser && typeof EvaBrowser.launch === 'function') {

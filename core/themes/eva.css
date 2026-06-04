@@ -1060,7 +1060,75 @@ body.theme-eva .cog-badge[data-active="true"] {
   color: rgba(140,120,255,0.45);
 }
 
-/* ── Eva nav button accent ────────────────────────────────── */
+/* ── Voice-mode asset surface ─────────────────────────────── */
+.vv-assets {
+  position: absolute;
+  top: 50%;
+  right: 32px;
+  transform: translateY(-50%) scale(0.96);
+  width: min(360px, 38vw);
+  max-height: 70vh;
+  display: none;
+  flex-direction: column;
+  background: rgba(10,14,28,0.82);
+  border: 1px solid rgba(100,180,255,0.25);
+  border-radius: 12px;
+  box-shadow: 0 0 32px rgba(60,120,255,0.18), inset 0 0 24px rgba(40,80,200,0.08);
+  backdrop-filter: blur(8px);
+  z-index: 5;
+  opacity: 0;
+  transition: opacity 0.3s ease, transform 0.3s ease;
+}
+.vv-assets.open {
+  display: flex;
+  opacity: 1;
+  transform: translateY(-50%) scale(1);
+}
+.vv-assets-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 12px;
+  border-bottom: 1px solid rgba(100,180,255,0.15);
+}
+.vv-assets-title {
+  font-size: 10px;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  color: rgba(100,180,255,0.7);
+}
+.vv-assets-close {
+  background: none;
+  border: none;
+  color: rgba(180,200,240,0.6);
+  font-size: 18px;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0 4px;
+}
+.vv-assets-close:hover { color: rgba(120,200,255,1); }
+.vv-assets-body {
+  padding: 12px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.vv-assets-body img {
+  width: 100%;
+  border-radius: 8px;
+  display: block;
+  border: 1px solid rgba(100,180,255,0.2);
+  cursor: zoom-in;
+}
+.vv-assets-caption {
+  font-size: 11px;
+  color: rgba(180,200,240,0.6);
+  text-align: center;
+  font-style: italic;
+}
+
+
 .eva-nav-eva .eva-nav-icon {
   color: rgba(140,120,255,0.7);
 }
@@ -1078,4 +1146,5 @@ body.theme-eva .cog-badge[data-active="true"] {
   .vv-hud-value { font-size: 10px; }
   .vv-hud-bottom { padding: 0 12px 16px; }
   .vv-wave-bar { height: 36px; }
+  .vv-assets { right: 12px; left: 12px; width: auto; max-height: 50vh; }
 }

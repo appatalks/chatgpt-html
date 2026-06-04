@@ -783,7 +783,16 @@
       <canvas id="vvWaveBar" class="vv-wave-bar" width="600" height="48"></canvas>
       <div id="vvHudTelemetry" class="vv-hint vv-telemetry">tap orb to listen &middot; say <em>Eva</em> to wake</div>
     </div>
+    <!-- Asset surface: images/media Eva shows while in voice mode -->
+    <div id="vvAssets" class="vv-assets" aria-hidden="true">
+      <div class="vv-assets-bar">
+        <span class="vv-assets-title">ASSET</span>
+        <button id="vvAssetsClose" class="vv-assets-close" type="button" aria-label="Close asset">&times;</button>
+      </div>
+      <div id="vvAssetsBody" class="vv-assets-body"></div>
+    </div>
   </div>
+
 
   <!-- Image lightbox -->
   <div class="eva-lightbox" id="evaLightbox">
