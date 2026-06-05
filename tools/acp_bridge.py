@@ -448,6 +448,7 @@ class ACPClient:
         self._current_prompt_id = pid
         self.response_chunks[pid] = ""
 
+        _t0 = time.perf_counter()
         result = self._send_request("session/prompt", {
             "sessionId": self.session_id,
             "prompt": [{"type": "text", "text": text}]
@@ -455,13 +456,23 @@ class ACPClient:
 
         response_text = self.response_chunks.pop(pid, "")
         self._current_prompt_id = None
+        _ms = round((time.perf_counter() - _t0) * 1000.0, 1)
 
         if result and isinstance(result, dict):
             if "error" in result:
+                _telemetry_emit("acp_prompt", model=self.model or "default",
+                                prompt_chars=len(text or ""), response_chars=0,
+                                ms=_ms, stop_reason="error")
                 return {"error": result["error"]}
             stop_reason = result.get("stopReason", "end_turn")
+            _telemetry_emit("acp_prompt", model=self.model or "default",
+                            prompt_chars=len(text or ""), response_chars=len(response_text or ""),
+                            ms=_ms, stop_reason=stop_reason)
             return {"text": response_text, "stop_reason": stop_reason}
 
+        _telemetry_emit("acp_prompt", model=self.model or "default",
+                        prompt_chars=len(text or ""), response_chars=len(response_text or ""),
+                        ms=_ms, stop_reason="end_turn")
         return {"text": response_text, "stop_reason": "end_turn"}
 
 
@@ -614,7 +625,14 @@ def _same_kusto_cluster(left, right):
 # HTTP Server — exposes the ACP client as an OpenAI-compatible endpoint
 # ---------------------------------------------------------------------------
 
-acp_client = None  # Global ACP client instance
+acp_client = None  # Global ACP client instance (points at the most-recently-used warm client)
+# Warm client pool: keep one live Copilot CLI per model so switching between the
+# cognition draft model and the reviewer model does not tear down and respawn the
+# CLI on every turn. Keyed by model name; bounded by _ACP_POOL_MAX (LRU eviction).
+_acp_pool = {}            # model_key -> ACPClient
+_acp_pool_order = []      # model_key list, least-recently-used first
+_acp_pool_lock = threading.RLock()
+_ACP_POOL_MAX = 4         # max concurrent warm Copilot CLI subprocesses
 _kusto_token_cache = None  # Cached Kusto access token (survives model switches)
 _kusto_credential = None   # Cached credential object for token refresh
 _last_interaction_date = None  # Track last interaction date for day lifecycle
@@ -1097,6 +1115,118 @@ def _load_persisted_mcp_config():
     except (OSError, json.JSONDecodeError) as exc:
         print(f"[Bridge] Could not load persisted MCP config: {exc}", file=sys.stderr)
     return {}
+
+
+# ---------------------------------------------------------------------------
+# Telemetry — structured, privacy-safe event log for latency/behavior analysis
+# ---------------------------------------------------------------------------
+# Events are appended as JSONL to _TELEMETRY_PATH and mirrored to an in-memory
+# ring buffer for the GET /v1/telemetry endpoint. We record durations, model
+# names, routing/decision labels, and character COUNTS only — never the user
+# message, the response text, tokens, keys, or any MCP env values.
+
+_TELEMETRY_PATH = os.path.expanduser("~/.config/eva-standalone/telemetry.jsonl")
+_TELEMETRY_MAX_BYTES = 5 * 1024 * 1024  # rotate at ~5MB (keeps one .1 backup)
+_TELEMETRY_RING_MAX = 300               # recent events kept in memory
+_TELEMETRY_ENABLED = os.environ.get("EVA_TELEMETRY", "1") not in ("0", "false", "no")
+_telemetry_lock = threading.Lock()
+_telemetry_ring = []  # list of recent event dicts (most recent last)
+
+
+def _telemetry_clip(value, limit=120):
+    """Clip a label/string field so telemetry never stores large or sensitive blobs."""
+    if value is None:
+        return None
+    s = str(value)
+    return s if len(s) <= limit else s[:limit] + "…"
+
+
+def _telemetry_emit(event, **fields):
+    """Record a telemetry event. Safe to call from any thread; never raises."""
+    if not _TELEMETRY_ENABLED:
+        return
+    try:
+        record = {"ts": _to_utc_iso(_utc_now()), "event": str(event)[:48]}
+        for k, v in fields.items():
+            if isinstance(v, bool) or isinstance(v, (int, float)) or v is None:
+                record[k] = v
+            else:
+                record[k] = _telemetry_clip(v)
+        with _telemetry_lock:
+            _telemetry_ring.append(record)
+            if len(_telemetry_ring) > _TELEMETRY_RING_MAX:
+                del _telemetry_ring[:-_TELEMETRY_RING_MAX]
+            try:
+                os.makedirs(os.path.dirname(_TELEMETRY_PATH), exist_ok=True)
+                if (os.path.isfile(_TELEMETRY_PATH)
+                        and os.path.getsize(_TELEMETRY_PATH) >= _TELEMETRY_MAX_BYTES):
+                    try:
+                        os.replace(_TELEMETRY_PATH, _TELEMETRY_PATH + ".1")
+                    except OSError:
+                        pass
+                with open(_TELEMETRY_PATH, "a", encoding="utf-8") as f:
+                    f.write(json.dumps(record) + "\n")
+            except OSError:
+                pass
+        # Compact stdout mirror for live tailing.
+        kv = " ".join(f"{k}={record[k]}" for k in record if k not in ("ts", "event"))
+        print(f"[Telemetry] {record['event']} {kv}".rstrip())
+    except Exception:
+        # Telemetry must never break the request path.
+        pass
+
+
+def _percentile(sorted_vals, pct):
+    if not sorted_vals:
+        return None
+    if len(sorted_vals) == 1:
+        return sorted_vals[0]
+    k = (len(sorted_vals) - 1) * (pct / 100.0)
+    lo = int(k)
+    hi = min(lo + 1, len(sorted_vals) - 1)
+    frac = k - lo
+    return round(sorted_vals[lo] + (sorted_vals[hi] - sorted_vals[lo]) * frac, 1)
+
+
+def _telemetry_summarize(events):
+    """Build lightweight aggregates from a list of event dicts."""
+    counts = {}
+    pool = {"hit": 0, "warm": 0, "evict": 0, "miss": 0}
+    prompt_ms = []
+    turn_ms = []
+    for ev in events:
+        name = ev.get("event", "?")
+        counts[name] = counts.get(name, 0) + 1
+        if name == "acp_pool":
+            r = ev.get("result")
+            if r in pool:
+                pool[r] += 1
+        elif name == "acp_prompt" and isinstance(ev.get("ms"), (int, float)):
+            prompt_ms.append(ev["ms"])
+        elif name == "aig_turn" and isinstance(ev.get("total_ms"), (int, float)):
+            turn_ms.append(ev["total_ms"])
+    pool_selects = pool["hit"] + pool["warm"]
+    summary = {
+        "event_counts": counts,
+        "pool": dict(pool, hit_rate=(round(pool["hit"] / pool_selects, 3) if pool_selects else None)),
+    }
+
+    def _stats(vals):
+        if not vals:
+            return None
+        sv = sorted(vals)
+        return {
+            "n": len(sv),
+            "avg": round(sum(sv) / len(sv), 1),
+            "p50": _percentile(sv, 50),
+            "p95": _percentile(sv, 95),
+            "max": sv[-1],
+        }
+
+    summary["acp_prompt_ms"] = _stats(prompt_ms)
+    summary["aig_turn_ms"] = _stats(turn_ms)
+    return summary
+
 
 
 class _MSALSilentCredential:
@@ -3310,76 +3440,154 @@ def _background_proposal_update_row(current, status, reviewed_by, notes):
     return row
 
 
+def _acp_model_key(model):
+    """Normalize a model name into a pool key. Empty/None -> the CLI default."""
+    return (model or "").strip() or "__default__"
+
+
+def _acp_pool_touch(key):
+    """Mark a pool key as most-recently-used."""
+    try:
+        _acp_pool_order.remove(key)
+    except ValueError:
+        pass
+    _acp_pool_order.append(key)
+
+
+def _acp_pool_register(client):
+    """Register an externally-built client (e.g. the startup singleton or a
+    reconfigured client) into the pool under its model key. Caller holds the lock."""
+    if not client:
+        return
+    key = _acp_model_key(client.model)
+    _acp_pool[key] = client
+    _acp_pool_touch(key)
+
+
+def _acp_pool_evict_if_needed(protect_key):
+    """Evict least-recently-used warm clients past the cap. Never evicts the
+    protected key or the client currently referenced by the acp_client pointer.
+    Caller holds the lock."""
+    while len(_acp_pool) > _ACP_POOL_MAX:
+        victim_key = None
+        for k in list(_acp_pool_order):
+            if k == protect_key:
+                continue
+            if acp_client is not None and _acp_pool.get(k) is acp_client:
+                continue
+            victim_key = k
+            break
+        if victim_key is None:
+            break
+        victim = _acp_pool.pop(victim_key, None)
+        try:
+            _acp_pool_order.remove(victim_key)
+        except ValueError:
+            pass
+        if victim:
+            print(f"[Bridge] Evicting warm ACP client: {victim_key}")
+            _telemetry_emit("acp_pool", result="evict", model=victim_key, pool_size=len(_acp_pool))
+            try:
+                victim.stop()
+            except Exception:
+                pass
+
+
+def _reset_acp_pool(keep_client):
+    """Stop and clear all pooled clients except keep_client, then register
+    keep_client. Used when MCP config changes so stale clients are not reused."""
+    with _acp_pool_lock:
+        for key, client in list(_acp_pool.items()):
+            if client is keep_client:
+                continue
+            try:
+                client.stop()
+            except Exception:
+                pass
+        _acp_pool.clear()
+        _acp_pool_order.clear()
+        if keep_client:
+            _acp_pool_register(keep_client)
+
+
 def _ensure_acp_model(requested_model):
-    """Ensure ACP client is running with the requested model."""
+    """Ensure a warm ACP client for requested_model is selected as acp_client.
+
+    Uses a warm pool so switching between the cognition draft model and the
+    reviewer model reuses a live Copilot CLI instead of respawning it every turn.
+    Returns (ok, model_or_error)."""
     global acp_client
 
-    if not acp_client:
-        return False, "ACP bridge not connected to Copilot"
+    with _acp_pool_lock:
+        # Seed the pool with the startup singleton on first use.
+        if acp_client and _acp_model_key(acp_client.model) not in _acp_pool:
+            _acp_pool_register(acp_client)
 
-    # If the CLI process died (stdout closed, crash, idle timeout),
-    # attempt a restart with the current config before giving up.
-    if not acp_client.alive:
-        print("[Bridge] ACP client not alive, attempting restart...")
+        if not acp_client and not _acp_pool:
+            return False, "ACP bridge not connected to Copilot"
+
+        key = _acp_model_key(requested_model)
+
+        # Fast path: a live warm client already exists for this model.
+        existing = _acp_pool.get(key)
+        if existing and existing.alive:
+            acp_client = existing
+            _acp_pool_touch(key)
+            _telemetry_emit("acp_pool", result="hit", model=key, pool_size=len(_acp_pool))
+            return True, existing.model or "default"
+
+        # Need to warm a new client. Use any live client as the cwd/path/MCP template.
+        template = acp_client
+        if template is None or not template.alive:
+            for c in _acp_pool.values():
+                if c and c.alive:
+                    template = c
+                    break
+        if template is None:
+            # Nothing alive to template from; fall back to the existing pointer.
+            template = acp_client
+        if template is None:
+            return False, "ACP bridge not connected to Copilot"
+
+        if requested_model:
+            print(f"[Bridge] Warming ACP client for model: {requested_model}")
+        else:
+            print("[Bridge] Warming ACP client for default model")
+
+        # Drop a dead client occupying this key before replacing it.
+        if existing and not existing.alive:
+            try:
+                existing.stop()
+            except Exception:
+                pass
+            _acp_pool.pop(key, None)
+            try:
+                _acp_pool_order.remove(key)
+            except ValueError:
+                pass
+
         try:
-            old_cwd = acp_client.cwd
-            old_path = acp_client.copilot_path
-            old_mcp = _inject_kusto_token(acp_client.mcp_config)
-            old_model = acp_client.model
-            acp_client.stop()
-            acp_client = ACPClient(
-                copilot_path=old_path,
-                cwd=old_cwd,
-                model=requested_model or old_model or None,
-                mcp_config=old_mcp,
+            new_client = ACPClient(
+                copilot_path=template.copilot_path,
+                cwd=template.cwd,
+                model=(requested_model or None),
+                mcp_config=_inject_kusto_token(template.mcp_config),
             )
-            acp_client.start()
-            print(f"[Bridge] ACP client restarted successfully")
-            return True, acp_client.model or "default"
+            _warm_t0 = time.perf_counter()
+            new_client.start()
         except RuntimeError as e:
-            print(f"[Bridge] ACP restart failed: {e}")
-            return False, f"ACP restart failed: {e}"
+            print(f"[Bridge] Warm client start failed: {e}")
+            _telemetry_emit("acp_pool", result="warm_failed", model=key, error=str(e))
+            return False, str(e)
 
-    target_model = requested_model or ""
-    current_model = acp_client.model or ""
-    if target_model == current_model:
-        return True, acp_client.model or "default"
+        _acp_pool[key] = new_client
+        _acp_pool_touch(key)
+        acp_client = new_client
+        _acp_pool_evict_if_needed(key)
+        _telemetry_emit("acp_pool", result="warm", model=key, pool_size=len(_acp_pool),
+                        warm_ms=round((time.perf_counter() - _warm_t0) * 1000.0, 1))
+        return True, new_client.model or "default"
 
-    if target_model:
-        print(f"[Bridge] Model switch requested: {current_model or 'default'} -> {target_model}")
-    else:
-        print("[Bridge] Switching back to default model")
-
-    old_cwd = acp_client.cwd
-    old_path = acp_client.copilot_path
-    old_mcp = _inject_kusto_token(acp_client.mcp_config)
-    previous_model = acp_client.model
-    acp_client.stop()
-
-    acp_client = ACPClient(
-        copilot_path=old_path,
-        cwd=old_cwd,
-        model=target_model or None,
-        mcp_config=old_mcp,
-    )
-    try:
-        acp_client.start()
-        return True, acp_client.model or "default"
-    except RuntimeError as e:
-        print(f"[Bridge] Model switch failed: {e}")
-        # Attempt to restore previous model to keep bridge usable.
-        try:
-            acp_client = ACPClient(
-                copilot_path=old_path,
-                cwd=old_cwd,
-                model=previous_model or None,
-                mcp_config=old_mcp,
-            )
-            acp_client.start()
-            print(f"[Bridge] Restored previous ACP model: {previous_model or 'default'}")
-        except RuntimeError as restore_err:
-            return False, f"{e}; restore failed: {restore_err}"
-        return False, str(e)
 
 
 class BridgeHandler(BaseHTTPRequestHandler):
@@ -3413,6 +3621,8 @@ class BridgeHandler(BaseHTTPRequestHandler):
             self._mcp_status()
         elif parsed_path == "/v1/mcp/config":
             self._mcp_persisted_config()
+        elif parsed_path == "/v1/telemetry":
+            self._telemetry_report()
         elif parsed_path == "/v1/goals":
             self._goals_list()
         elif parsed_path == "/v1/background/status":
@@ -3443,6 +3653,8 @@ class BridgeHandler(BaseHTTPRequestHandler):
             self._memory_reflect()
         elif parsed_path == "/v1/aig/chat":
             self._aig_chat()
+        elif parsed_path == "/v1/telemetry":
+            self._telemetry_ingest()
         elif parsed_path == "/v1/browser/run":
             self._browser_run()
         elif parsed_path == "/v1/browser/confirm":
@@ -4040,6 +4252,64 @@ class BridgeHandler(BaseHTTPRequestHandler):
         has been cleared across an app rebuild or restart."""
         self._json_response(200, {"mcp_servers": _load_persisted_mcp_config()})
 
+    def _telemetry_report(self):
+        """Return recent telemetry events plus aggregate latency/behavior stats.
+        Query params: ?limit=N (default 100, max 300), ?event=<name> filter."""
+        from urllib.parse import urlparse, parse_qs
+        params = parse_qs(urlparse(self.path).query)
+        try:
+            limit = int(params.get("limit", ["100"])[0])
+        except ValueError:
+            limit = 100
+        limit = max(1, min(limit, _TELEMETRY_RING_MAX))
+        event_filter = (params.get("event", [""])[0] or "").strip()
+        with _telemetry_lock:
+            events = list(_telemetry_ring)
+        if event_filter:
+            events = [e for e in events if e.get("event") == event_filter]
+        recent = events[-limit:]
+        self._json_response(200, {
+            "enabled": _TELEMETRY_ENABLED,
+            "count": len(recent),
+            "total_in_memory": len(_telemetry_ring),
+            "summary": _telemetry_summarize(events),
+            "events": recent,
+        })
+
+    def _telemetry_ingest(self):
+        """Accept a privacy-safe cognition timing record from the front end and
+        fold it into the same telemetry log. Only known numeric/label fields are
+        kept; any unexpected or oversized values are dropped/clipped."""
+        content_length = int(self.headers.get("Content-Length", 0))
+        if content_length == 0:
+            self._json_response(400, {"error": {"message": "Empty request body"}})
+            return
+        try:
+            data = json.loads(self.rfile.read(content_length).decode("utf-8"))
+        except (json.JSONDecodeError, ValueError):
+            self._json_response(400, {"error": {"message": "Invalid JSON"}})
+            return
+        if not isinstance(data, dict):
+            self._json_response(400, {"error": {"message": "Body must be an object"}})
+            return
+        _num_keys = ("turn_ms", "draft_ms", "review_ms", "revise_ms",
+                     "cycles", "draft_chars", "final_chars")
+        _label_keys = ("eva_model", "reviewer_model", "review_reason",
+                       "last_verdict", "sentinel_want")
+        fields = {}
+        for k in _num_keys:
+            v = data.get(k)
+            if isinstance(v, bool):
+                continue
+            if isinstance(v, (int, float)):
+                fields[k] = v
+        for k in _label_keys:
+            if k in data and data[k] is not None:
+                v = data[k]
+                fields[k] = v if isinstance(v, bool) else _telemetry_clip(v, 60)
+        _telemetry_emit("cognition_turn", source="frontend", **fields)
+        self._json_response(200, {"status": "ok"})
+
     def _mcp_status(self):
         """Return current MCP server configuration status."""
         config = acp_client.mcp_config if acp_client else {}
@@ -4096,6 +4366,10 @@ class BridgeHandler(BaseHTTPRequestHandler):
         # message instead of the wrapped task prompt.
         inject_memory = bool(data.get("inject_memory"))
         recall_query = (data.get("recall_query") or "").strip()
+        # Tool-free mode: the cognition reviewer is a text-only judge. It already
+        # has the draft and the user message, so it must NOT re-run web/Kusto/MCP
+        # tools (that duplicated the draft's retrieval and doubled latency).
+        no_tools = bool(data.get("no_tools"))
         model_for_response = data.get("model", "claude-opus-4.8")  # frontend-selectable, default claude-opus-4.8
         _set_openai_key_from(data)  # cache key for semantic recall (incl. background threads)
 
@@ -4109,6 +4383,7 @@ class BridgeHandler(BaseHTTPRequestHandler):
             self._json_response(400, {"error": {"message": "No user message provided"}})
             return
         _mark_user_activity()
+        _turn_t0 = time.perf_counter()
 
         print(f"[AIG] Processing: {user_message[:80]}...")
 
@@ -4277,6 +4552,19 @@ class BridgeHandler(BaseHTTPRequestHandler):
             "happen; use the direct Playwright tools above for quick one-off navigations. Emit at most one "
             "EVA_BROWSER block per reply, and only when the user actually asked for a browser task.\n\n"
         )
+
+        if no_tools:
+            # Judge/review mode: prepend a hard directive so the reviewer model
+            # evaluates only the provided text and does not call any MCP tools.
+            eva_system = (
+                "JUDGE MODE — TOOLS DISABLED.\n"
+                "You are acting as a reviewer/judge of an existing draft. You have NO tool access "
+                "in this turn. Do NOT call any web search, Kusto, GitHub, Azure, browser, or other "
+                "tool. Do NOT attempt to fetch, retrieve, or verify data from external sources. "
+                "Evaluate ONLY the text you are given and respond from your own reasoning. "
+                "Treat any data in the draft as already-retrieved; your job is to critique it, not "
+                "to re-gather it.\n\n"
+            ) + eva_system
 
         if memory_context:
             eva_system += memory_context
@@ -4587,6 +4875,19 @@ class BridgeHandler(BaseHTTPRequestHandler):
         }
         self._json_response(200, response)
         print(f"[AIG] Complete: {model_used} ({len(response_text)} chars)")
+        _telemetry_emit(
+            "aig_turn",
+            model=model_for_response,
+            model_used=model_used,
+            route=_acp_route,
+            request_type=_request_type,
+            internal=internal,
+            no_tools=no_tools,
+            used_acp_tools=bool(needs_acp_tools),
+            acp_data_chars=len(acp_data or ""),
+            response_chars=len(response_text or ""),
+            total_ms=round((time.perf_counter() - _turn_t0) * 1000.0, 1),
+        )
 
     def _memory_context(self):
         """Return Eva's memory context as text for injection into any model's system prompt."""
@@ -4802,6 +5103,9 @@ class BridgeHandler(BaseHTTPRequestHandler):
         acp_client = ACPClient(copilot_path=old_path, cwd=old_cwd, model=old_model, mcp_config=mcp_servers)
         try:
             acp_client.start()
+            # MCP config changed: drop stale warm clients so the pool only holds
+            # clients built with the new server set.
+            _reset_acp_pool(acp_client)
             if "kusto-mcp-server" in mcp_servers and _kusto_token_cache and not _cognition_enabled:
                 bridge_port = getattr(self.server, "server_port", None) or getattr(self.server, "server_address", (None, None))[1]
                 _enable_cognition(mcp_servers, model=old_model, port=bridge_port)
