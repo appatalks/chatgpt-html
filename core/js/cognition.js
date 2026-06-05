@@ -341,6 +341,29 @@
     return { content: content, model: data.model || model };
   }
 
+  // Fire-and-forget telemetry. Stores a local ring buffer (last 50 turns) and
+  // best-effort posts the same record to the bridge so it lands in the shared
+  // JSONL log. Only timings/labels are sent, never message or response text.
+  function postTelemetry(record) {
+    try {
+      var key = 'cog_telemetry';
+      var ring = [];
+      try { ring = JSON.parse(localStorage.getItem(key) || '[]'); } catch (_) { ring = []; }
+      if (!Array.isArray(ring)) ring = [];
+      ring.push(Object.assign({ ts: Date.now() }, record));
+      if (ring.length > 50) ring = ring.slice(-50);
+      localStorage.setItem(key, JSON.stringify(ring));
+    } catch (_) {}
+    try {
+      var url = bridgeUrl().replace(/\/+$/, '') + '/v1/telemetry';
+      fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(record)
+      }).catch(function () {});
+    } catch (_) {}
+  }
+
   function parseVerdict(text) {
     var s = String(text || '');
     var m = s.match(/VERDICT\s*:\s*(APPROVE|REQUEST[_\- ]?CHANGES|BLOCKED)/i);
@@ -353,6 +376,47 @@
     if (/^\s*APPROVE\b/im.test(s)) return 'APPROVE';
     if (/^\s*BLOCKED\b/im.test(s)) return 'BLOCKED';
     return 'REQUEST_CHANGES';
+  }
+
+  // Eva's silent self-review signal. The draft appends
+  // [[REVIEW]]{"want":bool,"reason":"..."}[[/REVIEW]] indicating whether a
+  // second-opinion review would help. Parsed out and never shown to the user.
+  var REVIEW_SENTINEL_RE = /\[\[REVIEW\]\]\s*([\s\S]*?)\s*\[\[\/REVIEW\]\]/i;
+
+  function parseReviewSentinel(text) {
+    var s = String(text == null ? '' : text);
+    var m = s.match(REVIEW_SENTINEL_RE);
+    var want = null;
+    var reason = '';
+    if (m) {
+      var bodyStr = (m[1] || '').trim();
+      try {
+        var obj = JSON.parse(bodyStr);
+        if (obj && typeof obj === 'object') {
+          want = (obj.want === true || obj.want === 'true');
+          reason = String(obj.reason || '');
+        }
+      } catch (e) {
+        if (/\bwant\b\s*[:=]\s*true/i.test(bodyStr)) want = true;
+        else if (/\bwant\b\s*[:=]\s*false/i.test(bodyStr)) want = false;
+      }
+    }
+    var cleaned = s.replace(REVIEW_SENTINEL_RE, '').replace(/\n{3,}/g, '\n\n').trim();
+    return { present: !!m, want: want, reason: reason, cleaned: cleaned };
+  }
+
+  // Deterministic review floor: turns where a second opinion is mandatory and
+  // Eva cannot opt out. Covers irreversible actions and high-fabrication-risk
+  // factual turns (markets, news, weather, briefings).
+  function reviewFloorReason(userMsg, draftContent) {
+    if (/\[\[EVA_ACTION\]\]|\[\[EVA_BROWSER\]\]|\[\[EVA_FILE\]\]/i.test(String(draftContent || ''))) {
+      return 'action';
+    }
+    var u = String(userMsg || '').toLowerCase();
+    if (/\b(brief(ing)?|brief me|news|headlines?|stocks?|prices?|quote|markets?|nasdaq|dow|s&p|weather|forecast|filings?|earnings|ticker)\b/.test(u)) {
+      return 'factual';
+    }
+    return '';
   }
 
   // ---------------------------------------------------------------------------
@@ -369,6 +433,8 @@
     var userMsg = String(opts.userMessage || '').trim();
     var convo = Array.isArray(opts.messages) ? opts.messages.slice() : [];
     var trace = [];
+    var _turnStart = Date.now();
+    var _draftMs = 0, _reviewMs = 0, _reviseMs = 0;
     var capDesc = describeCapabilities();
 
     var actionHelp = [
@@ -394,20 +460,51 @@
       '',
       'Write the user-facing answer now.',
       'When the user asked for a downloadable file, you MUST emit a [[EVA_ACTION]] file.download block.',
-      'Never simulate or describe phases. Never print PHASE headers. Just answer.'
+      'Never simulate or describe phases. Never print PHASE headers. Just answer.',
+      '',
+      'After your answer, on the very last line, append a SILENT self-review signal the user never sees:',
+      '[[REVIEW]]{"want":true|false,"reason":"<=12 words"}[[/REVIEW]]',
+      'Set want=true when a second-opinion review by another model would meaningfully improve accuracy,',
+      'safety, or completeness (factual claims, anything important or easy to get wrong). Set want=false',
+      'for simple, low-stakes, or purely conversational replies. This line is stripped before display.'
     ].join('\n');
     var draft = await callAgent(
       'eva', cfg.evaModel, cfg.evaPrompt, convo, draftTask,
       { inject_memory: true, recall_query: userMsg }
     );
-    trace.push({ role: 'eva', model: draft.model, content: draft.content });
 
-    var current = draft.content;
+    // Eva's silent self-review signal decides whether a second opinion runs.
+    var sentinel = parseReviewSentinel(draft.content);
+    var current = sentinel.cleaned;
+    trace.push({ role: 'eva', model: draft.model, content: current });
+    _draftMs = Date.now() - _turnStart;
+    var _draftChars = current.length;
+
     var cyclesUsed = 0;
     var lastVerdict = 'APPROVE';
 
-    // Stage 2+: reviewer loop, bounded by cfg.maxCycles
-    for (var cycle = 1; cycle <= cfg.maxCycles; cycle++) {
+    // Review gate: a deterministic floor forces review on irreversible or
+    // fact-bearing turns; above the floor, Eva decides via her sentinel. A
+    // missing signal defaults to review (safe). maxCycles=0 disables review.
+    var floorReason = reviewFloorReason(userMsg, current);
+    var reviewReason;
+    if (floorReason) {
+      reviewReason = 'floor:' + floorReason;
+    } else if (sentinel.want === true) {
+      reviewReason = 'eva-opt-in';
+    } else if (sentinel.want === false) {
+      reviewReason = '';
+    } else {
+      reviewReason = 'no-signal';
+    }
+    var doReview = cfg.maxCycles >= 1 && !!reviewReason;
+    if (!doReview) {
+      status('Eva answering directly [no review: ' +
+             (floorReason ? floorReason : (sentinel.want === false ? 'eva-opt-out' : 'disabled')) + ']...');
+    }
+
+    // Stage 2+: reviewer loop, bounded by cfg.maxCycles, gated by doReview
+    for (var cycle = 1; doReview && cycle <= cfg.maxCycles; cycle++) {
       cyclesUsed = cycle;
       status('Eva reviewing [reviewer: ' + cfg.reviewerModel + '] cycle ' + cycle + '/' + cfg.maxCycles + '...');
       var reviewTask = [
@@ -422,9 +519,12 @@
         'VERDICT: REQUEST_CHANGES',
         'If requesting changes, follow with concrete bullet points.'
       ].join('\n');
+      var _revStart = Date.now();
       var review = await callAgent(
-        'reviewer', cfg.reviewerModel, cfg.reviewerPrompt, convo, reviewTask
+        'reviewer', cfg.reviewerModel, cfg.reviewerPrompt, convo, reviewTask,
+        { no_tools: true }
       );
+      _reviewMs += Date.now() - _revStart;
       var verdict = parseVerdict(review.content);
       lastVerdict = verdict;
       trace.push({
@@ -452,16 +552,38 @@
         'Produce the revised final answer for the user. Apply the reviewer\'s concrete points.',
         'Do not mention the review process or any internal pipeline.'
       ].join('\n');
+      var _reviseStart = Date.now();
       var revised = await callAgent(
         'eva', cfg.evaModel, cfg.evaPrompt, convo, reviseTask,
         { inject_memory: true, recall_query: userMsg }
       );
+      _reviseMs += Date.now() - _reviseStart;
+      // Strip any sentinel the revision may have re-emitted.
+      var revisedClean = parseReviewSentinel(revised.content).cleaned;
       trace.push({
-        role: 'eva', model: revised.model, content: revised.content,
+        role: 'eva', model: revised.model, content: revisedClean,
         cycle: cycle, revised: true
       });
-      current = revised.content;
+      current = revisedClean;
     }
+
+    // Privacy-safe telemetry: stage timings, models, and the gate decision.
+    // No message or response text is sent, only counts and labels.
+    var telem = {
+      turn_ms: Date.now() - _turnStart,
+      draft_ms: _draftMs,
+      review_ms: _reviewMs,
+      revise_ms: _reviseMs,
+      cycles: cyclesUsed,
+      draft_chars: _draftChars,
+      final_chars: (current || '').length,
+      eva_model: draft.model || cfg.evaModel,
+      reviewer_model: doReview ? cfg.reviewerModel : '',
+      review_reason: reviewReason || (sentinel.want === false ? 'eva-opt-out' : 'none'),
+      last_verdict: doReview ? lastVerdict : 'n/a',
+      sentinel_want: (sentinel.want === null ? 'absent' : String(sentinel.want))
+    };
+    postTelemetry(telem);
 
     return {
       content: current,
@@ -470,6 +592,9 @@
       reviewerModel: cfg.reviewerModel,
       cycles: cyclesUsed,
       lastVerdict: lastVerdict,
+      reviewed: doReview,
+      reviewReason: reviewReason || (sentinel.want === false ? 'eva-opt-out' : 'none'),
+      telemetry: telem,
       forced: !!opts.forceEnable,
       forcedReason: opts.forcedReason || null
     };
