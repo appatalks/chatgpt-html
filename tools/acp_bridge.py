@@ -3607,6 +3607,10 @@ def _job_alert_watch(ctx):
     """Evaluate user-defined alert rules and surface notifications when they trip.
     Each rule is checked through the background agent with a leading ALERT:/QUIET:
     convention; firing is gated by per-rule cooldown and content-hash dedup."""
+    # Snapshot the rules for evaluation. The slow agent calls below must NOT hold
+    # _alerts_lock, so per-rule bookkeeping (last_fired_iso/last_hash) is collected
+    # here and merged back under the lock at the end against a fresh read, which
+    # preserves any concurrent edits an API request made during the tick.
     doc = _load_alerts()
     rules = doc.get("alerts", [])
     active = [r for r in rules if r.get("enabled")]
@@ -3619,7 +3623,7 @@ def _job_alert_watch(ctx):
     fired = 0
     checked = 0
     notes = []
-    changed = False
+    pending_updates = {}  # rule_id -> {"last_fired_iso", "last_hash"}
 
     for rule in active:
         if not _alert_cooldown_elapsed(rule, now):
@@ -3642,9 +3646,10 @@ def _job_alert_watch(ctx):
         content_hash = hashlib.sha1(body[:500].encode("utf-8")).hexdigest()
         if content_hash == rule.get("last_hash"):
             continue  # same finding as last fire; do not repeat
-        rule["last_fired_iso"] = ctx["now_iso"]
-        rule["last_hash"] = content_hash
-        changed = True
+        pending_updates[str(rule.get("id", ""))] = {
+            "last_fired_iso": ctx["now_iso"],
+            "last_hash": content_hash,
+        }
         fired += 1
         salience = _alert_salience(rule, body)
         proposals.append({
@@ -3668,8 +3673,17 @@ def _job_alert_watch(ctx):
             },
         })
 
-    if changed:
-        _save_alerts(doc)
+    if pending_updates:
+        # Merge the fired-rule bookkeeping back under the lock against a fresh
+        # read so a concurrent API edit during the tick is not clobbered.
+        with _alerts_lock:
+            fresh = _load_alerts()
+            for r in fresh.get("alerts", []):
+                upd = pending_updates.get(str(r.get("id", "")))
+                if upd:
+                    r["last_fired_iso"] = upd["last_fired_iso"]
+                    r["last_hash"] = upd["last_hash"]
+            _save_alerts(fresh)
     if not proposals:
         note = "; ".join(notes) if notes else (f"checked {checked}, none triggered" if checked else "no rules due")
         return [], note
@@ -3769,11 +3783,17 @@ def _run_background_tick(trigger="scheduled"):
                     # proactive briefings). Restraint + dedup live in _notify_enqueue.
                     notify = proposal.get("notify")
                     if isinstance(notify, dict):
+                        # Coerce salience without treating a legitimate 0.0 as
+                        # missing (a plain `or 0.5` would mask zero-salience).
+                        try:
+                            _salience = float(notify.get("salience", 0.5))
+                        except (TypeError, ValueError):
+                            _salience = 0.5
                         _notify_enqueue(
                             notify.get("title", ""),
                             notify.get("body", ""),
                             notify.get("source", job_type),
-                            float(notify.get("salience", 0.5) or 0.5),
+                            _salience,
                             notify.get("channels") or ["chat"],
                             settings=notify.get("settings"),
                         )

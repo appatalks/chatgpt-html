@@ -4246,9 +4246,14 @@ function sanitizeForSpeech(input) {
 }
 
 function speakText() {
+  // Optional override (e.g. proactive notifications) speaks an arbitrary string
+  // directly. Resolve it BEFORE the empty-transcript guard so voice alerts work
+  // on first load or before any chat output exists.
+  var overrideText = (typeof arguments[0] === 'string' && arguments[0].trim()) ? arguments[0] : '';
+
   var txtOutputEl = document.getElementById('txtOutput');
   var sText = txtOutputEl ? txtOutputEl.innerHTML : '';
-    if (sText == "") {
+    if (!overrideText && sText == "") {
         alert("No text to convert to speech!");
         return;
     }
@@ -4266,7 +4271,6 @@ function speakText() {
     // Optional override (e.g. proactive notifications) speaks an arbitrary
     // string directly, bypassing the lastResponse/transcript extraction so it
     // never collides with the normal chat auto-speak path.
-    var overrideText = (typeof arguments[0] === 'string' && arguments[0].trim()) ? arguments[0] : '';
     if (overrideText) {
       speechParams.Text = sanitizeForSpeech(overrideText);
     } else
