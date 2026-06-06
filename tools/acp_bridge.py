@@ -29,6 +29,7 @@ The server exposes a single endpoint:
 import argparse
 import copy
 import datetime
+import hashlib
 import json
 import mimetypes
 import os
@@ -648,6 +649,8 @@ _CONVO_CONTENT_CAP = 8000  # Kusto string columns are unbounded, but cap defensi
 _ARTIFACTS_DIR = os.path.expanduser("~/.config/eva-standalone/artifacts")
 _KUSTO_CLUSTER_CACHE_PATH = os.path.expanduser("~/.config/eva-standalone/kusto_cluster.txt")
 _MCP_CONFIG_CACHE_PATH = os.path.expanduser("~/.config/eva-standalone/mcp_config.json")
+_ALERTS_CONFIG_PATH = os.path.expanduser("~/.config/eva-standalone/alerts.json")
+_NOTIFY_PATH = os.path.expanduser("~/.config/eva-standalone/notifications.jsonl")
 _kusto_table_columns_cache = {}  # (cluster, db, table) -> [columns]
 _kusto_database_locked = _env_truthy("KUSTO_DATABASE_LOCKED") or _env_truthy("EVA_KUSTO_LOCKED")
 _active_kusto_db = os.environ.get("KUSTO_DATABASE", "").strip()
@@ -899,6 +902,7 @@ _BG_JOB_MARKET_SNAPSHOT = "market_snapshot"
 _BG_JOB_SEC_FILINGS = "sec_filing_watch"
 _BG_JOB_SPACE_WEATHER = "space_weather_alert"
 _BG_JOB_RESEARCH_DEEPDIVE = "research_deepdive"
+_BG_JOB_ALERT_WATCH = "alert_watch"
 # Per-job enable switches. All on by default; the loop still respects the
 # global _bg_loop_enabled flag and the recent-activity pause.
 _BG_JOBS_ENABLED = {
@@ -914,6 +918,7 @@ _BG_JOBS_ENABLED = {
     _BG_JOB_SEC_FILINGS: True,
     _BG_JOB_SPACE_WEATHER: True,
     _BG_JOB_RESEARCH_DEEPDIVE: True,
+    _BG_JOB_ALERT_WATCH: True,
 }
 # Target tables the approve/apply path knows how to write.
 _BG_APPLY_TABLES = {"MemorySummaries", "Reflections"}
@@ -1227,6 +1232,343 @@ def _telemetry_summarize(events):
     summary["aig_turn_ms"] = _stats(turn_ms)
     return summary
 
+
+# ---------------------------------------------------------------------------
+# Proactive alerts + notifications
+# ---------------------------------------------------------------------------
+# Two co-operating pieces:
+#   1. A user-defined alert rules store (alerts.json). Each rule names something
+#      the user wants watched (a topic, a company's filings, weather, a standing
+#      research question). The background tick evaluates active rules through the
+#      ACP agent and fires a notification when a rule trips, with per-rule
+#      cooldown and content-hash dedup so the same finding is not repeated.
+#   2. A notification queue (in-memory ring + JSONL) that the front end polls.
+#      New notifications are surfaced as an Eva-authored chat message and, when
+#      the rule asks for it, spoken aloud.
+# Privacy: the rules file holds only labels and watch parameters the user typed;
+# the notification log holds the finding text Eva produced (no keys/tokens). The
+# telemetry mirror records only labels, counts, and decisions.
+
+_ALERT_TYPES = ("sec_filing", "weather", "space_weather", "keyword_watch", "research_question")
+_ALERT_CHANNELS = ("chat", "voice")
+_NOTIFY_RING_MAX = 100
+_NOTIFY_MAX_BYTES = 2 * 1024 * 1024  # rotate notifications.jsonl at ~2MB
+_NOTIFY_CRITICAL_SALIENCE = 0.9      # quiet-hours / rate-cap override threshold
+_alerts_lock = threading.RLock()
+_notify_lock = threading.Lock()
+_notify_ring = []  # recent notification dicts (most recent last)
+
+_DEFAULT_ALERT_SETTINGS = {
+    "quiet_hours_start": -1,  # local hour 0-23 to begin suppression, -1 disables
+    "quiet_hours_end": -1,    # local hour 0-23 to end suppression
+    "max_per_hour": 4,        # cap on surfaced notifications per rolling hour
+    "min_salience": 0.0,      # drop notifications below this score
+}
+
+
+def _alerts_default_doc():
+    return {"alerts": [], "settings": dict(_DEFAULT_ALERT_SETTINGS)}
+
+
+def _load_alerts():
+    """Load the alert rules + settings document. Returns a normalized dict with
+    'alerts' (list) and 'settings' (dict). Never raises."""
+    doc = _alerts_default_doc()
+    try:
+        if os.path.isfile(_ALERTS_CONFIG_PATH):
+            with open(_ALERTS_CONFIG_PATH, "r", encoding="utf-8") as f:
+                data = json.load(f)
+            if isinstance(data, dict):
+                rules = data.get("alerts")
+                if isinstance(rules, list):
+                    doc["alerts"] = [r for r in rules if isinstance(r, dict)]
+                settings = data.get("settings")
+                if isinstance(settings, dict):
+                    for k in _DEFAULT_ALERT_SETTINGS:
+                        if k in settings:
+                            doc["settings"][k] = settings[k]
+    except (OSError, json.JSONDecodeError) as exc:
+        print(f"[Bridge] Could not load alerts config: {exc}", file=sys.stderr)
+    return doc
+
+
+def _save_alerts(doc):
+    """Persist the alert rules document atomically. Never raises."""
+    try:
+        os.makedirs(os.path.dirname(_ALERTS_CONFIG_PATH), exist_ok=True)
+        tmp = _ALERTS_CONFIG_PATH + ".tmp"
+        with open(tmp, "w", encoding="utf-8") as f:
+            json.dump(doc, f, indent=2)
+        os.replace(tmp, _ALERTS_CONFIG_PATH)
+        return True
+    except (OSError, TypeError) as exc:
+        print(f"[Bridge] Could not save alerts config: {exc}", file=sys.stderr)
+        return False
+
+
+def _alert_clip(value, limit):
+    s = "" if value is None else str(value)
+    s = s.strip()
+    return s if len(s) <= limit else s[:limit]
+
+
+def _sanitize_alert_rule(raw, existing=None):
+    """Validate and normalize a single rule dict from a client request.
+    Returns (rule, error). Generates an id when absent. Preserves server-side
+    bookkeeping (last_fired_iso, last_hash) from an existing rule when updating."""
+    if not isinstance(raw, dict):
+        return None, "rule must be an object"
+    rtype = _alert_clip(raw.get("type"), 32)
+    if rtype not in _ALERT_TYPES:
+        return None, "type must be one of: " + ", ".join(_ALERT_TYPES)
+    label = _alert_clip(raw.get("label"), 80)
+    if not label:
+        return None, "label is required"
+    rid = _alert_clip(raw.get("id"), 64)
+    if rid and not re.fullmatch(r"[A-Za-z0-9_-]{1,64}", rid):
+        return None, "id is invalid"
+    if not rid:
+        rid = "alr-" + uuid.uuid4().hex[:10]
+
+    params_in = raw.get("params") if isinstance(raw.get("params"), dict) else {}
+    params = {}
+    if rtype == "sec_filing":
+        symbols_raw = params_in.get("symbols")
+        if isinstance(symbols_raw, str):
+            symbols_raw = re.split(r"[,\s]+", symbols_raw)
+        symbols = []
+        for sym in (symbols_raw or []):
+            s = _alert_clip(sym, 8).upper()
+            if re.fullmatch(r"[A-Z.]{1,8}", s) and s not in symbols:
+                symbols.append(s)
+        if not symbols:
+            return None, "sec_filing requires at least one ticker symbol"
+        params["symbols"] = symbols[:12]
+    elif rtype == "weather":
+        location = _alert_clip(params_in.get("location"), 80)
+        if not location:
+            return None, "weather requires a location"
+        params["location"] = location
+        params["condition"] = _alert_clip(params_in.get("condition"), 160) or "severe weather, storms, or warnings"
+    elif rtype == "space_weather":
+        params["threshold"] = _alert_clip(params_in.get("threshold"), 40) or "Kp 5+, G1+, R1+, or S1+"
+    elif rtype == "keyword_watch":
+        topic = _alert_clip(params_in.get("topic"), 160)
+        if not topic:
+            return None, "keyword_watch requires a topic"
+        params["topic"] = topic
+    elif rtype == "research_question":
+        question = _alert_clip(params_in.get("question"), 240)
+        if not question:
+            return None, "research_question requires a question"
+        params["question"] = question
+
+    channels = []
+    for ch in (raw.get("channels") or ["chat", "voice"]):
+        c = _alert_clip(ch, 12)
+        if c in _ALERT_CHANNELS and c not in channels:
+            channels.append(c)
+    if not channels:
+        channels = ["chat"]
+
+    try:
+        cooldown = int(raw.get("cooldown_min", 1440))
+    except (TypeError, ValueError):
+        cooldown = 1440
+    cooldown = max(60, min(cooldown, 20160))  # 1 hour to 14 days
+
+    rule = {
+        "id": rid,
+        "label": label,
+        "type": rtype,
+        "params": params,
+        "cooldown_min": cooldown,
+        "channels": channels,
+        "enabled": bool(raw.get("enabled", True)),
+        "last_fired_iso": (existing or {}).get("last_fired_iso", ""),
+        "last_hash": (existing or {}).get("last_hash", ""),
+    }
+    return rule, ""
+
+
+def _sanitize_alert_settings(raw):
+    settings = dict(_DEFAULT_ALERT_SETTINGS)
+    if not isinstance(raw, dict):
+        return settings
+    for key in ("quiet_hours_start", "quiet_hours_end"):
+        try:
+            val = int(raw.get(key, -1))
+        except (TypeError, ValueError):
+            val = -1
+        settings[key] = val if -1 <= val <= 23 else -1
+    try:
+        settings["max_per_hour"] = max(1, min(int(raw.get("max_per_hour", 4)), 60))
+    except (TypeError, ValueError):
+        settings["max_per_hour"] = 4
+    try:
+        sal = float(raw.get("min_salience", 0.0))
+    except (TypeError, ValueError):
+        sal = 0.0
+    settings["min_salience"] = max(0.0, min(sal, 1.0))
+    return settings
+
+
+def _alert_cooldown_elapsed(rule, now):
+    """True if the rule has never fired or its cooldown window has passed."""
+    last = rule.get("last_fired_iso", "")
+    if not last:
+        return True
+    try:
+        last_dt = datetime.datetime.fromisoformat(last.replace("Z", "+00:00"))
+    except (ValueError, AttributeError):
+        return True
+    if last_dt.tzinfo is None:
+        last_dt = last_dt.replace(tzinfo=datetime.timezone.utc)
+    elapsed_min = (now - last_dt).total_seconds() / 60.0
+    return elapsed_min >= rule.get("cooldown_min", 1440)
+
+
+def _alert_build_prompt(rule):
+    """Compose the background agent prompt for a rule. The agent must answer with
+    a leading ALERT: or QUIET: token so the tick can decide whether to surface."""
+    rtype = rule.get("type")
+    params = rule.get("params", {})
+    head = ("Background watch task (no user is present). Reply with plain text only. "
+            "Begin your reply with 'ALERT:' if there is something genuinely new and "
+            "noteworthy to report right now, otherwise begin with 'QUIET:'. ")
+    if rtype == "sec_filing":
+        syms = ", ".join(params.get("symbols", []))
+        return head + (
+            f"Check the most recent SEC EDGAR filings for these companies by ticker: {syms}. "
+            "Consider only filings from the last 7 days. If you find one, ALERT with the form "
+            "type, date, and a one-line description for each. If none, reply QUIET.")
+    if rtype == "weather":
+        return head + (
+            f"Check the weather forecast for {params.get('location', '')} for the next 24 to 48 hours. "
+            f"ALERT only if any of these are expected: {params.get('condition', '')}. "
+            "If ALERT, give one or two short lines with timing. Otherwise QUIET.")
+    if rtype == "space_weather":
+        return head + (
+            "Report current space weather using NOAA SWPC: the latest planetary Kp index and any active "
+            f"geomagnetic storm, solar flare, or radiation alerts. ALERT only if at or above {params.get('threshold', 'moderate')}. "
+            "If ALERT, give one or two short lines. Otherwise QUIET.")
+    if rtype == "keyword_watch":
+        return head + (
+            f"Search the web for genuinely new developments about: {params.get('topic', '')}. "
+            "Consider only items from roughly the last day or two. If you find something notable, ALERT with a "
+            "one to three sentence summary including the key fact and source name. Otherwise QUIET.")
+    if rtype == "research_question":
+        return head + (
+            f"Investigate and determine the current answer to this standing question: {params.get('question', '')}. "
+            "ALERT only if the answer has a notable update or newly significant development. If ALERT, give the "
+            "answer in one to three sentences. Otherwise QUIET.")
+    return None
+
+
+def _alert_salience(rule, body):
+    """Heuristic 0..1 importance score used by restraint gating."""
+    base = {
+        "sec_filing": 0.7,
+        "weather": 0.65,
+        "space_weather": 0.7,
+        "keyword_watch": 0.55,
+        "research_question": 0.6,
+    }.get(rule.get("type"), 0.5)
+    low = (body or "").lower()
+    if re.search(r"\b(severe|urgent|critical|warning|emergency|immediately|major)\b", low):
+        base = min(1.0, base + 0.2)
+    return round(base, 2)
+
+
+def _notify_count_last_hour(now):
+    cutoff = now - datetime.timedelta(hours=1)
+    n = 0
+    for rec in _notify_ring:
+        try:
+            ts = datetime.datetime.fromisoformat(str(rec.get("ts", "")).replace("Z", "+00:00"))
+        except ValueError:
+            continue
+        if ts.tzinfo is None:
+            ts = ts.replace(tzinfo=datetime.timezone.utc)
+        if ts >= cutoff:
+            n += 1
+    return n
+
+
+def _notify_in_quiet_hours(settings, now):
+    start = settings.get("quiet_hours_start", -1)
+    end = settings.get("quiet_hours_end", -1)
+    if start < 0 or end < 0 or start == end:
+        return False
+    hour = now.astimezone().hour
+    if start < end:
+        return start <= hour < end
+    # window wraps past midnight, e.g. 22 -> 7
+    return hour >= start or hour < end
+
+
+def _notify_enqueue(title, body, source, salience, channels, settings=None):
+    """Apply restraint, then append a notification to the ring + JSONL. Returns
+    the stored record, or None when suppressed. Never raises."""
+    try:
+        if settings is None:
+            settings = _load_alerts().get("settings", dict(_DEFAULT_ALERT_SETTINGS))
+        now = _utc_now()
+        critical = salience >= _NOTIFY_CRITICAL_SALIENCE
+        if salience < settings.get("min_salience", 0.0):
+            _telemetry_emit("notify", result="suppressed", reason="below_min_salience", source=source, salience=salience)
+            return None
+        if not critical and _notify_in_quiet_hours(settings, now):
+            _telemetry_emit("notify", result="suppressed", reason="quiet_hours", source=source, salience=salience)
+            return None
+        with _notify_lock:
+            if not critical and _notify_count_last_hour(now) >= settings.get("max_per_hour", 4):
+                _telemetry_emit("notify", result="suppressed", reason="rate_cap", source=source, salience=salience)
+                return None
+            record = {
+                "id": "ntf-" + uuid.uuid4().hex[:10],
+                "ts": _to_utc_iso(now),
+                "title": _alert_clip(title, 120) or "Eva",
+                "body": _alert_clip(body, 1200),
+                "source": _alert_clip(source, 64),
+                "salience": salience,
+                "channels": [c for c in (channels or ["chat"]) if c in _ALERT_CHANNELS] or ["chat"],
+                "seen": False,
+            }
+            _notify_ring.append(record)
+            if len(_notify_ring) > _NOTIFY_RING_MAX:
+                del _notify_ring[:-_NOTIFY_RING_MAX]
+            try:
+                os.makedirs(os.path.dirname(_NOTIFY_PATH), exist_ok=True)
+                if os.path.isfile(_NOTIFY_PATH) and os.path.getsize(_NOTIFY_PATH) >= _NOTIFY_MAX_BYTES:
+                    try:
+                        os.replace(_NOTIFY_PATH, _NOTIFY_PATH + ".1")
+                    except OSError:
+                        pass
+                with open(_NOTIFY_PATH, "a", encoding="utf-8") as f:
+                    f.write(json.dumps(record) + "\n")
+            except OSError:
+                pass
+        _telemetry_emit("notify", result="emit", source=source, salience=salience,
+                        channels=",".join(record["channels"]))
+        print(f"[Notify] {record['title']} (salience {salience}, {source})")
+        return record
+    except Exception:
+        return None
+
+
+def _notify_mark_seen(ids):
+    """Mark ring notifications seen by id. Returns count updated."""
+    if not ids:
+        return 0
+    id_set = set(str(i) for i in ids)
+    updated = 0
+    with _notify_lock:
+        for rec in _notify_ring:
+            if rec.get("id") in id_set and not rec.get("seen"):
+                rec["seen"] = True
+                updated += 1
+    return updated
 
 
 class _MSALSilentCredential:
@@ -3261,6 +3603,79 @@ def _job_research_deepdive(ctx):
     }], "research deep-dive"
 
 
+def _job_alert_watch(ctx):
+    """Evaluate user-defined alert rules and surface notifications when they trip.
+    Each rule is checked through the background agent with a leading ALERT:/QUIET:
+    convention; firing is gated by per-rule cooldown and content-hash dedup."""
+    doc = _load_alerts()
+    rules = doc.get("alerts", [])
+    active = [r for r in rules if r.get("enabled")]
+    if not active:
+        return [], "no active alert rules"
+
+    now = _utc_now()
+    settings = doc.get("settings", dict(_DEFAULT_ALERT_SETTINGS))
+    proposals = []
+    fired = 0
+    checked = 0
+    notes = []
+    changed = False
+
+    for rule in active:
+        if not _alert_cooldown_elapsed(rule, now):
+            continue
+        # Re-check user presence before each (slow) agent call.
+        if ctx.get("trigger") != "manual" and time.time() - _last_user_activity_ts < 120:
+            notes.append("paused: user active")
+            break
+        prompt = _alert_build_prompt(rule)
+        if not prompt:
+            continue
+        checked += 1
+        text, error = _bg_agent_prompt(prompt, ctx, timeout=150)
+        if text is None:
+            notes.append(_alert_clip(rule.get("label"), 32) + ": " + error)
+            continue
+        if not text.strip().upper().startswith("ALERT"):
+            continue
+        body = text.strip()
+        content_hash = hashlib.sha1(body[:500].encode("utf-8")).hexdigest()
+        if content_hash == rule.get("last_hash"):
+            continue  # same finding as last fire; do not repeat
+        rule["last_fired_iso"] = ctx["now_iso"]
+        rule["last_hash"] = content_hash
+        changed = True
+        fired += 1
+        salience = _alert_salience(rule, body)
+        proposals.append({
+            "target_table": "Reflections",
+            "payload": {
+                "Timestamp": ctx["now_iso"],
+                "Trigger": "alert_watch:" + str(rule.get("id", "")),
+                "Observation": (f"Alert '{rule.get('label', '')}':\n" + body)[:1000],
+                "ActionTaken": "",
+                "Effectiveness": 0.0,
+            },
+            "auto_apply": True,
+            "notes": "alert " + _alert_clip(rule.get("label"), 40),
+            "notify": {
+                "title": _alert_clip(rule.get("label"), 80) or "Eva alert",
+                "body": body[:1200],
+                "source": "alert_watch:" + str(rule.get("id", "")),
+                "salience": salience,
+                "channels": rule.get("channels") or ["chat"],
+                "settings": settings,
+            },
+        })
+
+    if changed:
+        _save_alerts(doc)
+    if not proposals:
+        note = "; ".join(notes) if notes else (f"checked {checked}, none triggered" if checked else "no rules due")
+        return [], note
+    return proposals, f"{fired} alert(s) triggered"
+
+
 # Ordered registry of automation jobs run on each tick. Fast Kusto-only jobs
 # run first; the slower agent-prompt jobs (market, SEC, space weather, research)
 # run last so a single tick stays responsive and can bail if the user returns.
@@ -3277,6 +3692,7 @@ _BG_JOBS = [
     (_BG_JOB_SEC_FILINGS, _job_sec_filing_watch),
     (_BG_JOB_SPACE_WEATHER, _job_space_weather_alert),
     (_BG_JOB_RESEARCH_DEEPDIVE, _job_research_deepdive),
+    (_BG_JOB_ALERT_WATCH, _job_alert_watch),
 ]
 
 
@@ -3349,6 +3765,18 @@ def _run_background_tick(trigger="scheduled"):
                 if apply_ok:
                     applied += 1
                     row = _create_background_proposal_row(job_type, target_table, payload, window_start, window_end, notes + "; auto-applied (" + apply_note + ")", status="applied")
+                    # Surface findings the job flagged for the user (alert rules,
+                    # proactive briefings). Restraint + dedup live in _notify_enqueue.
+                    notify = proposal.get("notify")
+                    if isinstance(notify, dict):
+                        _notify_enqueue(
+                            notify.get("title", ""),
+                            notify.get("body", ""),
+                            notify.get("source", job_type),
+                            float(notify.get("salience", 0.5) or 0.5),
+                            notify.get("channels") or ["chat"],
+                            settings=notify.get("settings"),
+                        )
                 else:
                     failed_apply += 1
                     row = _create_background_proposal_row(job_type, target_table, payload, window_start, window_end, notes + "; auto-apply failed: " + apply_error, status="failed")
@@ -3631,6 +4059,10 @@ class BridgeHandler(BaseHTTPRequestHandler):
             self._background_proposals()
         elif parsed_path == "/v1/background/activity":
             self._background_activity()
+        elif parsed_path == "/v1/alerts":
+            self._alerts_list()
+        elif parsed_path == "/v1/notifications":
+            self._notifications_list()
         elif parsed_path == "/v1/memory/context":
             self._memory_context()
         elif parsed_path == "/v1/browser/status":
@@ -3667,6 +4099,12 @@ class BridgeHandler(BaseHTTPRequestHandler):
             self._goals_create()
         elif parsed_path == "/v1/background/control":
             self._background_control()
+        elif parsed_path == "/v1/alerts":
+            self._alerts_upsert()
+        elif parsed_path == "/v1/alerts/settings":
+            self._alerts_settings_update()
+        elif parsed_path == "/v1/notifications/seen":
+            self._notifications_mark_seen()
         elif re.fullmatch(r"/v1/background/proposals/[^/]+/(approve|reject)", parsed_path):
             self._background_review(parsed_path)
         elif parsed_path == "/v1/files/purge":
@@ -3685,6 +4123,8 @@ class BridgeHandler(BaseHTTPRequestHandler):
         parsed_path = urllib.parse.urlparse(self.path).path
         if parsed_path.startswith("/v1/goals/"):
             self._goals_delete(urllib.parse.unquote(parsed_path.split("/v1/goals/", 1)[1]))
+        elif parsed_path.startswith("/v1/alerts/"):
+            self._alerts_delete(urllib.parse.unquote(parsed_path.split("/v1/alerts/", 1)[1]))
         else:
             self.send_error(404, "Not Found")
 
@@ -4309,6 +4749,99 @@ class BridgeHandler(BaseHTTPRequestHandler):
                 fields[k] = v if isinstance(v, bool) else _telemetry_clip(v, 60)
         _telemetry_emit("cognition_turn", source="frontend", **fields)
         self._json_response(200, {"status": "ok"})
+
+    def _notifications_list(self):
+        """Return recent proactive notifications for the front end to surface.
+        Query params: ?unseen_only=1, ?since=<id>, ?limit=N (default 20, max 100)."""
+        params = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
+        unseen_only = params.get("unseen_only", ["0"])[0] in ("1", "true", "yes")
+        since = (params.get("since", [""])[0] or "").strip()
+        try:
+            limit = int(params.get("limit", ["20"])[0])
+        except ValueError:
+            limit = 20
+        limit = max(1, min(limit, _NOTIFY_RING_MAX))
+        with _notify_lock:
+            items = list(_notify_ring)
+        if since:
+            idx = next((i for i, r in enumerate(items) if r.get("id") == since), None)
+            if idx is not None:
+                items = items[idx + 1:]
+        if unseen_only:
+            items = [r for r in items if not r.get("seen")]
+        items = items[-limit:]
+        self._json_response(200, {"notifications": items, "count": len(items)})
+
+    def _notifications_mark_seen(self):
+        data, error = self._read_json_body()
+        if error:
+            self._json_response(400, {"error": {"message": error}})
+            return
+        ids = data.get("ids") if isinstance(data, dict) else None
+        if not isinstance(ids, list):
+            self._json_response(400, {"error": {"message": "ids must be a list"}})
+            return
+        updated = _notify_mark_seen(ids)
+        self._json_response(200, {"status": "ok", "updated": updated})
+
+    def _alerts_list(self):
+        doc = _load_alerts()
+        self._json_response(200, {"alerts": doc.get("alerts", []), "settings": doc.get("settings", {}),
+                                  "types": list(_ALERT_TYPES), "channels": list(_ALERT_CHANNELS)})
+
+    def _alerts_upsert(self):
+        data, error = self._read_json_body()
+        if error:
+            self._json_response(400, {"error": {"message": error}})
+            return
+        with _alerts_lock:
+            doc = _load_alerts()
+            existing = None
+            rid_in = _alert_clip(data.get("id"), 64) if isinstance(data, dict) else ""
+            if rid_in:
+                existing = next((r for r in doc["alerts"] if r.get("id") == rid_in), None)
+            rule, rule_error = _sanitize_alert_rule(data, existing)
+            if rule_error:
+                self._json_response(400, {"error": {"message": rule_error}})
+                return
+            replaced = False
+            for i, r in enumerate(doc["alerts"]):
+                if r.get("id") == rule["id"]:
+                    doc["alerts"][i] = rule
+                    replaced = True
+                    break
+            if not replaced:
+                if len(doc["alerts"]) >= 50:
+                    self._json_response(400, {"error": {"message": "alert limit reached (50)"}})
+                    return
+                doc["alerts"].append(rule)
+            _save_alerts(doc)
+        self._json_response(200, {"status": "ok", "alert": rule})
+
+    def _alerts_delete(self, rule_id):
+        rule_id = str(rule_id or "").strip()
+        if not re.fullmatch(r"[A-Za-z0-9_-]{1,64}", rule_id):
+            self._json_response(400, {"error": {"message": "alert id is invalid"}})
+            return
+        with _alerts_lock:
+            doc = _load_alerts()
+            before = len(doc["alerts"])
+            doc["alerts"] = [r for r in doc["alerts"] if r.get("id") != rule_id]
+            removed = before - len(doc["alerts"])
+            if removed:
+                _save_alerts(doc)
+        self._json_response(200, {"status": "ok", "removed": removed})
+
+    def _alerts_settings_update(self):
+        data, error = self._read_json_body()
+        if error:
+            self._json_response(400, {"error": {"message": error}})
+            return
+        with _alerts_lock:
+            doc = _load_alerts()
+            doc["settings"] = _sanitize_alert_settings(data)
+            _save_alerts(doc)
+        self._json_response(200, {"status": "ok", "settings": doc["settings"]})
 
     def _mcp_status(self):
         """Return current MCP server configuration status."""

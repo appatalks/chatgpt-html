@@ -558,6 +558,7 @@ function backgroundJobLabel(jobType) {
     case 'sec_filing_watch': return 'SEC filing watch';
     case 'space_weather_alert': return 'Space weather alert';
     case 'research_deepdive': return 'Research deep-dive';
+    case 'alert_watch': return 'Alert watch';
     default: return jobType ? String(jobType) : 'Background proposal';
   }
 }
@@ -796,6 +797,303 @@ function initBackground() {
   if (refreshButton) refreshButton.addEventListener('click', function() { loadBackgroundData(false); });
   renderBackgroundAll();
   loadBackgroundData(true);
+}
+
+// ---------------------------------------------------------------------------
+// Proactive notifications — poll the bridge and surface findings in the chat
+// ---------------------------------------------------------------------------
+var _notifState = { polling: false, timer: null, intervalMs: 60000 };
+
+function injectProactiveBubble(notif) {
+  var txtOutput = document.getElementById('txtOutput');
+  if (!txtOutput) return;
+  if (typeof hideEvaWelcome === 'function') hideEvaWelcome();
+  var title = escapeHtml(String(notif.title || 'Eva'));
+  var body = escapeHtml(String(notif.body || '')).replace(/\n/g, '<br>');
+  var bubble =
+    '<div class="chat-bubble eva-bubble eva-proactive">' +
+    '<span class="eva">Eva:</span> ' +
+    '<span class="eva-proactive-badge">Proactive</span> ' +
+    '<strong>' + title + '</strong>' +
+    '<div class="md">' + body + '</div></div>';
+  txtOutput.innerHTML += bubble;
+  txtOutput.scrollTop = txtOutput.scrollHeight;
+}
+
+async function pollNotifications() {
+  if (_notifState.polling) return;
+  _notifState.polling = true;
+  try {
+    var options = { method: 'GET' };
+    if (typeof AbortSignal !== 'undefined' && AbortSignal.timeout) {
+      options.signal = AbortSignal.timeout(4000);
+    }
+    var data = await backgroundBridgeRequest('/v1/notifications?unseen_only=1&limit=10', options);
+    var items = (data && Array.isArray(data.notifications)) ? data.notifications : [];
+    if (!items.length) return;
+    var seenIds = [];
+    var voiceText = [];
+    items.forEach(function(notif) {
+      injectProactiveBubble(notif);
+      var channels = Array.isArray(notif.channels) ? notif.channels : ['chat'];
+      if (channels.indexOf('voice') !== -1 && notif.body) {
+        voiceText.push(String(notif.title || '') + '. ' + String(notif.body || ''));
+      }
+      if (notif.id) seenIds.push(notif.id);
+    });
+    // Speak queued voice notifications one combined utterance to avoid overlap.
+    if (voiceText.length && typeof speakText === 'function') {
+      try { speakText(voiceText.join('. ')); } catch (_) {}
+    }
+    if (seenIds.length) {
+      try {
+        await backgroundBridgeRequest('/v1/notifications/seen', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ ids: seenIds })
+        });
+      } catch (_) {}
+    }
+  } catch (_) {
+    // Bridge unreachable or notifications unavailable; stay quiet and retry next tick.
+  } finally {
+    _notifState.polling = false;
+  }
+}
+
+function initNotifications() {
+  if (_notifState.timer) return;
+  // First poll shortly after load, then on a steady cadence.
+  setTimeout(pollNotifications, 8000);
+  _notifState.timer = setInterval(pollNotifications, _notifState.intervalMs);
+}
+
+// ---------------------------------------------------------------------------
+// Alerts — user-defined watches the background loop evaluates each cycle
+// ---------------------------------------------------------------------------
+var _alertsState = { alerts: [], settings: {} };
+
+function alertTypeLabel(type) {
+  switch (String(type || '')) {
+    case 'keyword_watch': return 'Topic watch';
+    case 'research_question': return 'Research question';
+    case 'sec_filing': return 'SEC filings';
+    case 'weather': return 'Weather';
+    case 'space_weather': return 'Space weather';
+    default: return type || 'Alert';
+  }
+}
+
+// The single primary input is relabeled per type; weather adds a condition field.
+function updateAlertParamFields() {
+  var type = (document.getElementById('alertType') || {}).value || 'keyword_watch';
+  var topicWrap = document.getElementById('alertParamTopicWrap');
+  var topicLabel = document.getElementById('alertParamTopicLabel');
+  var topicInput = document.getElementById('alertParamTopic');
+  var condWrap = document.getElementById('alertParamConditionWrap');
+  var showTopic = true, showCond = false, label = 'Topic to watch', ph = '';
+  switch (type) {
+    case 'keyword_watch': label = 'Topic to watch'; ph = 'e.g. new OpenAI model releases'; break;
+    case 'research_question': label = 'Question to track'; ph = 'e.g. has the Fed changed interest rates?'; break;
+    case 'sec_filing': label = 'Ticker symbols (comma separated)'; ph = 'e.g. AAPL, MSFT'; break;
+    case 'weather': label = 'Location'; ph = 'e.g. Seattle, WA'; showCond = true; break;
+    case 'space_weather': showTopic = false; break;
+  }
+  if (topicWrap) topicWrap.style.display = showTopic ? '' : 'none';
+  if (topicLabel) topicLabel.textContent = label;
+  if (topicInput) topicInput.placeholder = ph;
+  if (condWrap) condWrap.style.display = showCond ? '' : 'none';
+}
+
+function buildAlertParams(type, topicVal, condVal) {
+  switch (type) {
+    case 'keyword_watch': return { topic: topicVal };
+    case 'research_question': return { question: topicVal };
+    case 'sec_filing': return { symbols: topicVal };
+    case 'weather': return { location: topicVal, condition: condVal };
+    case 'space_weather': return {};
+    default: return {};
+  }
+}
+
+function renderAlertsList() {
+  var listEl = document.getElementById('alertsList');
+  if (!listEl) return;
+  listEl.innerHTML = '';
+  if (!_alertsState.alerts.length) {
+    var empty = document.createElement('div');
+    empty.className = 'auth-note';
+    empty.textContent = 'No alerts yet. Add one above to have Eva watch for you.';
+    listEl.appendChild(empty);
+    return;
+  }
+  _alertsState.alerts.forEach(function(rule) {
+    var row = document.createElement('div');
+    row.className = 'background-row';
+    var head = document.createElement('div');
+    head.className = 'background-row-head';
+    var title = document.createElement('div');
+    title.className = 'background-title';
+    title.textContent = rule.label + (rule.enabled ? '' : ' (paused)');
+    head.appendChild(title);
+    var actions = document.createElement('div');
+    actions.className = 'background-actions';
+    var toggleBtn = document.createElement('button');
+    toggleBtn.type = 'button';
+    toggleBtn.className = 'auth-toggle background-inline-button';
+    toggleBtn.textContent = rule.enabled ? 'Pause' : 'Resume';
+    toggleBtn.addEventListener('click', function() { toggleAlert(rule.id); });
+    actions.appendChild(toggleBtn);
+    var delBtn = document.createElement('button');
+    delBtn.type = 'button';
+    delBtn.className = 'auth-toggle';
+    delBtn.textContent = 'Delete';
+    delBtn.addEventListener('click', function() { deleteAlert(rule.id); });
+    actions.appendChild(delBtn);
+    head.appendChild(actions);
+    row.appendChild(head);
+    var meta = document.createElement('div');
+    meta.className = 'background-meta';
+    var p = rule.params || {};
+    var detail = p.topic || p.question || p.location || (p.symbols ? p.symbols.join(', ') : '') || alertTypeLabel(rule.type);
+    ['Type: ' + alertTypeLabel(rule.type), detail, 'Every ' + Math.round((rule.cooldown_min || 1440) / 60) + 'h',
+     'Via: ' + (rule.channels || []).join(', ')].forEach(function(text) {
+      if (!text) return;
+      var span = document.createElement('span');
+      span.textContent = text;
+      meta.appendChild(span);
+    });
+    row.appendChild(meta);
+    if (rule.last_fired_iso) {
+      var last = document.createElement('div');
+      last.className = 'background-note';
+      last.textContent = 'Last fired: ' + formatGoalDate(rule.last_fired_iso);
+      row.appendChild(last);
+    }
+    listEl.appendChild(row);
+  });
+}
+
+async function loadAlerts() {
+  try {
+    var data = await backgroundBridgeRequest('/v1/alerts', { method: 'GET' });
+    _alertsState.alerts = Array.isArray(data.alerts) ? data.alerts : [];
+    _alertsState.settings = data.settings || {};
+    renderAlertsList();
+    var s = _alertsState.settings;
+    var qs = document.getElementById('alertQuietStart');
+    var qe = document.getElementById('alertQuietEnd');
+    var mph = document.getElementById('alertMaxPerHour');
+    if (qs && typeof s.quiet_hours_start === 'number') qs.value = s.quiet_hours_start;
+    if (qe && typeof s.quiet_hours_end === 'number') qe.value = s.quiet_hours_end;
+    if (mph && typeof s.max_per_hour === 'number') mph.value = s.max_per_hour;
+  } catch (error) {
+    var listEl = document.getElementById('alertsList');
+    if (listEl) listEl.innerHTML = '<div class="auth-note">' + escapeHtml(error.message || 'Alerts unavailable.') + '</div>';
+  }
+}
+
+function readAlertForm() {
+  var type = (document.getElementById('alertType') || {}).value || 'keyword_watch';
+  var label = (document.getElementById('alertLabel') || {}).value || '';
+  var topic = (document.getElementById('alertParamTopic') || {}).value || '';
+  var cond = (document.getElementById('alertParamCondition') || {}).value || '';
+  var cooldownHours = parseInt((document.getElementById('alertCooldown') || {}).value, 10);
+  if (!Number.isInteger(cooldownHours) || cooldownHours < 1) cooldownHours = 24;
+  var channels = [];
+  if ((document.getElementById('alertChannelChat') || {}).checked) channels.push('chat');
+  if ((document.getElementById('alertChannelVoice') || {}).checked) channels.push('voice');
+  if (!channels.length) channels.push('chat');
+  return {
+    type: type,
+    label: label.trim() || alertTypeLabel(type),
+    params: buildAlertParams(type, topic.trim(), cond.trim()),
+    cooldown_min: cooldownHours * 60,
+    channels: channels,
+    enabled: (document.getElementById('alertEnabled') || {}).checked !== false
+  };
+}
+
+async function saveAlert() {
+  var rule = readAlertForm();
+  try {
+    await backgroundBridgeRequest('/v1/alerts', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(rule)
+    });
+    clearAlertForm();
+    await loadAlerts();
+    setStatus('info', 'Alert saved.');
+  } catch (error) {
+    setStatus('error', error.message || 'Could not save alert.');
+  }
+}
+
+async function toggleAlert(id) {
+  var rule = _alertsState.alerts.filter(function(r) { return r.id === id; })[0];
+  if (!rule) return;
+  rule.enabled = !rule.enabled;
+  try {
+    await backgroundBridgeRequest('/v1/alerts', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(rule)
+    });
+    await loadAlerts();
+  } catch (error) {
+    setStatus('error', error.message || 'Could not update alert.');
+  }
+}
+
+async function deleteAlert(id) {
+  if (!confirm('Delete this alert?')) return;
+  try {
+    await backgroundBridgeRequest('/v1/alerts/' + encodeURIComponent(id), { method: 'DELETE' });
+    await loadAlerts();
+    setStatus('info', 'Alert deleted.');
+  } catch (error) {
+    setStatus('error', error.message || 'Could not delete alert.');
+  }
+}
+
+async function saveAlertSettings() {
+  var payload = {
+    quiet_hours_start: parseInt((document.getElementById('alertQuietStart') || {}).value, 10),
+    quiet_hours_end: parseInt((document.getElementById('alertQuietEnd') || {}).value, 10),
+    max_per_hour: parseInt((document.getElementById('alertMaxPerHour') || {}).value, 10)
+  };
+  try {
+    await backgroundBridgeRequest('/v1/alerts/settings', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+    await loadAlerts();
+    setStatus('info', 'Notification limits saved.');
+  } catch (error) {
+    setStatus('error', error.message || 'Could not save limits.');
+  }
+}
+
+function clearAlertForm() {
+  var ids = ['alertLabel', 'alertParamTopic', 'alertParamCondition'];
+  ids.forEach(function(id) { var el = document.getElementById(id); if (el) el.value = ''; });
+  var cd = document.getElementById('alertCooldown'); if (cd) cd.value = 24;
+  var en = document.getElementById('alertEnabled'); if (en) en.checked = true;
+}
+
+function initAlerts() {
+  var typeSel = document.getElementById('alertType');
+  var saveBtn = document.getElementById('alertSaveButton');
+  var clearBtn = document.getElementById('alertClearButton');
+  var settingsBtn = document.getElementById('alertSettingsSaveButton');
+  if (typeSel) typeSel.addEventListener('change', updateAlertParamFields);
+  if (saveBtn) saveBtn.addEventListener('click', saveAlert);
+  if (clearBtn) clearBtn.addEventListener('click', clearAlertForm);
+  if (settingsBtn) settingsBtn.addEventListener('click', saveAlertSettings);
+  updateAlertParamFields();
+  loadAlerts();
 }
 
 function applyStandaloneSimplifications() {
@@ -1457,6 +1755,8 @@ document.addEventListener('DOMContentLoaded', () => {
   if (typeof cogInit === 'function') cogInit();
   if (typeof initGoals === 'function') initGoals();
   if (typeof initBackground === 'function') initBackground();
+  if (typeof initAlerts === 'function') initAlerts();
+  if (typeof initNotifications === 'function') initNotifications();
 
   // Initialize status panel with any pending config/init notes
   setStatus('info', document.getElementById('idText') && document.getElementById('idText').textContent ? document.getElementById('idText').textContent : '');
@@ -1509,6 +1809,8 @@ var _vv = {
   phase: 'idle', // idle | listening | awake | thinking | speaking | error
   recognition: null,
   awakeTimer: null,
+  convoMode: true,        // stay in an active conversation after the wake word
+  convoTimeoutMs: 30000,  // quiet period before dropping back to standby
   lastTranscript: '',
   lastEvaReply: '',
   speakObserver: null,
@@ -1535,6 +1837,16 @@ function openVoiceView() {
   _vv.open = true;
   el.classList.add('open');
   el.setAttribute('aria-hidden', 'false');
+  // Conversation mode: after the wake word, keep listening between turns until a
+  // quiet period elapses. Persisted so the user's choice survives restarts.
+  try {
+    _vv.convoMode = localStorage.getItem('vvConvoMode') !== '0';
+    var savedTimeout = parseInt(localStorage.getItem('vvConvoTimeoutMs'), 10);
+    if (Number.isInteger(savedTimeout) && savedTimeout >= 5000 && savedTimeout <= 300000) {
+      _vv.convoTimeoutMs = savedTimeout;
+    }
+  } catch (e) {}
+  _vvSyncConvoControls();
   _vvSetStatus('idle');
 
   var closeBtn = document.getElementById('voiceViewClose');
@@ -1565,6 +1877,9 @@ function closeVoiceView() {
   }
   if (_vv.speakObserver) { _vv.speakObserver.disconnect(); _vv.speakObserver = null; }
   _vvDetachSpeakStartListeners();
+  if (_vv._watchTimer) { clearTimeout(_vv._watchTimer); _vv._watchTimer = null; }
+  if (_vv._postTextTimer) { clearTimeout(_vv._postTextTimer); _vv._postTextTimer = null; }
+  _vvStopBargeMonitor();
   if (_vv._wasAutoSpeak !== undefined) {
     var autoSpeak = document.getElementById('autoSpeak');
     if (autoSpeak) autoSpeak.checked = _vv._wasAutoSpeak;
@@ -1607,6 +1922,12 @@ function _vvInitParticles() {
       drift: (Math.random() - 0.5) * 0.02
     });
   }
+  // Electrical impulse pools: radial discharges shoot outward from the orb edge
+  // like neural firings; orbit pulses race along the outer rings leaving a
+  // glowing trail. Both are spawned dynamically in the draw loop.
+  _vv.impulses = [];
+  _vv.orbits = [];
+  _vv._lastImpulseT = 0;
 }
 
 // --- HUD data feeds ---
@@ -1688,6 +2009,9 @@ function _vvStartCanvas() {
     if (!_vv.open) return;
     ctx.clearRect(0, 0, w, h);
 
+    if (!_vv.impulses) _vv.impulses = [];
+    if (!_vv.orbits) _vv.orbits = [];
+
     var t = performance.now() / 1000;
     var phase = _vv.phase;
 
@@ -1703,6 +2027,22 @@ function _vvStartCanvas() {
       ttsData = _vv.ttsDataArray;
     }
     var activeData = ttsData || freqData;
+
+    // Band energies drive organic motion and impulse spawning. Voice lives in
+    // the low/mid bins, so we weight those for the overall level.
+    var bass = 0, mid = 0, treble = 0, level = 0;
+    if (activeData && activeData.length) {
+      var an = activeData.length;
+      var bEnd = Math.max(1, Math.floor(an * 0.12));
+      var mEnd = Math.max(bEnd + 1, Math.floor(an * 0.45));
+      var sb = 0; for (var bb = 0; bb < bEnd; bb++) sb += activeData[bb];
+      var sm = 0; for (var bm = bEnd; bm < mEnd; bm++) sm += activeData[bm];
+      var st = 0; for (var bt = mEnd; bt < an; bt++) st += activeData[bt];
+      bass = sb / bEnd / 255;
+      mid = sm / (mEnd - bEnd) / 255;
+      treble = st / (an - mEnd) / 255;
+      level = bass * 0.6 + mid * 0.32 + treble * 0.08;
+    }
 
     // Phase colors
     var hue, sat, light, glowAlpha, ringHue;
@@ -1738,7 +2078,7 @@ function _vvStartCanvas() {
       ctx.moveTo(x1, y1);
       ctx.lineTo(x2, y2);
     }
-    ctx.strokeStyle = col(ringHue, 40, 50, 0.08);
+    ctx.strokeStyle = col(ringHue, 35, 32, 0.04);
     ctx.lineWidth = 0.5;
     ctx.stroke();
     ctx.restore();
@@ -1750,7 +2090,7 @@ function _vvStartCanvas() {
     ctx.beginPath();
     ctx.setLineDash([8, 16]);
     ctx.arc(0, 0, baseR * 1.45, 0, Math.PI * 2);
-    ctx.strokeStyle = col(ringHue, 40, 50, 0.1);
+    ctx.strokeStyle = col(ringHue, 35, 32, 0.05);
     ctx.lineWidth = 0.8;
     ctx.stroke();
     ctx.setLineDash([]);
@@ -1762,7 +2102,7 @@ function _vvStartCanvas() {
     ctx.rotate(t * 0.25);
     ctx.beginPath();
     ctx.arc(0, 0, baseR * 1.2, 0, Math.PI * 2);
-    ctx.strokeStyle = col(ringHue, sat, light, 0.12);
+    ctx.strokeStyle = col(ringHue, sat, light * 0.55, 0.06);
     ctx.lineWidth = 1;
     ctx.stroke();
     // Tick marks every 30 deg
@@ -1771,7 +2111,7 @@ function _vvStartCanvas() {
       ctx.beginPath();
       ctx.moveTo(Math.cos(ta) * baseR * 1.18, Math.sin(ta) * baseR * 1.18);
       ctx.lineTo(Math.cos(ta) * baseR * 1.24, Math.sin(ta) * baseR * 1.24);
-      ctx.strokeStyle = col(ringHue, sat, light, 0.2);
+      ctx.strokeStyle = col(ringHue, sat, light * 0.55, 0.1);
       ctx.lineWidth = d % 3 === 0 ? 1.5 : 0.7;
       ctx.stroke();
     }
@@ -1810,19 +2150,46 @@ function _vvStartCanvas() {
     }
 
     // === Main waveform orb ===
+    // The perimeter is deformed by three overlapping influences so the WHOLE
+    // ring stays alive (no flat arc): (1) traveling harmonic ripples that orbit
+    // the circle continuously, (2) audio energy that is itself rotated around
+    // the ring over time so loud bins sweep around instead of pinning to a
+    // fixed angle, and (3) a gentle breath. This reads as an organic, living
+    // membrane rather than a static spectrum readout.
     var segments = 180;
+    var dataLen = (activeData && activeData.length) ? activeData.length : 0;
+    var usableBins = dataLen ? Math.max(1, Math.floor(dataLen * 0.6)) : 0;
+    var swirl = t * 0.18; // audio sweep rate around the ring
     ctx.beginPath();
     for (var si = 0; si <= segments; si++) {
       var angle = (si / segments) * Math.PI * 2 - Math.PI / 2;
+      var pos = si / segments;
+
+      // Audio energy, rotated around the ring and reflected so there is no seam.
       var amp = 0;
-      if (activeData && activeData.length > 0) {
-        var fi = Math.floor((si / segments) * activeData.length);
-        amp = activeData[fi] / 255;
+      if (usableBins > 0) {
+        var swept = pos + swirl;
+        var frac = swept - Math.floor(swept);          // 0..1 wrapped
+        var refl = frac <= 0.5 ? frac * 2 : (1 - frac) * 2; // 0..1..0, seamless
+        var fi = Math.min(usableBins - 1, Math.floor(refl * usableBins));
+        amp = (activeData[fi] / 255) * (0.22 + level * 0.5);
       }
-      var breathe = Math.sin(t * 1.2 + angle * 3) * 0.015 + Math.sin(t * 0.7 + angle * 7) * 0.008;
-      var pulse = (phase === 'awake' || phase === 'speaking') ? Math.sin(t * 4) * 0.02 : 0;
-      var think = (phase === 'thinking') ? Math.sin(t * 6 + angle * 12) * 0.025 : 0;
-      var r = baseR * (1 + amp * 0.4 + breathe + pulse + think);
+
+      // Traveling harmonic ripples. Different speeds/directions keep every part
+      // of the ring in motion; amplitude swells with audio level but never goes
+      // fully flat, so the orb always breathes.
+      var organic =
+        Math.sin(angle * 3 + t * 1.6) * 0.55 +
+        Math.sin(angle * 5 - t * 1.1) * 0.30 +
+        Math.sin(angle * 8 + t * 2.4) * 0.18 +
+        Math.sin(angle * 13 - t * 3.1) * 0.10;
+      organic *= (0.022 + level * 0.085 + bass * 0.04);
+
+      var breathe = Math.sin(t * 1.2) * 0.012;
+      var pulse = (phase === 'awake' || phase === 'speaking') ? Math.sin(t * 4) * 0.018 : 0;
+      var think = (phase === 'thinking') ? Math.sin(t * 5 + angle * 9) * 0.03 : 0;
+
+      var r = baseR * (1 + amp * 0.4 + organic + breathe + pulse + think);
       var x = cx + Math.cos(angle) * r;
       var y = cy + Math.sin(angle) * r;
       if (si === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
@@ -1847,6 +2214,119 @@ function _vvStartCanvas() {
     ctx.shadowBlur = 60;
     ctx.stroke();
     ctx.shadowBlur = 0;
+
+    // === Electrical impulses ===
+    // Two effects layered for a "the future is now" feel:
+    //   1. Radial discharges: jagged lightning that fires outward from the orb
+    //      surface, like synapses or energy arcing into the field.
+    //   2. Orbit pulses: bright sparks that race along the outer rings leaving a
+    //      fading comet trail, so energy is always traveling through the window.
+    // Spawn rates scale with the phase and live audio level.
+    var dt = Math.min(0.05, Math.max(0.001, t - (_vv._lastT || t)));
+    _vv._lastT = t;
+    var activity = phase === 'speaking' ? (0.2 + level * 1.1)
+                 : phase === 'thinking' ? 0.32
+                 : phase === 'awake' ? 0.16
+                 : phase === 'listening' ? (0.07 + level * 0.5)
+                 : phase === 'error' ? 0.12
+                 : 0.03;
+
+    // Spawn radial discharges.
+    if (_vv.impulses.length < 16 && Math.random() < activity * 0.32) {
+      var ia = Math.random() * Math.PI * 2;
+      var nodes = 5 + Math.floor(Math.random() * 4);
+      var offs = [];
+      for (var ni = 0; ni < nodes; ni++) offs.push((Math.random() - 0.5));
+      _vv.impulses.push({
+        angle: ia,
+        reach: 0.45 + Math.random() * 0.7,   // how far past the orb it travels
+        prog: 0,
+        speed: 1.6 + Math.random() * 1.8,
+        offs: offs,
+        width: 0.8 + Math.random() * 1.2
+      });
+    }
+    // Spawn orbit pulses.
+    if (_vv.orbits.length < 8 && Math.random() < activity * 0.2) {
+      var ringR = (Math.random() < 0.5 ? 1.2 : 1.45) + (Math.random() - 0.5) * 0.1;
+      _vv.orbits.push({
+        angle: Math.random() * Math.PI * 2,
+        radius: ringR,
+        dir: Math.random() < 0.5 ? 1 : -1,
+        speed: 1.4 + Math.random() * 1.8,
+        prog: 0,
+        life: 0.7 + Math.random() * 0.6
+      });
+    }
+
+    // Draw + update radial discharges.
+    for (var di = _vv.impulses.length - 1; di >= 0; di--) {
+      var im = _vv.impulses[di];
+      im.prog += dt * im.speed;
+      if (im.prog >= 1) { _vv.impulses.splice(di, 1); continue; }
+      var headLen = baseR * (0.04 + im.reach * im.prog);
+      var startR = baseR * (1.0 + 0.02 * Math.sin(t * 4 + im.angle));
+      var ca = Math.cos(im.angle), sa = Math.sin(im.angle);
+      var px0 = cx + ca * startR, py0 = cy + sa * startR;
+      var perpX = -sa, perpY = ca;
+      var seg = im.offs.length;
+      var fade = Math.sin(Math.PI * im.prog); // ramp in then out
+      ctx.beginPath();
+      ctx.moveTo(px0, py0);
+      for (var ii = 0; ii < seg; ii++) {
+        var frac2 = (ii + 1) / seg;
+        var rr = startR + headLen * frac2;
+        var jitter = im.offs[ii] * 10 * (1 - frac2) * (0.6 + level);
+        var jx = cx + ca * rr + perpX * jitter;
+        var jy = cy + sa * rr + perpY * jitter;
+        ctx.lineTo(jx, jy);
+      }
+      ctx.strokeStyle = col(hue, sat - 5, light + 25, 0.5 * fade);
+      ctx.lineWidth = im.width;
+      ctx.shadowColor = col(hue, sat, light + 15, 0.7 * fade);
+      ctx.shadowBlur = 12;
+      ctx.stroke();
+      // Bright head spark.
+      var hx = cx + ca * (startR + headLen) + perpX * im.offs[seg - 1] * 4;
+      var hy = cy + sa * (startR + headLen) + perpY * im.offs[seg - 1] * 4;
+      ctx.beginPath();
+      ctx.arc(hx, hy, im.width * 1.3, 0, Math.PI * 2);
+      ctx.fillStyle = col(hue, sat - 15, 90, 0.8 * fade);
+      ctx.fill();
+      ctx.shadowBlur = 0;
+    }
+
+    // Draw + update orbit pulses (comet trails along the outer rings).
+    for (var oi = _vv.orbits.length - 1; oi >= 0; oi--) {
+      var ob = _vv.orbits[oi];
+      ob.prog += dt * (ob.speed / 6);
+      if (ob.prog >= ob.life) { _vv.orbits.splice(oi, 1); continue; }
+      var oFade = Math.sin(Math.PI * (ob.prog / ob.life));
+      var orbR = baseR * ob.radius;
+      var headA = ob.angle + ob.dir * ob.prog * 4.2;
+      var trail = 14;
+      for (var ti = 0; ti < trail; ti++) {
+        var ta2 = headA - ob.dir * ti * 0.045;
+        var tAlpha = oFade * (1 - ti / trail) * 0.6;
+        if (tAlpha <= 0.01) continue;
+        var tx = cx + Math.cos(ta2) * orbR;
+        var ty = cy + Math.sin(ta2) * orbR;
+        ctx.beginPath();
+        ctx.arc(tx, ty, (1 - ti / trail) * 1.8 + 0.3, 0, Math.PI * 2);
+        ctx.fillStyle = col(ringHue, sat, light + 25, tAlpha);
+        ctx.fill();
+      }
+      // Bright head with glow.
+      var ohx = cx + Math.cos(headA) * orbR;
+      var ohy = cy + Math.sin(headA) * orbR;
+      ctx.beginPath();
+      ctx.arc(ohx, ohy, 2.2, 0, Math.PI * 2);
+      ctx.fillStyle = col(ringHue, sat - 10, 92, 0.85 * oFade);
+      ctx.shadowColor = col(ringHue, sat, light + 20, 0.8 * oFade);
+      ctx.shadowBlur = 14;
+      ctx.fill();
+      ctx.shadowBlur = 0;
+    }
 
     // === Inner ring (heartbeat) ===
     var innerPulse = 0.55 + Math.sin(t * 2) * 0.02;
@@ -1922,11 +2402,18 @@ function _vvStartWaveBar() {
     for (var i = 0; i < bars; i++) {
       var val = 0;
       if (activeData && activeData.length > 0) {
-        var fi = Math.floor((i / bars) * activeData.length);
-        val = activeData[fi] / 255;
+        // Compress sampling toward the low/mid bins (where voice energy lives)
+        // so the bars spread the motion across the whole bar instead of leaving
+        // the high-frequency right side dead.
+        var norm = i / bars;
+        var curved = Math.pow(norm, 1.8);
+        var fi = Math.floor(curved * activeData.length * 0.6);
+        val = activeData[Math.min(activeData.length - 1, fi)] / 255;
       }
-      // Subtle idle animation
-      if (val < 0.01) val = Math.abs(Math.sin(t * 0.8 + i * 0.15)) * 0.03;
+      // Always-alive traveling shimmer so the bar feels organic even in silence.
+      var shimmer = (Math.sin(t * 1.6 - i * 0.22) * 0.5 + 0.5) * 0.04
+                  + Math.abs(Math.sin(t * 0.8 + i * 0.15)) * 0.02;
+      val = Math.max(val, shimmer);
 
       var barH = val * mid * 0.85;
       var x = i * barW + 1;
@@ -1966,7 +2453,11 @@ function _vvStartMicAnalyser() {
   var AudioCtx = window.AudioContext || window.webkitAudioContext;
   if (!AudioCtx) return Promise.resolve();
 
-  return navigator.mediaDevices.getUserMedia({ audio: true }).then(function(stream) {
+  // Echo cancellation is what makes barge-in possible: it removes Eva's own TTS
+  // output (played through the speakers) from the mic signal, so the energy the
+  // barge monitor sees while she speaks is mostly the user, not Eva.
+  var constraints = { audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true } };
+  return navigator.mediaDevices.getUserMedia(constraints).then(function(stream) {
     _vv.micStream = stream;
     if (!_vv.audioCtx) _vv.audioCtx = new AudioCtx();
     if (_vv.audioCtx.state === 'suspended') _vv.audioCtx.resume();
@@ -2339,8 +2830,159 @@ function _vvWhisperTranscribe(blob) {
 
 // --- Transcript + command handling ---
 
+// Reflect conversation-mode state into the voice-view controls and bind their
+// change handlers (idempotent; safe to call on each open).
+function _vvSyncConvoControls() {
+  var toggle = document.getElementById('vvConvoToggle');
+  var timeoutSel = document.getElementById('vvConvoTimeout');
+  if (toggle) {
+    toggle.checked = !!_vv.convoMode;
+    if (!toggle._vvBound) {
+      toggle._vvBound = true;
+      toggle.addEventListener('change', function() {
+        _vv.convoMode = !!toggle.checked;
+        try { localStorage.setItem('vvConvoMode', _vv.convoMode ? '1' : '0'); } catch (e) {}
+        // Apply immediately if currently idling between turns.
+        if (_vv.open) {
+          if (_vv.convoMode && _vv.phase === 'listening') {
+            _vvEnterAwake(_vv.convoTimeoutMs);
+          } else if (!_vv.convoMode && _vv.phase === 'awake') {
+            if (_vv.awakeTimer) { clearTimeout(_vv.awakeTimer); _vv.awakeTimer = null; }
+            _vvSetStatus('listening');
+          }
+        }
+      });
+    }
+  }
+  if (timeoutSel) {
+    timeoutSel.value = String(_vv.convoTimeoutMs);
+    if (!timeoutSel._vvBound) {
+      timeoutSel._vvBound = true;
+      timeoutSel.addEventListener('change', function() {
+        var ms = parseInt(timeoutSel.value, 10);
+        if (Number.isInteger(ms) && ms >= 5000 && ms <= 300000) {
+          _vv.convoTimeoutMs = ms;
+          try { localStorage.setItem('vvConvoTimeoutMs', String(ms)); } catch (e) {}
+          if (_vv.open && _vv.phase === 'awake') _vvEnterAwake(ms);
+        }
+      });
+    }
+  }
+}
+
+// Enter the 'awake' conversation window. While awake, the user can speak follow
+// ups without repeating the wake word. After timeoutMs of no speech we fall back
+// to 'listening' (standby), which requires saying "Eva" again.
+function _vvEnterAwake(timeoutMs) {
+  _vvSetStatus('awake');
+  if (_vv.awakeTimer) { clearTimeout(_vv.awakeTimer); _vv.awakeTimer = null; }
+  _vv.awakeTimer = setTimeout(function() {
+    _vv.awakeTimer = null;
+    if (_vv.phase === 'awake') _vvSetStatus('listening');
+  }, timeoutMs || 10000);
+}
+
+// Called when a turn completes. In conversation mode Eva stays awake for a
+// follow-up; otherwise she returns to standby and waits for the wake word.
+function _vvAfterTurn() {
+  if (!_vv.open) return;
+  if (!(_vv.recognition || _vv.whisperMode)) { _vvSetStatus('idle'); return; }
+  if (_vv.convoMode) {
+    _vvEnterAwake(_vv.convoTimeoutMs);
+  } else {
+    _vvSetStatus('listening');
+  }
+  if (_vv.whisperMode) _vvWhisperRecord();
+}
+
+// --- Barge-in (interrupt Eva while she speaks) ---
+
+// Hard-stop any TTS playback. Pausing the audio element silences the network
+// voices; cancel() stops the browser SpeechSynthesis engine.
+function _vvStopTTS() {
+  var audio = document.getElementById('audioPlayback');
+  if (audio) {
+    try { audio.pause(); } catch (e) {}
+    try { audio.currentTime = 0; } catch (e) {}
+  }
+  if (window.speechSynthesis) { try { window.speechSynthesis.cancel(); } catch (e) {} }
+}
+
+// Invoked when the barge monitor detects the user talking over Eva. Routes the
+// speaking phase through its finalizer with the barged flag so Eva goes quiet
+// and immediately opens a conversation window to catch the redirect.
+function _vvBargeIn() {
+  if (_vv.phase !== 'speaking') return;
+  if (typeof _vv._finishSpeaking === 'function') {
+    _vv._finishSpeaking(true);
+  }
+}
+
+// After a barge-in, open the conversation window (no wake word needed) and arm
+// capture so the user's redirect is heard right away.
+function _vvAfterBarge() {
+  if (!_vv.open) return;
+  if (!(_vv.recognition || _vv.whisperMode)) { _vvSetStatus('idle'); return; }
+  _vvEnterAwake(_vv.convoTimeoutMs);
+  if (_vv.whisperMode) _vvWhisperRecord();
+}
+
+// Watch the mic during the speaking phase. With echo cancellation removing
+// Eva's own voice, sustained mic energy that also clears the current playback
+// level means the user is talking over her, so we trigger a barge-in. A short
+// startup grace avoids self-triggering on Eva's first syllable.
+function _vvStartBargeMonitor() {
+  _vvStopBargeMonitor();
+  if (!_vv.analyser || !_vv.dataArray) return;
+  var aboveSince = 0;
+  var NEED_MS = 300;   // sustained user speech before interrupting
+  var THRESH = 40;     // min average mic energy (0-255) to consider speech
+  var graceUntil = performance.now() + 700;
+  function loop() {
+    if (_vv.phase !== 'speaking' || !_vv.open || !_vv.analyser) { _vv.bargeRAF = null; return; }
+    _vv.analyser.getByteFrequencyData(_vv.dataArray);
+    var sum = 0;
+    for (var i = 0; i < _vv.dataArray.length; i++) sum += _vv.dataArray[i];
+    var micAvg = sum / _vv.dataArray.length;
+
+    // Current TTS playback level, so the bar to interrupt rises while Eva is
+    // loud and falls in her pauses (belt-and-suspenders alongside AEC).
+    var ttsAvg = 0;
+    if (_vv.ttsAnalyser && _vv.ttsDataArray) {
+      _vv.ttsAnalyser.getByteFrequencyData(_vv.ttsDataArray);
+      var ts = 0;
+      for (var j = 0; j < _vv.ttsDataArray.length; j++) ts += _vv.ttsDataArray[j];
+      ttsAvg = ts / _vv.ttsDataArray.length;
+    }
+
+    var now = performance.now();
+    var isUser = now > graceUntil && micAvg > THRESH && micAvg > (ttsAvg * 0.6 + 10);
+    if (isUser) {
+      if (!aboveSince) aboveSince = now;
+      else if (now - aboveSince >= NEED_MS) { _vv.bargeRAF = null; _vvBargeIn(); return; }
+    } else {
+      aboveSince = 0;
+    }
+    _vv.bargeRAF = requestAnimationFrame(loop);
+  }
+  _vv.bargeRAF = requestAnimationFrame(loop);
+}
+
+function _vvStopBargeMonitor() {
+  if (_vv.bargeRAF) { cancelAnimationFrame(_vv.bargeRAF); _vv.bargeRAF = null; }
+}
+
 function _vvHandleTranscript(transcript) {
-  if (_vv.phase === 'thinking' || _vv.phase === 'speaking') return;
+  // A response is mid-flight: ignore.
+  if (_vv.phase === 'thinking') return;
+  // Spoken interruption while Eva is talking: barge in, then process the phrase
+  // as the redirect. (Whisper mode does not record during speaking, so this
+  // branch is reached only by the Web Speech recognizer; the energy monitor
+  // covers whisper.)
+  if (_vv.phase === 'speaking') {
+    if (!transcript || transcript.trim().length <= 1) return;
+    _vvBargeIn();
+  }
 
   // Show transcript in HUD
   var transcriptEl = document.getElementById('vvTranscript');
@@ -2354,21 +2996,19 @@ function _vvHandleTranscript(transcript) {
     if (command.length > 1) {
       _vvSendCommand(command);
     } else {
-      _vvSetStatus('awake');
-      if (_vv.awakeTimer) clearTimeout(_vv.awakeTimer);
-      _vv.awakeTimer = setTimeout(function() {
-        if (_vv.phase === 'awake') _vvSetStatus('listening');
-      }, 10000);
+      // Wake word only: open the conversation window and wait for the command.
+      _vvEnterAwake(_vv.convoMode ? _vv.convoTimeoutMs : 10000);
     }
     return;
   }
 
   if (_vv.phase === 'awake') {
-    if (_vv.awakeTimer) { clearTimeout(_vv.awakeTimer); _vv.awakeTimer = null; }
     if (transcript.length > 1) {
       _vvSendCommand(transcript);
     } else {
-      _vvSetStatus('listening');
+      // Too short to act on; stay awake and re-arm the standby timer instead of
+      // dropping out of the conversation on a stray noise.
+      _vvEnterAwake(_vv.convoMode ? _vv.convoTimeoutMs : 10000);
     }
   }
 }
@@ -2376,6 +3016,7 @@ function _vvHandleTranscript(transcript) {
 function _vvSendCommand(command) {
   _vv.lastTranscript = command;
   _vv.cmdStart = performance.now();
+  if (_vv.awakeTimer) { clearTimeout(_vv.awakeTimer); _vv.awakeTimer = null; }
   _vvSetStatus('thinking');
   _vvHideAssets();
 
@@ -2401,50 +3042,103 @@ function _vvWatchForResponse() {
 
   if (_vv.speakObserver) { _vv.speakObserver.disconnect(); _vv.speakObserver = null; }
   _vvDetachSpeakStartListeners();
+  if (_vv._watchTimer) { clearTimeout(_vv._watchTimer); _vv._watchTimer = null; }
+  if (_vv._postTextTimer) { clearTimeout(_vv._postTextTimer); _vv._postTextTimer = null; }
 
-  var responded = false;
+  var finished = false;   // the whole turn has resolved
+  var speaking = false;   // real audio/synth playback has started
+  var gotText = false;    // Eva's text response has been observed
   var audio = document.getElementById('audioPlayback');
   var synth = window.speechSynthesis;
 
   function cleanupTriggers() {
     if (_vv.speakObserver) { _vv.speakObserver.disconnect(); _vv.speakObserver = null; }
     _vvDetachSpeakStartListeners();
+    if (_vv._watchTimer) { clearTimeout(_vv._watchTimer); _vv._watchTimer = null; }
+    if (_vv._postTextTimer) { clearTimeout(_vv._postTextTimer); _vv._postTextTimer = null; }
   }
 
-  // Idempotent: whichever signal arrives first (response text seen, audio
-  // element starts playing, or speech synthesis starts) flips us to the
-  // speaking phase. Audio playback is the most reliable trigger because some
-  // providers set lastResponse only after the final DOM mutation, which can
-  // race past the observer and leave the status stuck on PROCESSING.
-  function beginSpeaking() {
-    if (responded || !_vv.open) return;
-    responded = true;
+  function finishToListening() {
+    if (finished || !_vv.open) return;
+    finished = true;
     cleanupTriggers();
+    _vvRestoreAutoSpeak();
+    if (_vv.open) {
+      _vvSetStatus('listening');
+      if (_vv.whisperMode) _vvWhisperRecord();
+    }
+  }
+
+  // Enter the speaking phase ONLY when real audio is heard. The earlier design
+  // flipped to 'speaking' as soon as Eva's text appeared, but TTS (network
+  // voices, or a slow cognition turn that renders text well before audio) can
+  // lag the text by seconds. That produced a green 'speaking' orb with no
+  // sound, which then timed out back to 'listening' just before the real audio
+  // started. Triggering on the actual audio/synth start keeps them in sync.
+  function beginSpeaking() {
+    if (finished || speaking || !_vv.open) return;
+    speaking = true;
+    if (_vv.speakObserver) { _vv.speakObserver.disconnect(); _vv.speakObserver = null; }
+    _vvDetachSpeakStartListeners();
+    if (_vv._watchTimer) { clearTimeout(_vv._watchTimer); _vv._watchTimer = null; }
+    if (_vv._postTextTimer) { clearTimeout(_vv._postTextTimer); _vv._postTextTimer = null; }
 
     var evaResponse = (typeof lastResponse === 'string') ? lastResponse.trim() : '';
     if (evaResponse) _vv.lastEvaReply = evaResponse;
 
     _vvSetStatus('speaking');
     _vvConnectTTSAnalyser();
+    _vvStartBargeMonitor();
 
-    _vvWaitForSpeechEnd(function() {
+    // Single finalizer for the speaking phase, reachable from both the natural
+    // speech-end and a user barge-in. Idempotent so whichever path wins runs the
+    // teardown exactly once.
+    var ended = false;
+    function finishSpeaking(barged) {
+      if (ended) return;
+      ended = true;
+      _vv._finishSpeaking = null;
+      _vvStopBargeMonitor();
+      if (barged) _vvStopTTS();
       _vvDisconnectTTSAnalyser();
+      finished = true;
+      cleanupTriggers();
       _vvRestoreAutoSpeak();
-      if (_vv.open && (_vv.recognition || _vv.whisperMode)) {
-        _vvSetStatus('listening');
-        if (_vv.whisperMode) _vvWhisperRecord();
-      }
-    });
+      if (barged) _vvAfterBarge(); else _vvAfterTurn();
+    }
+    _vv._finishSpeaking = finishSpeaking;
+
+    _vvWaitForSpeechEnd(function() { finishSpeaking(false); });
   }
 
-  _vv.speakObserver = new MutationObserver(function() {
-    if (responded || !_vv.open) return;
+  // Eva's text response arrived. Stay in 'thinking' and wait for audio to begin
+  // (the reliable speaking trigger). If no audio starts within the grace window
+  // the response was effectively silent, so return to listening rather than
+  // showing a speaking phase that never produces sound.
+  function onResponseText() {
+    if (finished || speaking || gotText || !_vv.open) return;
     var evaResponse = (typeof lastResponse === 'string') ? lastResponse.trim() : '';
-    if (evaResponse && evaResponse !== _vv.lastEvaReply) beginSpeaking();
-  });
+    if (!evaResponse || evaResponse === _vv.lastEvaReply) return;
+    gotText = true;
+    _vv.lastEvaReply = evaResponse;
+    if (_vv._watchTimer) { clearTimeout(_vv._watchTimer); _vv._watchTimer = null; }
+    _vv._postTextTimer = setTimeout(function() {
+      _vv._postTextTimer = null;
+      if (!speaking && !finished) {
+        // Text completed but no audio played (silent or disabled TTS). The turn
+        // is still done, so continue the conversation rather than abandoning it.
+        finished = true;
+        cleanupTriggers();
+        _vvRestoreAutoSpeak();
+        _vvAfterTurn();
+      }
+    }, 20000);
+  }
+
+  _vv.speakObserver = new MutationObserver(onResponseText);
   _vv.speakObserver.observe(txtOutput, { childList: true, subtree: true, characterData: true });
 
-  // Audio playback as a fallback/parallel trigger.
+  // Audio playback / synth start are the authoritative speaking triggers.
   _vv._onSpeakStart = function() { beginSpeaking(); };
   if (audio) {
     audio.addEventListener('playing', _vv._onSpeakStart);
@@ -2452,19 +3146,29 @@ function _vvWatchForResponse() {
   }
   if (synth) {
     _vv._synthPoll = setInterval(function() {
-      if (responded || !_vv.open) { clearInterval(_vv._synthPoll); _vv._synthPoll = null; return; }
+      if (finished || !_vv.open) { clearInterval(_vv._synthPoll); _vv._synthPoll = null; return; }
       if (synth.speaking) beginSpeaking();
     }, 200);
   }
 
-  setTimeout(function() {
-    if (!responded && _vv.open) {
-      cleanupTriggers();
-      _vvRestoreAutoSpeak();
-      _vvSetStatus('listening');
-      if (_vv.whisperMode) _vvWhisperRecord();
+  // No-response watchdog. Heavy cognition turns (draft + review on slow models)
+  // can legitimately run for minutes, so while Eva is still 'thinking' and no
+  // text or audio has arrived we keep waiting and re-arm. Once text arrives the
+  // post-text grace above takes over; once audio starts beginSpeaking does. We
+  // only force a recovery here if the phase already moved on or a hard ceiling
+  // is hit (a stuck turn that never produced text or audio).
+  var watchStart = performance.now();
+  var WATCH_ABS_MAX = 600000; // 10 min hard ceiling
+  function watchdog() {
+    _vv._watchTimer = null;
+    if (finished || speaking || gotText || !_vv.open) return;
+    if (_vv.phase === 'thinking' && (performance.now() - watchStart) < WATCH_ABS_MAX) {
+      _vv._watchTimer = setTimeout(watchdog, 10000);
+      return;
     }
-  }, 60000);
+    finishToListening();
+  }
+  _vv._watchTimer = setTimeout(watchdog, 60000);
 }
 
 function _vvDetachSpeakStartListeners() {
@@ -3559,6 +4263,13 @@ function speakText() {
         VoiceId: ""
     };
 
+    // Optional override (e.g. proactive notifications) speaks an arbitrary
+    // string directly, bypassing the lastResponse/transcript extraction so it
+    // never collides with the normal chat auto-speak path.
+    var overrideText = (typeof arguments[0] === 'string' && arguments[0].trim()) ? arguments[0] : '';
+    if (overrideText) {
+      speechParams.Text = sanitizeForSpeech(overrideText);
+    } else
     // Prefer the global `lastResponse` populated by aig.js / copilot.js /
     // gpt-core.js. That string is the clean final response without any
     // cognition-trace markup, which prevents Auto Speak from reading the
@@ -3677,7 +4388,7 @@ function speakText() {
       const barkHost = localStorage.getItem('barkTTSHost') || 'localhost';
       const barkBase = 'https://' + barkHost;
       const url = barkBase + '/send-string';
-      const data = "WOMAN: " + textArr[1];
+      const data = "WOMAN: " + ((typeof textArr !== 'undefined' && textArr[1]) ? textArr[1] : speechParams.Text);
       const xhr = new XMLHttpRequest();
       xhr.responseType = 'blob';
 

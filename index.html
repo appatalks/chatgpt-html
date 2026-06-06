@@ -537,6 +537,67 @@
           </div>
         </div>
 
+        <h4 class="settings-subhead">My alerts</h4>
+        <p class="auth-note">Tell Eva what to watch. She checks active alerts each background cycle and speaks up in chat (and aloud) when something new turns up.</p>
+        <div class="mcp-preset background-controls">
+          <div class="auth-field">
+            <label for="alertType">Type</label>
+            <select id="alertType">
+              <option value="keyword_watch">Topic / keyword watch</option>
+              <option value="research_question">Standing research question</option>
+              <option value="sec_filing">SEC filing watch</option>
+              <option value="weather">Weather</option>
+              <option value="space_weather">Space weather</option>
+            </select>
+          </div>
+          <div class="auth-field">
+            <label for="alertLabel">Label</label>
+            <input type="text" id="alertLabel" maxlength="80" placeholder="Short name for this alert">
+          </div>
+          <div class="auth-field" id="alertParamTopicWrap">
+            <label for="alertParamTopic" id="alertParamTopicLabel">Topic to watch</label>
+            <input type="text" id="alertParamTopic" maxlength="240" placeholder="e.g. new OpenAI model releases">
+          </div>
+          <div class="auth-field" id="alertParamConditionWrap" style="display:none;">
+            <label for="alertParamCondition">Alert when (condition)</label>
+            <input type="text" id="alertParamCondition" maxlength="160" placeholder="e.g. rain, snow, or severe warnings">
+          </div>
+          <div class="auth-field">
+            <label for="alertCooldown">Minimum hours between alerts</label>
+            <input type="number" id="alertCooldown" min="1" max="336" step="1" value="24">
+          </div>
+          <div class="background-jobs">
+            <span class="background-jobs-label">Deliver via:</span>
+            <label class="background-toggle-row"><input type="checkbox" id="alertChannelChat" checked> Chat message</label>
+            <label class="background-toggle-row"><input type="checkbox" id="alertChannelVoice" checked> Spoken aloud</label>
+            <label class="background-toggle-row"><input type="checkbox" id="alertEnabled" checked> Enabled</label>
+          </div>
+          <div class="background-actions">
+            <button type="button" class="auth-save" id="alertSaveButton">Add alert</button>
+            <button type="button" class="auth-toggle" id="alertClearButton">Clear form</button>
+          </div>
+        </div>
+        <div id="alertsList" class="background-list"></div>
+
+        <h4 class="settings-subhead">Notification limits</h4>
+        <div class="mcp-preset background-controls">
+          <div class="auth-field">
+            <label for="alertQuietStart">Quiet hours start (0-23, -1 off)</label>
+            <input type="number" id="alertQuietStart" min="-1" max="23" step="1" value="-1">
+          </div>
+          <div class="auth-field">
+            <label for="alertQuietEnd">Quiet hours end (0-23, -1 off)</label>
+            <input type="number" id="alertQuietEnd" min="-1" max="23" step="1" value="-1">
+          </div>
+          <div class="auth-field">
+            <label for="alertMaxPerHour">Max notifications per hour</label>
+            <input type="number" id="alertMaxPerHour" min="1" max="60" step="1" value="4">
+          </div>
+          <div class="background-actions">
+            <button type="button" class="auth-save" id="alertSettingsSaveButton">Save limits</button>
+          </div>
+        </div>
+
         <h4 class="settings-subhead">Recent activity</h4>
         <div id="backgroundActivity" class="background-list"></div>
       </div>
@@ -778,7 +839,24 @@
     <!-- Transcript + waveform bar -->
     <div class="vv-hud-bottom">
       <canvas id="vvWaveBar" class="vv-wave-bar" width="600" height="48"></canvas>
-      <div id="vvHudTelemetry" class="vv-hint vv-telemetry">tap orb to listen &middot; say <em>Eva</em> to wake</div>
+      <div id="vvHudTelemetry" class="vv-hint vv-telemetry">tap orb to listen &middot; say <em>Eva</em> to wake &middot; talk over her to redirect</div>
+      <!-- Conversation mode is on by default (30s standby). Controls kept in the
+           DOM so the saved defaults still drive behavior, but hidden from view. -->
+      <div class="vv-convo-controls" style="display:none;">
+        <label class="vv-convo-toggle" title="Stay in conversation after the wake word so you don't repeat &quot;Eva&quot; each turn">
+          <input type="checkbox" id="vvConvoToggle" checked> Conversation mode
+        </label>
+        <label class="vv-convo-timeout" title="Quiet time before Eva returns to standby and needs the wake word again">
+          standby after
+          <select id="vvConvoTimeout">
+            <option value="15000">15s</option>
+            <option value="30000" selected>30s</option>
+            <option value="60000">1m</option>
+            <option value="120000">2m</option>
+            <option value="300000">5m</option>
+          </select>
+        </label>
+      </div>
     </div>
     <!-- Asset surface: images/media Eva shows while in voice mode -->
     <div id="vvAssets" class="vv-assets" aria-hidden="true">

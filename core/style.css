@@ -1107,6 +1107,25 @@ body.theme-lcars .eva-inline-img {
   border-radius: 4px;
 }
 
+/* Proactive notification bubbles surfaced by the background loop */
+#txtOutput .eva-proactive {
+  border-left: 3px solid #d8a13a;
+  background: rgba(216, 161, 58, 0.06);
+}
+.eva-proactive-badge {
+  display: inline-block;
+  background: #d8a13a;
+  color: #1a1a1a;
+  font-size: 10px;
+  font-weight: 700;
+  padding: 1px 6px;
+  border-radius: 4px;
+  letter-spacing: 0.04em;
+  vertical-align: middle;
+  margin-right: 4px;
+}
+body.theme-lcars #txtOutput .eva-proactive { border-left-color: var(--ld-arctic-ice); }
+
 /* Markdown inside #txtOutput */
 #txtOutput .md h1,
 #txtOutput .md h2,
