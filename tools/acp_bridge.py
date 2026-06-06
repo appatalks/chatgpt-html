@@ -1591,79 +1591,118 @@ def _notify_mark_seen(ids):
 # ---------------------------------------------------------------------------
 
 def _safe_external_url(url):
-    """Validate a user-supplied URL for server-side fetch. Returns (ok, error).
-    Blocks non-http(s) schemes and any host that resolves to a loopback,
-    private, link-local, or cloud-metadata address (SSRF defense)."""
+    """Validate a user-supplied URL for server-side fetch.
+    Returns (ok, error, pinned_ip). pinned_ip is a validated public IP the
+    caller MUST connect to directly (closing the DNS-rebinding TOCTOU where the
+    hostname re-resolves to an internal address between this check and the
+    fetch). Blocks non-http(s) schemes and any host that resolves to a loopback,
+    private, link-local, reserved, multicast, or cloud-metadata address."""
     try:
         parsed = urllib.parse.urlparse(url)
     except (ValueError, TypeError):
-        return False, "invalid URL"
+        return False, "invalid URL", None
     if parsed.scheme not in ("http", "https"):
-        return False, "only http(s) URLs are allowed"
+        return False, "only http(s) URLs are allowed", None
     host = parsed.hostname
     if not host:
-        return False, "URL has no host"
+        return False, "URL has no host", None
     if host.lower() in ("metadata.google.internal",):
-        return False, "blocked host"
+        return False, "blocked host", None
     try:
         infos = socket.getaddrinfo(host, parsed.port or (443 if parsed.scheme == "https" else 80), proto=socket.IPPROTO_TCP)
     except socket.gaierror:
-        return False, "could not resolve host"
+        return False, "could not resolve host", None
     import ipaddress
+    pinned = None
     for info in infos:
         addr = info[4][0]
         try:
             ip = ipaddress.ip_address(addr)
         except ValueError:
             continue
+        # Every resolved address must be public; reject if ANY is internal so a
+        # multi-record DNS answer cannot smuggle in a private target.
         if (ip.is_loopback or ip.is_private or ip.is_link_local
                 or ip.is_reserved or ip.is_multicast or ip.is_unspecified):
-            return False, "host resolves to a non-public address"
-    return True, ""
+            return False, "host resolves to a non-public address", None
+        if pinned is None:
+            pinned = addr
+    if pinned is None:
+        return False, "could not resolve host", None
+    return True, "", pinned
 
 
 def _http_get_text(url, max_bytes=_SKILL_SOURCE_MAX_BYTES):
     """Fetch a URL's body as text with SSRF protection. Returns (text, error).
 
-    Redirects are followed MANUALLY (max 5 hops) and every hop is re-validated by
-    _safe_external_url, so a public URL cannot 30x-redirect to a loopback,
-    private, link-local, or cloud-metadata host (a redirect-based SSRF bypass
-    that automatic redirect following would allow)."""
-    import requests as _requests_mod
+    Defenses:
+      - Redirects are followed MANUALLY (max 5 hops); every hop is re-validated.
+      - Each fetch connects to the exact IP that validation resolved (IP pinning
+        via urllib3), so the hostname is never re-resolved at connect time. This
+        closes both the redirect-based bypass and DNS rebinding, where a host
+        validated as public re-resolves to an internal/metadata address.
+      - TLS still verifies against the real hostname (SNI + cert check)."""
+    import urllib3
     current = url
     for _hop in range(6):
-        ok, err = _safe_external_url(current)
+        ok, err, pinned_ip = _safe_external_url(current)
         if not ok:
             return None, err
+        parsed = urllib.parse.urlparse(current)
+        host = parsed.hostname
+        is_https = (parsed.scheme == "https")
+        port = parsed.port or (443 if is_https else 80)
+        path = parsed.path or "/"
+        if parsed.query:
+            path += "?" + parsed.query
+        host_header = host if port in (80, 443) else f"{host}:{port}"
+        headers = {"Host": host_header, "User-Agent": "Eva-Skills-Importer/1.0"}
         try:
-            resp = _requests_mod.get(
-                current, timeout=15, stream=True, allow_redirects=False,
-                headers={"User-Agent": "Eva-Skills-Importer/1.0"})
+            if is_https:
+                pool = urllib3.HTTPSConnectionPool(
+                    pinned_ip, port=port, server_hostname=host,
+                    assert_hostname=host, cert_reqs="CERT_REQUIRED",
+                    timeout=15, retries=False)
+            else:
+                pool = urllib3.HTTPConnectionPool(
+                    pinned_ip, port=port, timeout=15, retries=False)
+            resp = pool.request("GET", path, headers=headers,
+                                redirect=False, preload_content=False)
         except Exception as exc:
             return None, "fetch failed: " + str(exc)[:160]
-        if resp.status_code in (301, 302, 303, 307, 308):
+        status = resp.status
+        if status in (301, 302, 303, 307, 308):
             location = resp.headers.get("Location")
             try:
-                resp.close()
+                resp.release_conn()
             except Exception:
                 pass
             if not location:
                 return None, "redirect without a location"
             current = urllib.parse.urljoin(current, location)
             continue
-        if resp.status_code != 200:
-            return None, f"fetch returned HTTP {resp.status_code}"
+        if status != 200:
+            try:
+                resp.release_conn()
+            except Exception:
+                pass
+            return None, f"fetch returned HTTP {status}"
         chunks = []
         total = 0
-        for chunk in resp.iter_content(chunk_size=8192, decode_unicode=False):
+        for chunk in resp.stream(8192, decode_content=True):
             if not chunk:
                 continue
             total += len(chunk)
             if total > max_bytes:
                 break
             chunks.append(chunk)
+        try:
+            resp.release_conn()
+        except Exception:
+            pass
         raw = b"".join(chunks)
         return raw.decode("utf-8", errors="replace"), ""
+    return None, "too many redirects"
     return None, "too many redirects"
 
 
