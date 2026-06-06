@@ -1153,6 +1153,70 @@ _telemetry_lock = threading.Lock()
 _telemetry_ring = []  # list of recent event dicts (most recent last)
 
 
+# ── Log ring — recent stdout lines, for the voice-mode background feed ───────
+# A tee on stdout mirrors every printed line both to the real terminal and to a
+# small in-memory ring. The voice view polls GET /v1/logs and renders these as
+# a faint scrolling console behind the orb. Lines are bridge status output
+# (already free of secrets by the project's logging discipline); each is length-
+# capped defensively.
+_LOG_RING_MAX = 200
+_LOG_LINE_CAP = 240
+_log_lock = threading.Lock()
+_log_ring = []   # list of (seq, text)
+_log_seq = 0
+
+
+class _StdoutTee:
+    """Wrap a stream so writes go to the original AND into the log ring.
+    Buffers partial writes until a newline so ring entries are whole lines."""
+
+    def __init__(self, original):
+        self._orig = original
+        self._buf = ""
+
+    def write(self, s):
+        try:
+            self._orig.write(s)
+        except Exception:
+            pass
+        try:
+            self._buf += s
+            while "\n" in self._buf:
+                line, self._buf = self._buf.split("\n", 1)
+                _log_ring_add(line)
+        except Exception:
+            pass
+
+    def flush(self):
+        try:
+            self._orig.flush()
+        except Exception:
+            pass
+
+    def __getattr__(self, name):
+        return getattr(self._orig, name)
+
+
+def _log_ring_add(line):
+    global _log_seq
+    line = (line or "").rstrip()
+    if not line:
+        return
+    if len(line) > _LOG_LINE_CAP:
+        line = line[:_LOG_LINE_CAP] + "…"
+    with _log_lock:
+        _log_seq += 1
+        _log_ring.append((_log_seq, line))
+        if len(_log_ring) > _LOG_RING_MAX:
+            del _log_ring[:-_LOG_RING_MAX]
+
+
+def _install_log_tee():
+    """Route stdout through the tee once (idempotent)."""
+    if not isinstance(sys.stdout, _StdoutTee):
+        sys.stdout = _StdoutTee(sys.stdout)
+
+
 def _telemetry_clip(value, limit=120):
     """Clip a label/string field so telemetry never stores large or sensitive blobs."""
     if value is None:
@@ -4419,6 +4483,8 @@ class BridgeHandler(BaseHTTPRequestHandler):
             self._mcp_persisted_config()
         elif parsed_path == "/v1/telemetry":
             self._telemetry_report()
+        elif parsed_path == "/v1/logs":
+            self._logs_view()
         elif parsed_path == "/v1/goals":
             self._goals_list()
         elif parsed_path == "/v1/skills":
@@ -5274,6 +5340,26 @@ class BridgeHandler(BaseHTTPRequestHandler):
             "summary": _telemetry_summarize(events),
             "events": recent,
         })
+
+    def _logs_view(self):
+        """Return recent stdout log lines for the voice-mode background feed.
+        Query params: ?since=<seq> (only lines newer than this), ?limit=N."""
+        from urllib.parse import urlparse, parse_qs
+        params = parse_qs(urlparse(self.path).query)
+        try:
+            since = int(params.get("since", ["0"])[0])
+        except ValueError:
+            since = 0
+        try:
+            limit = int(params.get("limit", ["60"])[0])
+        except ValueError:
+            limit = 60
+        limit = max(1, min(limit, _LOG_RING_MAX))
+        with _log_lock:
+            rows = [{"n": n, "text": t} for (n, t) in _log_ring if n > since]
+            last = _log_seq
+        rows = rows[-limit:]
+        self._json_response(200, {"lines": rows, "last": last})
 
     def _telemetry_ingest(self):
         """Accept a privacy-safe cognition timing record from the front end and
@@ -6459,6 +6545,7 @@ class BridgeHandler(BaseHTTPRequestHandler):
 
 def main():
     global _bridge_bind_address
+    _install_log_tee()
     default_port = 8888
     env_port = os.environ.get("EVA_ACP_PORT", "").strip()
     if env_port:

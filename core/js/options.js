@@ -1866,6 +1866,7 @@ function openVoiceView() {
   _vvStartCanvas();
   _vvStartWaveBar();
   _vvStartHUD();
+  _vvStartLogStream();
 }
 
 function closeVoiceView() {
@@ -1881,6 +1882,7 @@ function closeVoiceView() {
   if (_vv._watchTimer) { clearTimeout(_vv._watchTimer); _vv._watchTimer = null; }
   if (_vv._postTextTimer) { clearTimeout(_vv._postTextTimer); _vv._postTextTimer = null; }
   _vvStopBargeMonitor();
+  _vvStopLogStream();
   if (_vv._wasAutoSpeak !== undefined) {
     var autoSpeak = document.getElementById('autoSpeak');
     if (autoSpeak) autoSpeak.checked = _vv._wasAutoSpeak;
@@ -1940,6 +1942,56 @@ function _vvStartHUD() {
 
 function _vvStopHUD() {
   if (_vv.hudInterval) { clearInterval(_vv.hudInterval); _vv.hudInterval = null; }
+}
+
+// --- Background log feed (faint scrolling bridge stdout) ---
+
+function _vvStartLogStream() {
+  var el = document.getElementById('vvLogStream');
+  if (!el) return;
+  el.innerHTML = '';
+  _vv._logSince = 0;
+  _vv._logPolling = false;
+  _vvPollLogStream();
+  _vv.logInterval = setInterval(_vvPollLogStream, 1500);
+}
+
+function _vvStopLogStream() {
+  if (_vv.logInterval) { clearInterval(_vv.logInterval); _vv.logInterval = null; }
+  var el = document.getElementById('vvLogStream');
+  if (el) el.innerHTML = '';
+}
+
+async function _vvPollLogStream() {
+  if (!_vv.open || _vv._logPolling) return;
+  _vv._logPolling = true;
+  try {
+    var base = (typeof getSafeBridgeBaseUrl === 'function') ? getSafeBridgeBaseUrl() : '';
+    if (!base) return;
+    var opts = { method: 'GET' };
+    if (typeof AbortSignal !== 'undefined' && AbortSignal.timeout) opts.signal = AbortSignal.timeout(2500);
+    var resp = await fetch(base.replace(/\/+$/, '') + '/v1/logs?since=' + (_vv._logSince || 0) + '&limit=40', opts);
+    if (!resp.ok) return;
+    var data = await resp.json();
+    var lines = (data && Array.isArray(data.lines)) ? data.lines : [];
+    if (typeof data.last === 'number') _vv._logSince = data.last;
+    if (!lines.length) return;
+    var el = document.getElementById('vvLogStream');
+    if (!el) return;
+    lines.forEach(function (ln) {
+      var div = document.createElement('div');
+      div.className = 'vv-log-line';
+      div.textContent = String(ln.text || '');
+      el.appendChild(div);
+    });
+    // Cap the rendered backlog so the DOM stays light.
+    while (el.childNodes.length > 60) el.removeChild(el.firstChild);
+    el.scrollTop = el.scrollHeight;
+  } catch (_) {
+    // Bridge unreachable or logs unavailable; stay quiet.
+  } finally {
+    _vv._logPolling = false;
+  }
 }
 
 function _vvUpdateHUD() {
@@ -2936,9 +2988,9 @@ function _vvStartBargeMonitor() {
   _vvStopBargeMonitor();
   if (!_vv.analyser || !_vv.dataArray) return;
   var aboveSince = 0;
-  var NEED_MS = 300;   // sustained user speech before interrupting
-  var THRESH = 40;     // min average mic energy (0-255) to consider speech
-  var graceUntil = performance.now() + 700;
+  var NEED_MS = 220;   // sustained user speech before interrupting
+  var THRESH = 22;     // min average mic energy (0-255) to consider speech
+  var graceUntil = performance.now() + 600;
   function loop() {
     if (_vv.phase !== 'speaking' || !_vv.open || !_vv.analyser) { _vv.bargeRAF = null; return; }
     _vv.analyser.getByteFrequencyData(_vv.dataArray);
@@ -2946,8 +2998,10 @@ function _vvStartBargeMonitor() {
     for (var i = 0; i < _vv.dataArray.length; i++) sum += _vv.dataArray[i];
     var micAvg = sum / _vv.dataArray.length;
 
-    // Current TTS playback level, so the bar to interrupt rises while Eva is
-    // loud and falls in her pauses (belt-and-suspenders alongside AEC).
+    // Current TTS playback level. With echo cancellation already removing Eva's
+    // own voice from the mic, this only needs to be a light guard against any
+    // residual echo, so the bar to interrupt stays low enough for a normal
+    // speaking voice picked up at a distance.
     var ttsAvg = 0;
     if (_vv.ttsAnalyser && _vv.ttsDataArray) {
       _vv.ttsAnalyser.getByteFrequencyData(_vv.ttsDataArray);
@@ -2957,7 +3011,7 @@ function _vvStartBargeMonitor() {
     }
 
     var now = performance.now();
-    var isUser = now > graceUntil && micAvg > THRESH && micAvg > (ttsAvg * 0.6 + 10);
+    var isUser = now > graceUntil && micAvg > THRESH && micAvg > (ttsAvg * 0.35 + 5);
     if (isUser) {
       if (!aboveSince) aboveSince = now;
       else if (now - aboveSince >= NEED_MS) { _vv.bargeRAF = null; _vvBargeIn(); return; }
