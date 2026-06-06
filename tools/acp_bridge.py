@@ -1623,14 +1623,34 @@ def _safe_external_url(url):
 
 
 def _http_get_text(url, max_bytes=_SKILL_SOURCE_MAX_BYTES):
-    """Fetch a URL's body as text after SSRF validation. Returns (text, error)."""
-    ok, err = _safe_external_url(url)
-    if not ok:
-        return None, err
-    try:
-        import requests as _requests_mod
-        resp = _requests_mod.get(url, timeout=15, stream=True,
-                                 headers={"User-Agent": "Eva-Skills-Importer/1.0"})
+    """Fetch a URL's body as text with SSRF protection. Returns (text, error).
+
+    Redirects are followed MANUALLY (max 5 hops) and every hop is re-validated by
+    _safe_external_url, so a public URL cannot 30x-redirect to a loopback,
+    private, link-local, or cloud-metadata host (a redirect-based SSRF bypass
+    that automatic redirect following would allow)."""
+    import requests as _requests_mod
+    current = url
+    for _hop in range(6):
+        ok, err = _safe_external_url(current)
+        if not ok:
+            return None, err
+        try:
+            resp = _requests_mod.get(
+                current, timeout=15, stream=True, allow_redirects=False,
+                headers={"User-Agent": "Eva-Skills-Importer/1.0"})
+        except Exception as exc:
+            return None, "fetch failed: " + str(exc)[:160]
+        if resp.status_code in (301, 302, 303, 307, 308):
+            location = resp.headers.get("Location")
+            try:
+                resp.close()
+            except Exception:
+                pass
+            if not location:
+                return None, "redirect without a location"
+            current = urllib.parse.urljoin(current, location)
+            continue
         if resp.status_code != 200:
             return None, f"fetch returned HTTP {resp.status_code}"
         chunks = []
@@ -1644,8 +1664,7 @@ def _http_get_text(url, max_bytes=_SKILL_SOURCE_MAX_BYTES):
             chunks.append(chunk)
         raw = b"".join(chunks)
         return raw.decode("utf-8", errors="replace"), ""
-    except Exception as exc:
-        return None, "fetch failed: " + str(exc)[:160]
+    return None, "too many redirects"
 
 
 def _github_raw_candidates(ref):

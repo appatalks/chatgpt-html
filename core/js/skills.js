@@ -240,8 +240,15 @@ async function loadSkills() {
     renderSkillsList();
   } catch (error) {
     var listEl = document.getElementById('skillsList');
-    if (listEl) listEl.innerHTML = '<div class="auth-note">' +
-      (error.message ? String(error.message) : 'Skills unavailable.') + '</div>';
+    if (listEl) {
+      // Build via textContent so an error message (which may contain server
+      // text or markup) is never reinterpreted as HTML.
+      listEl.innerHTML = '';
+      var note = document.createElement('div');
+      note.className = 'auth-note';
+      note.textContent = (error && error.message) ? String(error.message) : 'Skills unavailable.';
+      listEl.appendChild(note);
+    }
   }
 }
 
