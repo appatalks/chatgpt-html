@@ -1390,6 +1390,51 @@ body.theme-lcars #txtOutput .md tr:nth-child(even) { background: rgba(255,255,25
 .session-panel[aria-hidden="false"] {
   transform: translateX(0);
 }
+
+/* Skills panel: dedicated slide-in destination, wider than sessions for forms */
+.skills-panel {
+  position: fixed;
+  top: 0; left: 0;
+  width: 380px; max-width: 92vw; height: 100vh;
+  background: #1a1a2e;
+  color: #eef5ff;
+  z-index: 9000;
+  display: flex;
+  flex-direction: column;
+  transform: translateX(-100%);
+  transition: transform 0.25s ease;
+  box-shadow: 4px 0 20px rgba(0,0,0,0.5);
+  font-family: inherit;
+}
+.skills-panel[aria-hidden="false"] { transform: translateX(0); }
+.skills-panel-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 12px 16px 24px;
+}
+.skills-panel .auth-field { margin-bottom: 10px; }
+.skills-panel .auth-field label { display: block; margin-bottom: 3px; font-size: 12px; opacity: 0.85; }
+.skills-panel .auth-field input[type="text"],
+.skills-panel .auth-field select,
+.skills-panel .auth-field textarea {
+  width: 100%;
+  background: rgba(255,255,255,0.06);
+  color: #eef5ff;
+  border: 1px solid rgba(255,255,255,0.15);
+  border-radius: 4px;
+  padding: 6px 8px;
+  font-size: 13px;
+  font-family: inherit;
+}
+.skills-panel .skills-draft {
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px solid rgba(255,255,255,0.12);
+}
+body.theme-lcars .skills-panel { background: #0b0e14; font-family: "Barlow Condensed", sans-serif; }
+body.theme-lcars .skills-panel .session-panel-header { border-color: var(--ld-alpha-blue); }
+body.theme-eva .skills-panel { background: var(--eva-surface, #15151f); }
+body.theme-eva .skills-panel .session-panel-header { border-color: var(--eva-border); color: var(--eva-text); }
 .session-panel-header {
   display: flex;
   justify-content: space-between;

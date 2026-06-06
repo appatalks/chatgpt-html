@@ -263,6 +263,105 @@
     return 'nosess';
   }
 
+  // Minimal, dependency-free PDF generator for text content. Produces a valid
+  // multi-page PDF using the standard Helvetica font (no embedding needed), so
+  // any viewer opens it. Earlier the file.download capability just labeled raw
+  // text as application/pdf, which yielded a corrupt file. Latin-1 only: the
+  // structural bytes are ASCII and text is mapped to Latin-1 so string length
+  // equals byte length, which keeps the xref byte offsets correct.
+  function _textToPdf(text, opts) {
+    opts = opts || {};
+    var fontSize = opts.fontSize || 11;
+    var leading = Math.round(fontSize * 1.35);
+    var marginX = 50, marginTop = 50;
+    var pageW = 612, pageH = 792;
+    var linesPerPage = Math.max(1, Math.floor((pageH - marginTop * 2) / leading));
+    var maxChars = opts.wrap || 95;
+
+    function toLatin1(s) {
+      var o = '';
+      for (var i = 0; i < s.length; i++) {
+        var c = s.charCodeAt(i);
+        o += (c <= 255) ? s.charAt(i) : '?';
+      }
+      return o;
+    }
+    function escPdf(s) {
+      return s.replace(/\\/g, '\\\\').replace(/\(/g, '\\(').replace(/\)/g, '\\)');
+    }
+
+    // Word-wrap each source line to an approximate character width.
+    var raw = String(text == null ? '' : text).replace(/\r\n?/g, '\n').split('\n');
+    var lines = [];
+    raw.forEach(function (ln) {
+      ln = ln.replace(/\t/g, '    ');
+      if (!ln) { lines.push(''); return; }
+      var cur = '';
+      ln.split(/(\s+)/).forEach(function (tok) {
+        if (cur.length && (cur + tok).length > maxChars) {
+          lines.push(cur);
+          cur = /^\s+$/.test(tok) ? '' : tok;
+        } else {
+          cur += tok;
+        }
+        while (cur.length > maxChars) {
+          lines.push(cur.slice(0, maxChars));
+          cur = cur.slice(maxChars);
+        }
+      });
+      lines.push(cur);
+    });
+    if (!lines.length) lines.push('');
+
+    var pages = [];
+    for (var i = 0; i < lines.length; i += linesPerPage) {
+      pages.push(lines.slice(i, i + linesPerPage));
+    }
+
+    // Object plan: 1 Catalog, 2 Pages, 3 Font, then a (page, content) pair each.
+    var objs = {};
+    objs[1] = '<< /Type /Catalog /Pages 2 0 R >>';
+    objs[3] = '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>';
+    var pageNums = [], num = 4;
+    pages.forEach(function (pl) {
+      var pn = num++, cn = num++;
+      pageNums.push(pn);
+      var startY = pageH - marginTop;
+      var stream = 'BT /F1 ' + fontSize + ' Tf ' + leading + ' TL ' + marginX + ' ' + startY + ' Td\n';
+      pl.forEach(function (l) { stream += '(' + escPdf(toLatin1(l)) + ') Tj T*\n'; });
+      stream += 'ET';
+      objs[cn] = '<< /Length ' + stream.length + ' >>\nstream\n' + stream + '\nendstream';
+      objs[pn] = '<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ' + pageW + ' ' + pageH +
+                 '] /Resources << /Font << /F1 3 0 R >> >> /Contents ' + cn + ' 0 R >>';
+    });
+    objs[2] = '<< /Type /Pages /Kids [' +
+              pageNums.map(function (n) { return n + ' 0 R'; }).join(' ') +
+              '] /Count ' + pageNums.length + ' >>';
+
+    var maxNum = num - 1;
+    var out = '%PDF-1.4\n';
+    var offsets = {};
+    for (var n = 1; n <= maxNum; n++) {
+      offsets[n] = out.length;
+      out += n + ' 0 obj\n' + objs[n] + '\nendobj\n';
+    }
+    var xrefPos = out.length;
+    out += 'xref\n0 ' + (maxNum + 1) + '\n0000000000 65535 f \n';
+    for (var m = 1; m <= maxNum; m++) {
+      out += ('0000000000' + offsets[m]).slice(-10) + ' 00000 n \n';
+    }
+    out += 'trailer\n<< /Size ' + (maxNum + 1) + ' /Root 1 0 R >>\nstartxref\n' + xrefPos + '\n%%EOF';
+    return out;
+  }
+
+  // Convert a Latin-1/ASCII string to a byte array so Blob does not re-encode
+  // it as UTF-8 (which would shift the PDF byte offsets and corrupt the file).
+  function _latin1Bytes(str) {
+    var bytes = new Uint8Array(str.length);
+    for (var i = 0; i < str.length; i++) bytes[i] = str.charCodeAt(i) & 0xff;
+    return bytes;
+  }
+
   registerCapability({
     id: 'file.download',
     description: 'Deliver a downloadable text artifact. ' +
@@ -275,14 +374,29 @@
                        .replace(/[^A-Za-z0-9._\-]+/g, '_').slice(0, 120) || 'eva-artifact.txt';
       var content = String(args.content == null ? '' : args.content);
       var mime = String(args.mime || 'text/plain');
+      // PDF requested by mime or extension: generate a real PDF instead of
+      // labeling raw text as application/pdf (which produced a corrupt file).
+      var isPdf = /application\/pdf/i.test(mime) || /\.pdf$/i.test(safeName);
+      if (isPdf) {
+        mime = 'application/pdf';
+        if (!/\.pdf$/i.test(safeName)) safeName += '.pdf';
+      }
       var sid = _shortSessionId();
       var virtualPath = 'tmp/' + sid + '/' + safeName;
       // Browsers replace path separators in the download attribute, so encode
       // the namespace into the filename itself.
       var downloadName = 'tmp__' + sid + '__' + safeName;
-      var blob = new Blob([content], { type: mime });
+      var blob, size;
+      if (isPdf) {
+        var pdfStr = _textToPdf(content, {});
+        var bytes = _latin1Bytes(pdfStr);
+        blob = new Blob([bytes], { type: mime });
+        size = bytes.length;
+      } else {
+        blob = new Blob([content], { type: mime });
+        size = content.length;
+      }
       var href = URL.createObjectURL(blob);
-      var size = content.length;
       var esc = function (s) {
         return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
                         .replace(/"/g,'&quot;');

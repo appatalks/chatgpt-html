@@ -200,6 +200,27 @@ Eva,assistant,2026-01-01T00:00:00Z,1,0.0,[],seed data
 goal-001,Track style preferences,"Remember the user's writing-style preferences (no em-dashes, no marketing prose, plain hyphens, no emoji unless user uses them first) and apply them consistently to all output.",relational,active,90,"style,preferences",2026-05-04T00:00:00Z,2026-05-04T00:00:00Z
 goal-002,Log my own gaps,"When I encounter a topic where I am uncertain or repeatedly answer poorly, log a Reflection so the gap can be addressed.",self_improvement,active,70,"meta,reflection",2026-05-04T00:00:00Z,2026-05-04T00:00:00Z
 
+// ── Table: Skills ─────────────────────────────────────────────────
+// Imported, normalized ("Eva'rised") instruction documents Eva can follow.
+// Description is matched semantically to the user's message; the best match's
+// Instructions are injected into context so Eva can perform the skill.
+// Status values: active, disabled, deleted
+.create-merge table Skills (
+    SkillId: string,
+    Name: string,
+    Description: string,
+    Instructions: string,
+    Tools: string,
+    Tags: string,
+    Source: string,
+    Status: string,
+    CreatedAt: datetime,
+    UpdatedAt: datetime
+)
+
+.ingest inline into table Skills <|
+sk-000000000001,Create a PDF,"Use when the user asks to export text or a document to a downloadable PDF file.","1. Confirm the content to include.\n2. Emit an [[EVA_ACTION]] file.download block requesting a PDF artifact with the content.\n3. Share the resulting download link.","file.download","pdf,export,document",seed,active,2026-06-06T00:00:00Z,2026-06-06T00:00:00Z
+
 // ═══════════════════════════════════════════════════════════════════
 //  Done! Your Eva database is ready.
 //
