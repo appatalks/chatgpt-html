@@ -50,13 +50,17 @@
     reviewer: [
       "You are Eva's Reviewer agent inside Eva's runtime cognitive layer.",
       "You critique Eva's draft against the user's actual request.",
-      "Check for: factual accuracy, completeness, tone match, missed parts of the question,",
-      "unsafe suggestions, leaked internal pipeline mentions, hallucinated phase narration,",
-      "and whether any required action block ([[EVA_ACTION]]...[[/EVA_ACTION]]) is present",
-      "and well-formed when the user asked for a downloadable artifact.",
+      "Approve by default. Only request changes for MATERIAL problems: a factual",
+      "or numeric error, an unsafe suggestion, a missed or misread part of the",
+      "question, a leaked internal pipeline mention, hallucinated phase narration,",
+      "or a missing/malformed required action block ([[EVA_ACTION]]...[[/EVA_ACTION]])",
+      "when the user asked for a downloadable artifact.",
+      "Do NOT request changes for style, tone, length, phrasing, or minor polish you",
+      "merely prefer. If the draft is accurate, safe, and answers the question, APPROVE it.",
       "Always respond with a verdict line first:",
       "VERDICT: APPROVE  or  VERDICT: REQUEST_CHANGES",
-      "If requesting changes, follow with concrete bullets. Do not rewrite the answer."
+      "If requesting changes, follow with concrete bullets naming the specific defect.",
+      "Do not rewrite the answer."
     ].join(' ')
   };
 
@@ -100,7 +104,7 @@
 
   function getDefaultModel() {
     var el = document.getElementById('selAIGBackend');
-    return (el && el.value) ? el.value : 'claude-opus-4.8';
+    return (el && el.value) ? el.value : 'claude-sonnet-4.6';
   }
 
   function getCfg() {
@@ -108,7 +112,7 @@
     return {
       enabled: ls('cogEnabled', '1') === '1',
       evaModel:      ls('cogEvaModel', '')      || def,
-      reviewerModel: ls('cogReviewerModel', '') || 'gpt-5.5',
+      reviewerModel: ls('cogReviewerModel', '') || 'claude-opus-4.8',
       maxCycles: Math.max(0, parseInt(ls('cogMaxCycles', '1'), 10) || 0),
       evaPrompt:      ls('cogEvaPrompt', '')      || DEFAULT_PROMPTS.eva,
       reviewerPrompt: ls('cogReviewerPrompt', '') || DEFAULT_PROMPTS.reviewer,
@@ -406,14 +410,22 @@
   }
 
   // Deterministic review floor: turns where a second opinion is mandatory and
-  // Eva cannot opt out. Covers irreversible actions and high-fabrication-risk
-  // factual turns (markets, news, weather, briefings).
+  // Eva cannot opt out. Two intentionally small, legible buckets keep this easy
+  // to maintain. Edit a bucket here rather than scattering keywords.
+  //
+  //   FACTUAL_TOPICS   - subjects with real fabrication/staleness risk.
+  //   RETRIEVAL_INTENT - phrases that signal the user wants current/looked-up
+  //                      info. Kept tight (no bare "find"/"today"/"events")
+  //                      to avoid false positives on ordinary conversation.
+  var FACTUAL_TOPICS = /\b(brief(ing)?|brief me|news|headlines?|stocks?|prices?|quote|markets?|nasdaq|dow|s&p|weather|forecast|filings?|earnings|ticker|economy|economic)\b/i;
+  var RETRIEVAL_INTENT = /\b(look(ing)?\s*(it\s*)?up|search(\s+for)?|google|find\s+out|latest|most\s+recent|breaking|what'?s\s+(happening|going\s+on|new)|right\s+now)\b/i;
+
   function reviewFloorReason(userMsg, draftContent) {
     if (/\[\[EVA_ACTION\]\]|\[\[EVA_BROWSER\]\]|\[\[EVA_FILE\]\]/i.test(String(draftContent || ''))) {
       return 'action';
     }
-    var u = String(userMsg || '').toLowerCase();
-    if (/\b(brief(ing)?|brief me|news|headlines?|stocks?|prices?|quote|markets?|nasdaq|dow|s&p|weather|forecast|filings?|earnings|ticker)\b/.test(u)) {
+    var u = String(userMsg || '');
+    if (FACTUAL_TOPICS.test(u) || RETRIEVAL_INTENT.test(u)) {
       return 'factual';
     }
     return '';
@@ -484,23 +496,26 @@
     var lastVerdict = 'APPROVE';
 
     // Review gate: a deterministic floor forces review on irreversible or
-    // fact-bearing turns; above the floor, Eva decides via her sentinel. A
-    // missing signal defaults to review (safe). maxCycles=0 disables review.
+    // fact-bearing turns; above the floor, Eva can opt in via her sentinel.
+    // Everything else takes the fast path and skips review+revise. (We used to
+    // default a missing signal to "review anyway", but telemetry showed the
+    // sentinel is effectively never emitted, so every basic chat turn paid the
+    // full draft+review+revise cost. The floor still guarantees review on the
+    // high-fabrication-risk and irreversible categories.)
     var floorReason = reviewFloorReason(userMsg, current);
     var reviewReason;
     if (floorReason) {
       reviewReason = 'floor:' + floorReason;
     } else if (sentinel.want === true) {
       reviewReason = 'eva-opt-in';
-    } else if (sentinel.want === false) {
-      reviewReason = '';
     } else {
-      reviewReason = 'no-signal';
+      reviewReason = '';
     }
     var doReview = cfg.maxCycles >= 1 && !!reviewReason;
     if (!doReview) {
-      status('Eva answering directly [no review: ' +
-             (floorReason ? floorReason : (sentinel.want === false ? 'eva-opt-out' : 'disabled')) + ']...');
+      var skipWhy = cfg.maxCycles < 1 ? 'disabled'
+                  : (sentinel.want === false ? 'eva-opt-out' : 'fast-path');
+      status('Eva answering directly [no review: ' + skipWhy + ']...');
     }
 
     // Stage 2+: reviewer loop, bounded by cfg.maxCycles, gated by doReview
@@ -517,7 +532,11 @@
         'Review the draft. First line MUST be either:',
         'VERDICT: APPROVE',
         'VERDICT: REQUEST_CHANGES',
-        'If requesting changes, follow with concrete bullet points.'
+        'Approve by default. Only REQUEST_CHANGES for a material accuracy, safety,',
+        'or completeness defect (a wrong fact/number, an unsafe suggestion, or a',
+        'missed part of the question). Do not request changes for style, tone,',
+        'length, or wording you merely prefer.',
+        'If requesting changes, follow with concrete bullet points naming each defect.'
       ].join('\n');
       var _revStart = Date.now();
       var review = await callAgent(
@@ -579,7 +598,7 @@
       final_chars: (current || '').length,
       eva_model: draft.model || cfg.evaModel,
       reviewer_model: doReview ? cfg.reviewerModel : '',
-      review_reason: reviewReason || (sentinel.want === false ? 'eva-opt-out' : 'none'),
+      review_reason: reviewReason || (sentinel.want === false ? 'eva-opt-out' : 'fast-path'),
       last_verdict: doReview ? lastVerdict : 'n/a',
       sentinel_want: (sentinel.want === null ? 'absent' : String(sentinel.want))
     };
@@ -593,7 +612,7 @@
       cycles: cyclesUsed,
       lastVerdict: lastVerdict,
       reviewed: doReview,
-      reviewReason: reviewReason || (sentinel.want === false ? 'eva-opt-out' : 'none'),
+      reviewReason: reviewReason || (sentinel.want === false ? 'eva-opt-out' : 'fast-path'),
       telemetry: telem,
       forced: !!opts.forceEnable,
       forcedReason: opts.forcedReason || null
