@@ -364,10 +364,12 @@
 
   registerCapability({
     id: 'file.download',
-    description: 'Deliver a downloadable text artifact. ' +
-                 'args: {filename:string, content:string, mime?:string}. ' +
-                 'Artifact is virtually pathed at tmp/<session_id>/<filename> ' +
-                 'and rendered inline as a real download link.',
+    description: 'Deliver a downloadable artifact (text, markdown, csv, or a real PDF). ' +
+                 'args: {filename:string, content:string, mime?:string}. Use mime ' +
+                 '"application/pdf" or a .pdf filename to produce a genuine PDF. ' +
+                 'The artifact renders inline as Download/Open links and PDFs auto-open ' +
+                 'in a viewer tab. To let the user view it again, tell them to click the ' +
+                 'Open or Download link in your message; do NOT say you cannot open files.',
     run: async function (args) {
       args = args || {};
       var safeName = String(args.filename || 'eva-artifact.txt')
@@ -401,12 +403,22 @@
         return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
                         .replace(/"/g,'&quot;');
       };
+      // A PDF opens in a viewer; a plain text/markdown artifact opens as text.
+      // The link doubles as a download (download attr) and an opener.
+      var openHint = isPdf
+        ? ' <a href="' + href + '" target="_blank" rel="noopener" class="cog-dl-link">Open</a>'
+        : '';
       var html = '<div class="cog-action-file">' +
                  '<a href="' + href + '" download="' + esc(downloadName) +
-                 '" class="cog-dl-link">Download ' + esc(safeName) + '</a> ' +
+                 '" class="cog-dl-link">Download ' + esc(safeName) + '</a>' + openHint + ' ' +
                  '<span class="cog-dl-meta">(' + esc(mime) + ', ' + size +
                  ' bytes &middot; ' + esc(virtualPath) + ')</span>' +
                  '</div>';
+      // Auto-open PDFs so "open it" just works without a second click. Opened in
+      // a new tab/window; if the popup is blocked, the Open/Download links remain.
+      if (isPdf) {
+        try { window.open(href, '_blank', 'noopener'); } catch (_) {}
+      }
       return {
         html: html,
         filename: safeName,
