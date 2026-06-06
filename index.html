@@ -18,6 +18,7 @@
   <script src="core/js/lm-studio.js"></script>
   <script src="core/js/copilot.js"></script>
   <script src="core/js/cognition.js"></script>
+  <script src="core/js/skills.js"></script>
   <script src="core/js/browser-agent.js"></script>
   <script src="core/js/aig.js"></script>
   <script src="core/js/dalle3.js"></script>
@@ -65,6 +66,9 @@
       </button>
       <button id="evaModelsBtn" class="eva-nav-item" type="button" title="Models">
         <span class="eva-nav-icon">&#x1F916;</span> Models
+      </button>
+      <button id="evaSkillsBtn" class="eva-nav-item" type="button" title="Skills" onclick="toggleSkillsPanel()">
+        <span class="eva-nav-icon">&#x1F9E9;</span> Skills
       </button>
       <button id="evaSettingsBtn" class="eva-nav-item" type="button" title="Settings">
         <span class="eva-nav-icon">&#x2699;&#xFE0F;</span> Settings
@@ -124,6 +128,82 @@
       <button id="sessionNewBtn" title="New session">+ New</button>
     </div>
     <ul id="sessionList" class="session-list"></ul>
+  </div>
+
+  <!-- Skills panel (dedicated sidebar destination) -->
+  <div id="skillsPanel" class="skills-panel" aria-hidden="true">
+    <div class="session-panel-header">
+      <span>Skills</span>
+      <button id="skillsPanelClose" aria-label="Close skills">&times;</button>
+    </div>
+    <div class="skills-panel-body">
+      <p class="cog-help">Import a skill from any source. Eva normalizes ("Eva'rises") it into her own format, stores it in ADX, and applies it automatically when a request matches.</p>
+
+      <div class="skills-import">
+        <div class="auth-field">
+          <label for="skillSourceType">Source</label>
+          <select id="skillSourceType">
+            <option value="paste" selected>Paste text / markdown</option>
+            <option value="url">Fetch from URL</option>
+            <option value="github">GitHub repo or SKILL.md</option>
+            <option value="file">Upload a file</option>
+          </select>
+        </div>
+        <div class="auth-field" id="skillPasteWrap">
+          <label for="skillPasteInput">Skill content</label>
+          <textarea id="skillPasteInput" rows="5" placeholder="Paste a SKILL.md, instructions, or any document describing the skill..."></textarea>
+        </div>
+        <div class="auth-field" id="skillUrlWrap" style="display:none;">
+          <label for="skillUrlInput">URL</label>
+          <input type="text" id="skillUrlInput" placeholder="https://example.com/skill.md">
+        </div>
+        <div class="auth-field" id="skillRepoWrap" style="display:none;">
+          <label for="skillRepoInput">GitHub reference</label>
+          <input type="text" id="skillRepoInput" placeholder="owner/repo, a subdir (owner/repo/skills/pdf), or a github.com tree/blob URL">
+        </div>
+        <div class="auth-field" id="skillFileWrap" style="display:none;">
+          <label for="skillFileInput">File (.md, .txt, .json)</label>
+          <input type="file" id="skillFileInput" accept=".md,.markdown,.txt,.json,text/plain">
+        </div>
+        <div class="background-actions">
+          <button type="button" class="auth-save" id="skillEvariseButton">Eva'rise</button>
+          <button type="button" class="auth-toggle" id="skillImportClearButton">Clear</button>
+        </div>
+        <div id="skillImportStatus" class="auth-note" aria-live="polite"></div>
+      </div>
+
+      <!-- Editable draft after Eva'rise, before save -->
+      <div class="skills-draft" id="skillDraft" style="display:none;">
+        <h4 class="settings-subhead">Review &amp; save</h4>
+        <div class="auth-field">
+          <label for="skillDraftName">Name</label>
+          <input type="text" id="skillDraftName" maxlength="60">
+        </div>
+        <div class="auth-field">
+          <label for="skillDraftDescription">When to use (matched to your requests)</label>
+          <textarea id="skillDraftDescription" rows="2" maxlength="400"></textarea>
+        </div>
+        <div class="auth-field">
+          <label for="skillDraftInstructions">Instructions</label>
+          <textarea id="skillDraftInstructions" rows="6"></textarea>
+        </div>
+        <div class="auth-field">
+          <label for="skillDraftTools">Tools (comma separated)</label>
+          <input type="text" id="skillDraftTools" placeholder="browser, kusto, file.download">
+        </div>
+        <div class="auth-field">
+          <label for="skillDraftTags">Tags (comma separated)</label>
+          <input type="text" id="skillDraftTags" placeholder="pdf, export">
+        </div>
+        <div class="background-actions">
+          <button type="button" class="auth-save" id="skillSaveButton">Save skill</button>
+          <button type="button" class="auth-toggle" id="skillDraftCancelButton">Discard</button>
+        </div>
+      </div>
+
+      <h4 class="settings-subhead">My skills</h4>
+      <div id="skillsList" class="background-list"></div>
+    </div>
   </div>
 
   <div id="idContainer">

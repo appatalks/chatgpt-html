@@ -1756,6 +1756,7 @@ document.addEventListener('DOMContentLoaded', () => {
   if (typeof initGoals === 'function') initGoals();
   if (typeof initBackground === 'function') initBackground();
   if (typeof initAlerts === 'function') initAlerts();
+  if (typeof initSkills === 'function') initSkills();
   if (typeof initNotifications === 'function') initNotifications();
 
   // Initialize status panel with any pending config/init notes
