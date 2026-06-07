@@ -1672,6 +1672,24 @@ body.theme-lcars .mic-sending { background-color: var(--ld-arctic-ice) !importan
   overflow: hidden;
   text-overflow: ellipsis;
 }
+/* Camera look popup: let the description wrap and scroll instead of clipping. */
+.eva-camera-popup .ebp-subgoal {
+  white-space: normal;
+  max-height: 96px;
+  overflow-y: auto;
+  color: #cdd6f4;
+  line-height: 1.45;
+}
+/* Make the model label legible (not the faint grey used for browser URLs). */
+.eva-camera-popup #ecpModel {
+  color: #a78bfa;
+  font-weight: 600;
+}
+.eva-camera-popup #ecpModel:not(:empty)::before {
+  content: "via ";
+  color: #7b84a0;
+  font-weight: 400;
+}
 .ebp-prompt {
   margin: 0 12px 10px;
   padding: 10px;

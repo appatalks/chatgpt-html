@@ -27,7 +27,11 @@
     endpoint: '/v1/browser',   // bridge path prefix for the active run type
     title: 'Browser Agent',
     onComplete: null,          // fired once when a run reaches a terminal state
-    completed: false
+    completed: false,
+    onConfirm: null,           // fired when the agent parks for confirmation/input
+    confirmKey: null,          // de-dupes the confirm callback per park
+    onProgress: null,          // fired when the agent's plan/subgoal changes
+    lastProgress: null         // last subgoal narrated, to avoid repeats
   };
 
   // --- Bridge helpers -------------------------------------------------------
@@ -151,6 +155,26 @@
   function render(status) {
     if (!status) return;
     _state.status = status;
+
+    // Always evaluate the confirmation gate so a parked run prompts Eva to ask
+    // naturally, regardless of which surface (popup or embedded panel) is shown.
+    maybeFireConfirm(status);
+    // Narrate progress when the plan/subgoal meaningfully changes.
+    maybeFireProgress(status);
+
+    // In the fullscreen voice view, render into the faint embedded panel on
+    // Eva's right ("her thoughts") instead of the floating popup.
+    if (_embeddedOpen()) {
+      // Only remove the floating popup ELEMENT; do NOT call closePopup() here,
+      // because closePopup() stops polling and nulls runId, which would kill the
+      // run's status updates after the first poll (no more screenshots and the
+      // completion hook never fires).
+      var _pop = document.getElementById('evaBrowserPopup');
+      if (_pop) _pop.remove();
+      renderEmbedded(status);
+      return;
+    }
+
     ensurePopup();
 
     var goalEl = document.getElementById('ebpGoal');
@@ -176,6 +200,111 @@
     renderFooter(status);
   }
 
+  // True when Eva's fullscreen voice view is open (render into the embedded
+  // panel instead of the floating popup).
+  function _embeddedOpen() {
+    return (typeof _vv !== 'undefined' && _vv && _vv.open);
+  }
+
+  // Render the agent's live screenshot + status into the faint right-side panel
+  // (#vvVision), the same surface the camera "look" uses, so it reads as Eva's
+  // thoughts rather than a separate window.
+  function renderEmbedded(status) {
+    var panel = document.getElementById('vvVision');
+    if (!panel) return;
+    var terminal = (status.status === 'done' || status.status === 'cancelled' || status.status === 'error');
+    panel.classList.add('open');
+    panel.setAttribute('aria-hidden', 'false');
+    if (terminal) panel.classList.remove('looking'); else panel.classList.add('looking');
+
+    var img = document.getElementById('vvVisionShot');
+    // The camera "look" shares this image element. On the FIRST embedded render
+    // of a run, drop any leftover frame (e.g. the webcam image from a prior
+    // look) so the panel never shows a stale picture. Do NOT hide the element
+    // via visibility here: the camera path (which works) never toggles
+    // visibility, and relying on an onload handler to restore it can leave the
+    // panel as an empty outline box if onload does not fire.
+    if (img && _state._embedRunId !== status.id) {
+      _state._embedRunId = status.id;
+      _state._embedShotKey = null;
+      try { img.removeAttribute('src'); } catch (e) {}
+    }
+
+    var live = (status.status === 'running' || status.status === 'starting' ||
+                status.status === 'awaiting_confirmation' || status.status === 'awaiting_input' ||
+                status.status === 'done');
+    if (img && live && status.id) {
+      // Load the screenshot via fetch -> data URL, EXACTLY like the camera frame
+      // (a direct http <img src> is blocked from a file:// page under Electron
+      // webSecurity; fetch + FileReader sidesteps it).
+      var stepKey = String(status.step != null ? status.step : '') + ':' + status.id;
+      if (_state._embedShotKey !== stepKey) {
+        _state._embedShotKey = stepKey;
+        var url = bridgeBase() + _state.endpoint + '/screenshot?run_id=' +
+                  encodeURIComponent(status.id) + '&t=' + (_state.shotTick++);
+        _loadShotInto(img, url, stepKey);
+      }
+    }
+    var txt = document.getElementById('vvVisionText');
+    if (txt) {
+      var line = '[' + (_state.title || 'Agent') + ']';
+      if (status.subgoal) line += '\n' + status.subgoal;
+      else if (status.url || status.title) line += '\n' + (status.title || status.url);
+      if (terminal && status.result) line += '\n' + status.result;
+      else if (terminal && status.error) line += '\nError: ' + status.error;
+      txt.textContent = line;
+    }
+    if (terminal) {
+      // Fade the panel out shortly after the run ends.
+      if (_state._fadeTimer) clearTimeout(_state._fadeTimer);
+      _state._fadeTimer = setTimeout(function () {
+        var p = document.getElementById('vvVision');
+        if (p) { p.classList.remove('open', 'looking'); p.setAttribute('aria-hidden', 'true'); }
+      }, 8000);
+    }
+  }
+
+  // Build a natural, spoken-style question for a parked confirmation/input.
+  function _buildConfirmQuestion(status) {
+    if (status.status === 'awaiting_input') {
+      return status.pending_question || 'I need a bit more information to continue. What should I do?';
+    }
+    var act = status.pending_action || {};
+    var reason = act.reason || act.text || act.action || 'complete this purchase';
+    return 'I\'m at the final step to ' + reason + '. Do you want me to confirm and place the order? Say yes to go ahead or no to stop.';
+  }
+
+  // Fire the confirmation callback once per park so Eva asks in chat/voice
+  // instead of relying on a popup button. The caller wires onConfirm to render
+  // and speak the question and to arm interception of the next user reply.
+  function maybeFireConfirm(status) {
+    var parked = (status.status === 'awaiting_confirmation' || status.status === 'awaiting_input');
+    if (!parked) { _state.confirmKey = null; return; }
+    var key = status.status + ':' + (status.step != null ? status.step : '') + ':' + (status.id || '');
+    if (_state.confirmKey === key) return;   // already asked for this park
+    _state.confirmKey = key;
+    var question = _buildConfirmQuestion(status);
+    var needsText = (status.status === 'awaiting_input');
+    if (typeof _state.onConfirm === 'function') {
+      try { _state.onConfirm(question, needsText, status); } catch (e) {}
+    }
+  }
+
+  // Narrate the agent's plan when it changes, so the user hears progress and
+  // knows Eva is working rather than stuck. Throttled to meaningful changes
+  // (the director sets a new subgoal every few steps).
+  function maybeFireProgress(status) {
+    if (typeof _state.onProgress !== 'function') return;
+    var sub = (status && status.subgoal) ? String(status.subgoal).trim() : '';
+    if (!sub) return;
+    // Skip while parked (the confirm/ask already speaks) or terminal.
+    if (status.status === 'awaiting_confirmation' || status.status === 'awaiting_input') return;
+    if (status.status === 'done' || status.status === 'cancelled' || status.status === 'error') return;
+    if (sub === _state.lastProgress) return;
+    _state.lastProgress = sub;
+    try { _state.onProgress(sub, status); } catch (e) {}
+  }
+
   function refreshShot(status) {
     // Refresh the screenshot whenever the step advances or we are mid-run.
     var img = document.getElementById('ebpShot');
@@ -184,45 +313,55 @@
                 status.status === 'awaiting_confirmation' || status.status === 'awaiting_input' ||
                 status.status === 'done');
     if (!live) return;
+    var pkey = String(status.step != null ? status.step : '') + ':' + status.id;
+    if (_state._popupShotKey === pkey) return;
+    _state._popupShotKey = pkey;
     var url = bridgeBase() + _state.endpoint + '/screenshot?run_id=' +
               encodeURIComponent(status.id) + '&t=' + (_state.shotTick++);
-    img.src = url;
+    _loadShotInto(img, url);
+  }
+
+  // Fetch a screenshot and display it as a data URL (exactly how the camera
+  // frame displays, which is known to work). A direct http <img src> is blocked
+  // from a file:// page under Electron webSecurity; fetch + FileReader sidesteps
+  // it. On failure, clear the relevant cache key so the next poll re-fetches
+  // instead of leaving a stale or blank image up.
+  function _loadShotInto(img, url, retryKey) {
+    if (!img) return;
+    fetch(url, { cache: 'no-store' }).then(function (r) {
+      if (!r.ok) throw new Error('shot ' + r.status);
+      return r.blob();
+    }).then(function (blob) {
+      return new Promise(function (resolve, reject) {
+        var fr = new FileReader();
+        fr.onload = function () { resolve(fr.result); };
+        fr.onerror = function () { reject(new Error('read failed')); };
+        fr.readAsDataURL(blob);
+      });
+    }).then(function (dataUrl) {
+      // Set src directly and force visibility (no reliance on onload), matching
+      // the camera path so the element can never get stuck hidden.
+      img.style.visibility = 'visible';
+      img.src = dataUrl;
+    }).catch(function () {
+      if (retryKey && _state._embedShotKey === retryKey) _state._embedShotKey = null;
+      if (!retryKey && _state._popupShotKey) _state._popupShotKey = null;
+    });
   }
 
   function renderPrompt(status) {
+    // Confirmations and input requests are now handled by Eva asking naturally
+    // in chat/voice (see maybeFireConfirm + the interception in options.js), so
+    // the popup no longer shows Approve/Decline/Send buttons. Keep the prompt
+    // area hidden; the chat reply drives the decision.
     var wrap = document.getElementById('ebpPrompt');
-    var textEl = document.getElementById('ebpPromptText');
     var input = document.getElementById('ebpInput');
+    var textEl = document.getElementById('ebpPromptText');
     var actions = document.getElementById('ebpPromptActions');
-    if (!wrap) return;
-    actions.innerHTML = '';
-
-    if (status.status === 'awaiting_confirmation') {
-      wrap.hidden = false;
-      input.hidden = true;
-      var act = status.pending_action || {};
-      var reason = act.reason || act.action || 'a sensitive action';
-      textEl.textContent = 'Eva wants to: ' + reason + '. Approve?';
-      addBtn(actions, 'Approve', 'ebp-approve', function () {
-        confirmRun(true, '');
-      });
-      addBtn(actions, 'Decline', 'ebp-decline', function () {
-        confirmRun(false, '');
-      });
-    } else if (status.status === 'awaiting_input') {
-      wrap.hidden = false;
-      input.hidden = false;
-      textEl.textContent = status.pending_question || 'Eva needs input.';
-      addBtn(actions, 'Send', 'ebp-approve', function () {
-        var v = input.value;
-        input.value = '';
-        confirmRun(true, v);
-      });
-    } else {
-      wrap.hidden = true;
-      input.hidden = true;
-      textEl.textContent = '';
-    }
+    if (actions) actions.innerHTML = '';
+    if (wrap) wrap.hidden = true;
+    if (input) input.hidden = true;
+    if (textEl) textEl.textContent = '';
   }
 
   function renderFooter(status) {
@@ -264,6 +403,10 @@
     _state.endpoint = opts.endpoint || '/v1/browser';
     _state.title = opts.title || 'Browser Agent';
     _state.onComplete = (typeof opts.onComplete === 'function') ? opts.onComplete : null;
+    _state.onConfirm = (typeof opts.onConfirm === 'function') ? opts.onConfirm : null;
+    _state.onProgress = (typeof opts.onProgress === 'function') ? opts.onProgress : null;
+    _state.lastProgress = null;
+    _state.confirmKey = null;
     _state.completed = false;
     if (!goal) {
       setChatStatus('error', _state.title + ': no goal provided.');
@@ -390,9 +533,26 @@
     return !!_state.runId;
   }
 
+  // True when the active run is parked waiting for a confirmation or input that
+  // Eva asked about in chat/voice. The next user reply should answer it.
+  function isAwaitingConfirm() {
+    return !!(_state.runId && _state.status &&
+      (_state.status.status === 'awaiting_confirmation' || _state.status.status === 'awaiting_input'));
+  }
+
+  // Answer a parked confirmation. approve=true continues (placing the order /
+  // submitting input); approve=false stops. text carries free-form input when
+  // the park was an input request.
+  function answerConfirm(approve, text) {
+    if (!_state.runId) return;
+    confirmRun(!!approve, text || '');
+  }
+
   global.EvaBrowser = {
     launch: launch,
     isActive: isActive,
+    isAwaitingConfirm: isAwaitingConfirm,
+    answerConfirm: answerConfirm,
     close: closePopup
   };
 
@@ -406,6 +566,8 @@
       return launch(goal, opts);
     },
     isActive: isActive,
+    isAwaitingConfirm: isAwaitingConfirm,
+    answerConfirm: answerConfirm,
     close: closePopup
   };
 

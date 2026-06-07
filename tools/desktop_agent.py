@@ -49,7 +49,7 @@ _SENSITIVE_RE = re.compile(
 )
 
 _ACTION_KINDS = {
-    "launch_app", "click", "double_click", "right_click", "move",
+    "launch_app", "focus_window", "click", "double_click", "right_click", "move",
     "type", "press", "hotkey", "scroll", "wait", "done", "ask",
 }
 
@@ -172,6 +172,7 @@ def _executor_system(w, h):
         "JSON object and nothing else.\n\n"
         "Schema (pick one action):\n"
         '  {"action":"launch_app","app":"<binary name, e.g. gimp>","args":["..."],"reason":"..."}\n'
+        '  {"action":"focus_window","match":"<window title substring, e.g. Chrome>","reason":"..."}\n'
         '  {"action":"click","x":<int>,"y":<int>,"reason":"<intent>"}\n'
         '  {"action":"double_click","x":<int>,"y":<int>,"reason":"..."}\n'
         '  {"action":"right_click","x":<int>,"y":<int>,"reason":"..."}\n'
@@ -188,8 +189,14 @@ def _executor_system(w, h):
         "application, use launch_app with its binary name. Operate the target "
         "application window; do NOT interact with Eva's own assistant window. "
         "Prefer clicking visible controls. Emit done only when the goal is fully "
-        "achieved, and ask when blocked or needing info only the user has. Never "
-        "output prose outside the JSON."
+        "achieved, and ask when blocked or needing info only the user has.\n"
+        "WEB TASKS: if the user already has a browser open (e.g. Chrome) and is "
+        "signed in, USE IT instead of launching a new one: focus_window with "
+        'match \"Chrome\" (or \"Firefox\") to raise the existing window, then open '
+        "a NEW TAB with hotkey ctrl+t, focus the address bar with hotkey ctrl+l, "
+        "type the URL or search, and press enter. This reuses the user's logged-in "
+        "session (Amazon, etc.). Only launch_app a browser if none is open.\n"
+        "Never output prose outside the JSON."
     )
 
 
@@ -403,12 +410,57 @@ def _launch_app(action):
         return f"error launching {app}: {e}"
 
 
+def _focus_window(action):
+    """Raise and focus an existing window whose title contains `match`.
+
+    Lets the agent reuse the user's already-open, signed-in browser instead of
+    launching a new one. Uses wmctrl (preferred) or xdotool; no shell, args as a
+    list, and the match string is constrained so it cannot inject options.
+    """
+    match = str(action.get("match", "")).strip()
+    if not match or len(match) > 64 or not re.fullmatch(r"[A-Za-z0-9 ._+:/-]{1,64}", match):
+        return "error: invalid window match"
+    wmctrl = shutil.which("wmctrl")
+    if wmctrl:
+        try:
+            # -F + exact would be too strict; -i not needed. Use substring match
+            # via wmctrl's built-in -a (activates a window by title substring).
+            r = subprocess.run([wmctrl, "-a", match],
+                               stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                               timeout=5)
+            if r.returncode == 0:
+                time.sleep(0.6)
+                return f"focused window matching '{match}'"
+        except Exception:
+            pass
+    xdotool = shutil.which("xdotool")
+    if xdotool:
+        try:
+            out = subprocess.run([xdotool, "search", "--name", match],
+                                 capture_output=True, text=True, timeout=5)
+            wid = (out.stdout or "").split("\n")[0].strip()
+            if wid.isdigit():
+                subprocess.run([xdotool, "windowactivate", wid],
+                               stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                               timeout=5)
+                time.sleep(0.6)
+                return f"focused window matching '{match}'"
+        except Exception:
+            pass
+    return f"error: no window matching '{match}' (or no window tool available)"
+
+
 def _execute(gui, action, rec):
     kind = action["action"]
     if kind == "launch_app":
         result = _launch_app(action)
         rec["active_app"] = str(action.get("app", "")) or rec["active_app"]
         time.sleep(1.5)  # give the window time to appear
+        return result
+    if kind == "focus_window":
+        result = _focus_window(action)
+        if not result.startswith("error"):
+            rec["active_app"] = str(action.get("match", "")) or rec["active_app"]
         return result
     if kind in ("click", "double_click", "right_click", "move"):
         x, y = int(action.get("x", 0)), int(action.get("y", 0))

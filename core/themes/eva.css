@@ -970,6 +970,70 @@ body.theme-eva .cog-badge[data-active="true"] {
 }
 body.theme-lcars .vv-log-stream { color: rgba(255,170,90,0.09); }
 
+/* Embedded vision panel: mirrors the log feed on the right. When Eva looks
+   through the camera the frame + her description fade in faintly, as if we are
+   seeing her thoughts. Hidden until a look is active (the .open class). */
+.vv-vision {
+  position: absolute;
+  right: 24px;
+  bottom: 96px;
+  width: 320px;
+  max-width: 38vw;
+  z-index: 0;
+  pointer-events: none;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 8px;
+  opacity: 0;
+  transition: opacity 0.6s ease;
+}
+.vv-vision.open { opacity: 1; }
+.vv-vision-frame {
+  width: 100%;
+  /* Reserve height so the panel never collapses while an HTTP screenshot is
+     still loading. The camera uses an instant data URL; the browser/desktop
+     agent screenshots arrive over HTTP and would otherwise render as a
+     0-height box, hiding what Eva sees. */
+  min-height: 150px;
+  border-radius: 10px;
+  overflow: hidden;
+  border: 1px solid rgba(120,200,255,0.18);
+  box-shadow: 0 0 26px rgba(80,160,255,0.10);
+  background: rgba(8,14,26,0.45);
+  /* Soft edge so it blends into the dark field rather than reading as a hard box. */
+  -webkit-mask-image: radial-gradient(ellipse at center, #000 60%, transparent 100%);
+  mask-image: radial-gradient(ellipse at center, #000 60%, transparent 100%);
+}
+.vv-vision-shot {
+  width: 100%;
+  display: block;
+  opacity: 0.62;
+  filter: saturate(0.9) contrast(1.02);
+}
+.vv-vision-text {
+  width: 100%;
+  text-align: right;
+  font-family: "SF Mono", "Fira Code", "Courier New", monospace;
+  font-size: 11px;
+  line-height: 1.5;
+  color: rgba(150,210,255,0.42);
+  white-space: pre-wrap;
+  max-height: 120px;
+  overflow: hidden;
+  -webkit-mask-image: linear-gradient(to bottom, #000 60%, transparent 100%);
+  mask-image: linear-gradient(to bottom, #000 60%, transparent 100%);
+}
+.vv-vision.looking .vv-vision-frame {
+  animation: vvVisionPulse 1.6s ease-in-out infinite;
+}
+@keyframes vvVisionPulse {
+  0%, 100% { box-shadow: 0 0 22px rgba(80,160,255,0.08); }
+  50%      { box-shadow: 0 0 34px rgba(80,160,255,0.20); }
+}
+body.theme-lcars .vv-vision-frame { border-color: rgba(255,170,90,0.18); box-shadow: 0 0 26px rgba(255,150,70,0.10); }
+body.theme-lcars .vv-vision-text { color: rgba(255,180,110,0.30); }
+
   position: absolute;
   top: 20px;
   right: 28px;

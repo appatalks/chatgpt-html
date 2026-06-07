@@ -829,6 +829,9 @@ function injectProactiveBubble(notif) {
 // fact rather than from the intent Eva announced before acting.
 function _evaAgentFeedback(status, endpoint, title) {
   if (!status) return;
+  // Clear the progress-narration throttle so the completion line is never
+  // suppressed as a near-duplicate of the last "working on it" update.
+  try { if (typeof _agentProgress !== 'undefined') { _agentProgress.last = 0; _agentProgress.lastText = ''; } } catch (_) {}
   var label = (title || 'task').replace(/ Agent$/, '').toLowerCase();
   var goal = String(status.goal || '').trim();
   var state = status.status;
@@ -842,7 +845,10 @@ function _evaAgentFeedback(status, endpoint, title) {
       spoken = 'Okay, I held off' + (goal ? ' on ' + goal : '') + '.';
       memory = 'Desktop/browser agent stopped: the user declined the action' + (goal ? ' for "' + goal + '"' : '') + '.';
     } else {
-      spoken = res || ('Done' + (goal ? ' with ' + goal : '') + '.');
+      // Lead with a clear completion signal so the user knows she is finished,
+      // then the specifics from the agent's summary.
+      var detail = res || ('I finished' + (goal ? ' ' + goal : '') + '.');
+      spoken = /^(done|finished|all done|okay)/i.test(detail) ? detail : ('All done. ' + detail);
       memory = 'Desktop/browser agent finished' + (goal ? ' "' + goal + '"' : '') + '. Result: ' + (res || 'completed') + '.';
     }
   } else if (state === 'cancelled') {
@@ -887,6 +893,157 @@ function _evaAgentFeedback(status, endpoint, title) {
   } catch (_) {}
 
   if (typeof lastResponse === 'string') lastResponse = spoken;
+}
+
+// Render + speak the result of an Eva "look" (webcam vision). Mirrors the agent
+// feedback path: a chat bubble, optional speech, and a factual history note so
+// follow-ups ("what colour was it?") are grounded in what she actually saw.
+function _evaCameraLookResult(desc) {
+  desc = String(desc || '').trim();
+  if (!desc) return;
+  var txtOutput = document.getElementById('txtOutput');
+  if (txtOutput) {
+    if (typeof hideEvaWelcome === 'function') hideEvaWelcome();
+    var safe = escapeHtml(desc).replace(/\n/g, '<br>');
+    txtOutput.innerHTML += '<div class="chat-bubble eva-bubble"><span class="eva">Eva:</span> <div class="md">' + safe + '</div></div>';
+    txtOutput.scrollTop = txtOutput.scrollHeight;
+  }
+  try {
+    var autoSpeakEl = document.getElementById('autoSpeak');
+    var voiceOpen = (typeof _vv !== 'undefined' && _vv.open);
+    if ((voiceOpen || (autoSpeakEl && autoSpeakEl.checked)) && typeof speakText === 'function') {
+      speakText(desc);
+    }
+  } catch (_) {}
+  try {
+    var hist = JSON.parse(localStorage.getItem('aigMessages') || '[]');
+    if (Array.isArray(hist)) {
+      hist.push({ role: 'assistant', content: '[Camera] I looked through the webcam and saw: ' + desc });
+      localStorage.setItem('aigMessages', JSON.stringify(hist));
+    }
+  } catch (_) {}
+  if (typeof lastResponse === 'string') lastResponse = desc;
+}
+
+// ---------------------------------------------------------------------------
+// Natural agent confirmation — Eva asks in chat/voice instead of a popup button
+// ---------------------------------------------------------------------------
+// When the browser/desktop agent parks for the final purchase (or needs input),
+// it calls _evaAgentConfirmAsk. Eva surfaces the question in chat (and speaks
+// it), and _agentConfirm is armed so the user's next message is interpreted as
+// the answer (yes/no, or free text) and routed to the agent rather than sent as
+// a normal turn.
+var _agentConfirm = { pending: false, needsText: false };
+
+// Narrate agent progress so the user knows Eva is working and not stuck. Eva
+// speaks/prints a short status when the plan changes, throttled so it does not
+// chatter. Phrased as a brief present-tense update.
+var _agentProgress = { last: 0, lastText: '' };
+function _evaAgentProgress(subgoal) {
+  var sub = String(subgoal || '').trim();
+  if (!sub) return;
+  var now = Date.now();
+  // Throttle: at most one spoken update every ~9s, and skip near-duplicates.
+  if (now - _agentProgress.last < 9000) return;
+  if (sub === _agentProgress.lastText) return;
+  _agentProgress.last = now;
+  _agentProgress.lastText = sub;
+  var line = sub.charAt(0).toUpperCase() + sub.slice(1);
+  var txtOutput = document.getElementById('txtOutput');
+  if (txtOutput) {
+    if (typeof hideEvaWelcome === 'function') hideEvaWelcome();
+    var safe = escapeHtml(line).replace(/\n/g, '<br>');
+    txtOutput.innerHTML += '<div class="chat-bubble eva-bubble eva-proactive"><span class="eva">Eva:</span> <span class="eva-proactive-badge">working</span> <div class="md">' + safe + '</div></div>';
+    txtOutput.scrollTop = txtOutput.scrollHeight;
+  }
+  try {
+    var autoSpeakEl = document.getElementById('autoSpeak');
+    var voiceOpen = (typeof _vv !== 'undefined' && _vv.open);
+    if ((voiceOpen || (autoSpeakEl && autoSpeakEl.checked)) && typeof speakText === 'function') {
+      speakText(line);
+    }
+  } catch (_) {}
+}
+
+function _evaAgentConfirmAsk(question, needsText) {
+  _agentConfirm.pending = true;
+  _agentConfirm.needsText = !!needsText;
+  var q = String(question || 'Should I continue?').trim();
+  var txtOutput = document.getElementById('txtOutput');
+  if (txtOutput) {
+    if (typeof hideEvaWelcome === 'function') hideEvaWelcome();
+    var safe = escapeHtml(q).replace(/\n/g, '<br>');
+    txtOutput.innerHTML += '<div class="chat-bubble eva-bubble"><span class="eva">Eva:</span> <div class="md">' + safe + '</div></div>';
+    txtOutput.scrollTop = txtOutput.scrollHeight;
+  }
+  try {
+    var autoSpeakEl = document.getElementById('autoSpeak');
+    var voiceOpen = (typeof _vv !== 'undefined' && _vv.open);
+    if ((voiceOpen || (autoSpeakEl && autoSpeakEl.checked)) && typeof speakText === 'function') {
+      speakText(q);
+    }
+  } catch (_) {}
+  if (typeof lastResponse === 'string') lastResponse = q;
+}
+
+// Affirmative / negative phrase detection for the natural confirmation reply.
+var _AFFIRM_RE = /\b(yes|yep|yeah|yup|sure|ok|okay|confirm|confirmed|go ahead|do it|place (the )?order|buy it|proceed|approve|affirmative|please do)\b/i;
+var _NEGATE_RE = /\b(no|nope|nah|stop|cancel|don'?t|do not|decline|abort|never mind|nevermind|hold on|wait)\b/i;
+
+// If an agent confirmation is pending, interpret `text` as the answer and route
+// it to the agent. Returns true when the message was consumed (so the caller
+// should NOT send it as a normal chat turn).
+function _maybeAnswerAgentConfirm(text) {
+  if (!_agentConfirm.pending) return false;
+  var active = (typeof EvaBrowser !== 'undefined' && EvaBrowser &&
+                typeof EvaBrowser.isAwaitingConfirm === 'function' && EvaBrowser.isAwaitingConfirm());
+  if (!active) { _agentConfirm.pending = false; return false; }
+  var msg = String(text || '').trim();
+  if (!msg) return false;
+
+  // Free-text input request: pass the message straight through.
+  if (_agentConfirm.needsText) {
+    _agentConfirm.pending = false;
+    _agentConfirm.needsText = false;
+    EvaBrowser.answerConfirm(true, msg);
+    _agentConfirmEcho(msg, null);
+    return true;
+  }
+
+  var yes = _AFFIRM_RE.test(msg);
+  var no = _NEGATE_RE.test(msg);
+  // Ambiguous (neither or both): ask once more, keep the gate armed.
+  if (yes === no) {
+    _agentConfirmEcho(msg, 'ambiguous');
+    return true;
+  }
+  _agentConfirm.pending = false;
+  EvaBrowser.answerConfirm(yes, '');
+  _agentConfirmEcho(msg, yes ? 'yes' : 'no');
+  return true;
+}
+
+function _agentConfirmEcho(userMsg, decision) {
+  var txtOutput = document.getElementById('txtOutput');
+  if (txtOutput) {
+    var safeU = escapeHtml(String(userMsg)).replace(/\n/g, '<br>');
+    txtOutput.innerHTML += '<div class="chat-bubble user-bubble"><span class="user">You:</span> ' + safeU + '</div>';
+  }
+  var reply = '';
+  if (decision === 'yes') reply = 'Okay, confirming now.';
+  else if (decision === 'no') reply = 'Understood, I\'ll stop and not place the order.';
+  else if (decision === 'ambiguous') reply = 'Sorry, was that a yes or a no? Say yes to place the order or no to stop.';
+  if (reply && txtOutput) {
+    txtOutput.innerHTML += '<div class="chat-bubble eva-bubble"><span class="eva">Eva:</span> <div class="md">' + escapeHtml(reply) + '</div></div>';
+    txtOutput.scrollTop = txtOutput.scrollHeight;
+  }
+  try {
+    var autoSpeakEl = document.getElementById('autoSpeak');
+    var voiceOpen = (typeof _vv !== 'undefined' && _vv.open);
+    if (reply && (voiceOpen || (autoSpeakEl && autoSpeakEl.checked)) && typeof speakText === 'function') {
+      speakText(reply);
+    }
+  } catch (_) {}
 }
 
 async function pollNotifications() {
@@ -1615,6 +1772,77 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
+  // Camera presence (auto-wake): toggle the local webcam sensor. Restore the
+  // persisted choice, but only auto-start the camera if it was previously on.
+  var cameraPresenceEl = document.getElementById('cameraPresence');
+  if (cameraPresenceEl) {
+    var savedCam = false;
+    var hadLocal = false;
+    try {
+      var lv = localStorage.getItem('cameraPresence');
+      hadLocal = (lv !== null);
+      savedCam = lv === '1';
+    } catch (e) {}
+    cameraPresenceEl.checked = savedCam;
+    if (savedCam && typeof EvaCamera !== 'undefined' && EvaCamera) {
+      EvaCamera.enable();
+    }
+    // If localStorage had no value (e.g. wiped on an app rebuild), fall back to
+    // the bridge-persisted preference so the user does not re-enable each restart.
+    if (!hadLocal) {
+      try {
+        var _pbase = (typeof getSafeBridgeBaseUrl === 'function') ? getSafeBridgeBaseUrl() : '';
+        if (_pbase) {
+          fetch(_pbase.replace(/\/+$/, '') + '/v1/prefs').then(function (r) {
+            return r.ok ? r.json() : null;
+          }).then(function (p) {
+            if (p && p.cameraPresence === true) {
+              cameraPresenceEl.checked = true;
+              try { localStorage.setItem('cameraPresence', '1'); } catch (e) {}
+              if (typeof EvaCamera !== 'undefined' && EvaCamera) EvaCamera.enable();
+            }
+          }).catch(function () {});
+        }
+      } catch (e) {}
+    }
+    cameraPresenceEl.addEventListener('change', function () {
+      if (typeof EvaCamera === 'undefined' || !EvaCamera) return;
+      var on = cameraPresenceEl.checked;
+      // Persist to the bridge too so the choice survives a localStorage wipe.
+      try {
+        var _b = (typeof getSafeBridgeBaseUrl === 'function') ? getSafeBridgeBaseUrl() : '';
+        if (_b) {
+          fetch(_b.replace(/\/+$/, '') + '/v1/prefs', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ cameraPresence: on })
+          }).catch(function () {});
+        }
+      } catch (e) {}
+      if (on) {
+        EvaCamera.enable().then(function (ok) {
+          if (!ok) cameraPresenceEl.checked = false;
+        });
+      } else {
+        EvaCamera.disable();
+      }
+    });
+  }
+
+  // Vision provider for camera "looks" (GitHub-hosted / OpenAI direct / Copilot).
+  // Persisted to the same localStorage key the camera module reads.
+  var cameraVisionProviderEl = document.getElementById('cameraVisionProvider');
+  if (cameraVisionProviderEl) {
+    var savedProvider = '';
+    try { savedProvider = localStorage.getItem('cameraVisionProvider') || ''; } catch (e) {}
+    if (savedProvider) {
+      var hasProv = Array.from(cameraVisionProviderEl.options).some(function (o) { return o.value === savedProvider; });
+      if (hasProv) cameraVisionProviderEl.value = savedProvider;
+    }
+    cameraVisionProviderEl.addEventListener('change', function () {
+      try { localStorage.setItem('cameraVisionProvider', cameraVisionProviderEl.value); } catch (e) {}
+    });
+  }
+
   function toggleSettings(event) {
     event.stopPropagation();
     var overlay = document.getElementById('settingsOverlay');
@@ -1952,6 +2180,16 @@ function closeVoiceView() {
   if (_vv._postTextTimer) { clearTimeout(_vv._postTextTimer); _vv._postTextTimer = null; }
   _vvStopBargeMonitor();
   _vvStopLogStream();
+  // Clear the embedded vision panel so a stale frame does not linger on reopen.
+  var vvVision = document.getElementById('vvVision');
+  if (vvVision) {
+    vvVision.classList.remove('open', 'looking');
+    vvVision.setAttribute('aria-hidden', 'true');
+    var vvShot = document.getElementById('vvVisionShot');
+    if (vvShot) vvShot.removeAttribute('src');
+    var vvText = document.getElementById('vvVisionText');
+    if (vvText) vvText.textContent = '';
+  }
   if (_vv._wasAutoSpeak !== undefined) {
     var autoSpeak = document.getElementById('autoSpeak');
     if (autoSpeak) autoSpeak.checked = _vv._wasAutoSpeak;
@@ -3183,6 +3421,17 @@ function _vvSpeakAck() {
 }
 
 function _vvSendCommand(command) {
+  // Natural agent confirmation via voice: if an agent is parked on a yes/no,
+  // interpret this utterance as the answer instead of a new command.
+  if (typeof _agentConfirm !== 'undefined' && _agentConfirm.pending) {
+    if (_maybeAnswerAgentConfirm(command)) {
+      var transcriptElC = document.getElementById('vvTranscript');
+      if (transcriptElC) transcriptElC.textContent = '\u25B8 ' + command;
+      // Stay in conversation: return to listening/awake after answering.
+      if (typeof _vvAfterTurn === 'function') _vvAfterTurn();
+      return;
+    }
+  }
   _vv.lastTranscript = command;
   _vv.cmdStart = performance.now();
   if (_vv.awakeTimer) { clearTimeout(_vv.awakeTimer); _vv.awakeTimer = null; }
@@ -3647,6 +3896,17 @@ function updateButton() {
 }
 
 function sendData() {
+    // Natural agent confirmation: if the browser/desktop agent is parked waiting
+    // on a yes/no (e.g. the final purchase), interpret this message as the answer
+    // and route it to the agent instead of sending a normal chat turn.
+    if (typeof _agentConfirm !== 'undefined' && _agentConfirm.pending) {
+      var _txtMsgEl = document.getElementById('txtMsg');
+      var _pendingText = _txtMsgEl ? (_txtMsgEl.innerText || _txtMsgEl.textContent || '') : '';
+      if (_maybeAnswerAgentConfirm(_pendingText)) {
+        if (_txtMsgEl) _txtMsgEl.innerHTML = '';
+        return;
+      }
+    }
     // Hide Eva welcome MOTD on first send
     hideEvaWelcome();
   applyStandaloneSimplifications();
@@ -4944,6 +5204,25 @@ async function renderEvaResponse(content, txtOutput) {
     text = text.replace(/\n{3,}/g, '\n\n').trim();
   }
 
+  // Detect Eva camera "look" marker:
+  // [[EVA_LOOK]]{"question":"..."}[[/EVA_LOOK]]  (question optional)
+  var cameraLook = null;
+  text = text.replace(/\[\[EVA_LOOK\]\]\s*(\{[\s\S]*?\})?\s*\[\[\/EVA_LOOK\]\]/, function (full, json) {
+    if (!cameraLook) {
+      cameraLook = { question: '' };
+      if (json) {
+        try {
+          var parsed = JSON.parse(json);
+          if (parsed && typeof parsed.question === 'string') cameraLook.question = parsed.question;
+        } catch (e) { /* tolerate a bare marker with no JSON */ }
+      }
+    }
+    return '\n_Taking a look…_\n';
+  });
+  if (cameraLook) {
+    text = text.replace(/\n{3,}/g, '\n\n').trim();
+  }
+
   text = text.replace(/^\s*\[\[EVA_FILE\]\]\s+([A-Za-z0-9._-]{1,128})\s*$/gm, function(fullMatch, filename) {
     artifactNames.push(filename);
     return '';
@@ -5102,7 +5381,9 @@ async function renderEvaResponse(content, txtOutput) {
       start_url: browserLaunch.start_url,
       vision_model: browserLaunch.vision_model,
       max_steps: browserLaunch.max_steps,
-      onComplete: _evaAgentFeedback
+      onComplete: _evaAgentFeedback,
+      onConfirm: _evaAgentConfirmAsk,
+      onProgress: _evaAgentProgress
     });
   }
 
@@ -5111,7 +5392,18 @@ async function renderEvaResponse(content, txtOutput) {
     EvaDesktop.launch(desktopLaunch.goal, {
       vision_model: desktopLaunch.vision_model,
       max_steps: desktopLaunch.max_steps,
-      onComplete: _evaAgentFeedback
+      onComplete: _evaAgentFeedback,
+      onConfirm: _evaAgentConfirmAsk,
+      onProgress: _evaAgentProgress
+    });
+  }
+
+  // Look through the webcam if Eva requested it (Eva's eyes).
+  if (cameraLook && typeof EvaCamera !== 'undefined' && EvaCamera && typeof EvaCamera.look === 'function') {
+    EvaCamera.look(cameraLook.question).then(function (desc) {
+      _evaCameraLookResult(desc || 'I could not make out anything.');
+    }).catch(function (err) {
+      _evaCameraLookResult('I tried to look but ' + ((err && err.message) ? err.message : 'something went wrong') + '.');
     });
   }
 

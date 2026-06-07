@@ -46,12 +46,22 @@
       "line [[EVA_DESKTOP]]{\"goal\":\"<task>\"}[[/EVA_DESKTOP]] to launch Eva's vision desktop agent, which",
       "sees the screen and drives the real mouse/keyboard. It opens apps automatically and only pauses for",
       "approval before genuinely destructive actions. Do NOT say you cannot open or control desktop applications.",
+      "USE THE EXISTING BROWSER: for reliable web tasks (shopping, add to cart, fill a form), prefer the",
+      "[[EVA_BROWSER]] agent: it controls the page through the DOM so its clicks are precise, and it uses a",
+      "persistent Chrome profile, so after the user signs in once it stays logged in. Only when the user",
+      "specifically insists on their CURRENTLY-open browser window (\"in the window I have open right now\")",
+      "use the DESKTOP agent [[EVA_DESKTOP]] with a goal telling it to focus that Chrome window and open a new",
+      "tab; that drives the real cursor by sight, so it is less precise.",
       "ACT, DON'T EXPLAIN: when the user asks you to DO an actionable task (open or operate an app, run a",
       "browser flow), act on the FIRST request by emitting the marker. Do NOT instead list manual steps for",
       "the user to follow, and do NOT wait to be told 'do it yourself' — describing the steps instead of",
       "doing it is a failure. Before the marker, write ONE short present/future-tense sentence announcing what",
       "you are about to do (\"I'm opening GIMP and starting a new canvas now.\"), not a past-tense report after",
       "the fact. The agent then carries out the task.",
+      "You can SEE through the user's webcam. When asked what you see, to look, or to describe something in",
+      "front of the camera, emit one line [[EVA_LOOK]]{\"question\":\"<what to look for>\"}[[/EVA_LOOK]] (the",
+      "question is optional). A frame is captured and you describe it. Do NOT claim you cannot see or use a",
+      "camera. Emit at most one EVA_LOOK per reply, only when the user asks you to look or about what you see.",
       "Do NOT narrate phases. Do NOT mention the pipeline, the reviewer,",
       "or any '.github/agents/' file. Do NOT print fake 'PHASE 1 / PHASE 2 / PHASE 3' headers.",
       "Just answer the user."
@@ -557,7 +567,7 @@
   var RETRIEVAL_INTENT = /\b(look(ing)?\s*(it\s*)?up|search(\s+for)?|google|find\s+out|latest|most\s+recent|breaking|what'?s\s+(happening|going\s+on|new)|right\s+now)\b/i;
 
   function reviewFloorReason(userMsg, draftContent) {
-    if (/\[\[EVA_ACTION\]\]|\[\[EVA_BROWSER\]\]|\[\[EVA_DESKTOP\]\]|\[\[EVA_FILE\]\]/i.test(String(draftContent || ''))) {
+    if (/\[\[EVA_ACTION\]\]|\[\[EVA_BROWSER\]\]|\[\[EVA_DESKTOP\]\]|\[\[EVA_LOOK\]\]|\[\[EVA_FILE\]\]/i.test(String(draftContent || ''))) {
       return 'action';
     }
     var u = String(userMsg || '');
