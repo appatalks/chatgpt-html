@@ -138,6 +138,12 @@ def _stop_locked():
         }).encode("utf-8"))
     except Exception:
         pass
+    # Delete the last frame so a subsequent read can never serve a stale image
+    # from a previous session before the next worker captures a fresh one.
+    try:
+        os.remove(_FRAME_PATH)
+    except OSError:
+        pass
 
 
 def stop():
@@ -289,10 +295,20 @@ def _worker_main(device, spool_dir):
     on_streak = 0
     off_streak = 0
     arrival_seq = 0
+    frame_seq = 0
     last_seen = 0.0
     present_since = 0.0
     interval = 1.0 / float(_TARGET_FPS)
     has_frame = False
+
+    # Flush warm-up frames: many V4L2 webcams deliver several stale buffered
+    # frames immediately after open (the "stale/cached image" on a fresh look).
+    # Discard a handful so the first frame we publish is genuinely live.
+    for _ in range(5):
+        try:
+            cap.read()
+        except Exception:
+            break
 
     while not stop_flag["stop"]:
         t0 = time.time()
@@ -334,13 +350,15 @@ def _worker_main(device, spool_dir):
             if enc_ok:
                 write_frame(buf.tobytes())
                 has_frame = True
+                frame_seq += 1
         except Exception:
             pass
 
         write_state({
             "enabled": True, "device": device, "present": present,
             "looking": face_now, "faces": n_faces, "motion": round(motion, 2),
-            "arrival_seq": arrival_seq, "has_frame": has_frame, "error": None,
+            "arrival_seq": arrival_seq, "frame_seq": frame_seq,
+            "has_frame": has_frame, "error": None,
             "last_seen_ms": int((now - last_seen) * 1000) if last_seen else None,
             "present_for_ms": int((now - present_since) * 1000) if present_since else None,
             "ts": now,

@@ -1194,6 +1194,42 @@ def _load_persisted_mcp_config():
     return {}
 
 
+# Small client preferences store (non-secret UI toggles) that survives the
+# Electron file:// localStorage being wiped across app rebuilds. Used for things
+# like the camera-presence auto-wake toggle so the user does not re-enable it
+# every restart.
+_CLIENT_PREFS_PATH = os.path.expanduser("~/.config/eva-standalone/client_prefs.json")
+
+
+def _load_client_prefs():
+    try:
+        if os.path.isfile(_CLIENT_PREFS_PATH):
+            with open(_CLIENT_PREFS_PATH, "r", encoding="utf-8") as f:
+                data = json.load(f)
+            if isinstance(data, dict):
+                return data
+    except (OSError, json.JSONDecodeError):
+        pass
+    return {}
+
+
+def _save_client_prefs(prefs):
+    try:
+        os.makedirs(os.path.dirname(_CLIENT_PREFS_PATH), exist_ok=True)
+        cur = _load_client_prefs()
+        # Only store small scalar values (booleans, strings, numbers) so this can
+        # never become a secrets sink.
+        for k, v in (prefs or {}).items():
+            if isinstance(v, (bool, int, float)) or (isinstance(v, str) and len(v) <= 200):
+                cur[str(k)[:64]] = v
+        with open(_CLIENT_PREFS_PATH, "w", encoding="utf-8") as f:
+            json.dump(cur, f)
+        return cur
+    except (OSError, TypeError) as exc:
+        print(f"[Bridge] Could not persist client prefs: {exc}", file=sys.stderr)
+        return _load_client_prefs()
+
+
 # ---------------------------------------------------------------------------
 # Telemetry — structured, privacy-safe event log for latency/behavior analysis
 # ---------------------------------------------------------------------------
@@ -4570,6 +4606,8 @@ class BridgeHandler(BaseHTTPRequestHandler):
             self._camera_status()
         elif parsed_path == "/v1/camera/frame":
             self._camera_frame()
+        elif parsed_path == "/v1/prefs":
+            self._prefs_get()
         elif parsed_path.startswith("/v1/files/"):
             requested_name = urllib.parse.unquote(parsed_path.split("/v1/files/", 1)[1])
             self._serve_artifact(requested_name)
@@ -4600,6 +4638,8 @@ class BridgeHandler(BaseHTTPRequestHandler):
             self._camera_start()
         elif parsed_path == "/v1/camera/stop":
             self._camera_stop()
+        elif parsed_path == "/v1/prefs":
+            self._prefs_set()
         elif parsed_path == "/v1/vision/look":
             self._vision_look()
         elif parsed_path == "/v1/browser/confirm":
@@ -5802,10 +5842,12 @@ class BridgeHandler(BaseHTTPRequestHandler):
             "a multi-page form, navigate a flow that needs to be watched), you may launch Eva's own vision "
             "browser agent by emitting a single line of the form: "
             "[[EVA_BROWSER]]{\"goal\":\"<plain-language task>\",\"start_url\":\"<optional url>\"}[[/EVA_BROWSER]]. "
-            "A floating Eva-themed window opens, drives a real Chromium with screenshots, and pauses for the "
-            "user's approval before any purchase or sign-in. Use this when the user wants to watch the work "
-            "happen; use the direct Playwright tools above for quick one-off navigations. Emit at most one "
-            "EVA_BROWSER block per reply, and only when the user actually asked for a browser task.\n"
+            "It drives a real Chrome using a persistent profile, so sites you logged into once (e.g. Amazon) "
+            "stay signed in. It auto-approves browsing, searching, adding to cart, and sign-in, and pauses "
+            "ONLY at the final purchase commit: at that point it asks you in chat/voice to confirm, and you "
+            "reply yes or no. Use this when the user wants to watch the work happen; use the direct Playwright "
+            "tools above for quick one-off navigations. Emit at most one EVA_BROWSER block per reply, and only "
+            "when the user actually asked for a browser task.\n"
             "- DESKTOP CONTROL: you can also operate the user's whole desktop by sight, including launching "
             "applications (e.g. GIMP, a file manager, an editor). For a supervised desktop task, emit a single "
             "line of the form: [[EVA_DESKTOP]]{\"goal\":\"<plain-language task, naming the app if relevant>\"}[[/EVA_DESKTOP]]. "
@@ -5815,6 +5857,12 @@ class BridgeHandler(BaseHTTPRequestHandler):
             "browser or a direct answer handles better. Emit at most one EVA_DESKTOP block per reply, and only "
             "when the user actually asked to do something on the desktop. Do NOT say you cannot open or control "
             "desktop applications.\n"
+            "- USE THE EXISTING BROWSER: for reliable web tasks (shopping, add to cart, fill a form), prefer "
+            "the EVA_BROWSER agent: it controls the page through the DOM so its clicks are precise, and it uses "
+            "a persistent Chrome profile, so after the user signs in once it stays logged in across runs. Only "
+            "when the user specifically insists on their CURRENTLY-open browser window use the DESKTOP agent "
+            "[[EVA_DESKTOP]] with a goal telling it to focus that Chrome window and open a new tab; that drives "
+            "the real cursor by sight, so it is less precise.\n"
             "- ACT, DON'T EXPLAIN: when the user asks you to DO an actionable task (open or operate an app, run "
             "a browser flow), act on the FIRST request by emitting the appropriate marker. Do NOT instead list "
             "the manual steps for the user to follow, and do NOT wait to be told 'do it yourself' — describing "
@@ -6826,6 +6874,20 @@ class BridgeHandler(BaseHTTPRequestHandler):
             return
         text = str(result.get("text", "") or "").strip()
         self._json_response(200, {"text": text, "model": detail})
+
+    # -- Client preferences (non-secret UI toggles that survive a wipe) ------
+    def _prefs_get(self):
+        self._json_response(200, _load_client_prefs())
+
+    def _prefs_set(self):
+        data, err = self._read_json_body()
+        if err:
+            self._json_response(400, {"error": {"message": err}})
+            return
+        if not isinstance(data, dict):
+            self._json_response(400, {"error": {"message": "expected an object"}})
+            return
+        self._json_response(200, _save_client_prefs(data))
 
     def _json_response(self, status, data):
         body = json.dumps(data).encode("utf-8")

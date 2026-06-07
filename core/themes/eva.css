@@ -991,11 +991,16 @@ body.theme-lcars .vv-log-stream { color: rgba(255,170,90,0.09); }
 .vv-vision.open { opacity: 1; }
 .vv-vision-frame {
   width: 100%;
+  /* Reserve height so the panel never collapses while an HTTP screenshot is
+     still loading. The camera uses an instant data URL; the browser/desktop
+     agent screenshots arrive over HTTP and would otherwise render as a
+     0-height box, hiding what Eva sees. */
+  min-height: 150px;
   border-radius: 10px;
   overflow: hidden;
   border: 1px solid rgba(120,200,255,0.18);
   box-shadow: 0 0 26px rgba(80,160,255,0.10);
-  background: rgba(8,14,26,0.35);
+  background: rgba(8,14,26,0.45);
   /* Soft edge so it blends into the dark field rather than reading as a hard box. */
   -webkit-mask-image: radial-gradient(ellipse at center, #000 60%, transparent 100%);
   mask-image: radial-gradient(ellipse at center, #000 60%, transparent 100%);
@@ -1003,8 +1008,8 @@ body.theme-lcars .vv-log-stream { color: rgba(255,170,90,0.09); }
 .vv-vision-shot {
   width: 100%;
   display: block;
-  opacity: 0.5;
-  filter: saturate(0.85) contrast(1.02);
+  opacity: 0.62;
+  filter: saturate(0.9) contrast(1.02);
 }
 .vv-vision-text {
   width: 100%;
@@ -1012,7 +1017,7 @@ body.theme-lcars .vv-log-stream { color: rgba(255,170,90,0.09); }
   font-family: "SF Mono", "Fira Code", "Courier New", monospace;
   font-size: 11px;
   line-height: 1.5;
-  color: rgba(150,210,255,0.32);
+  color: rgba(150,210,255,0.42);
   white-space: pre-wrap;
   max-height: 120px;
   overflow: hidden;

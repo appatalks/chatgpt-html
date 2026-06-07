@@ -22,7 +22,7 @@
 (function (global) {
   'use strict';
 
-  var POLL_MS = 800;
+  var POLL_MS = 5000;
   var _state = {
     enabled: false,            // presence mode on (worker running + polling)
     poll: null,
@@ -170,7 +170,7 @@
   // --- Eva's eyes (look on demand) -----------------------------------------
 
   async function _getFrameDataUrl() {
-    var resp = await fetch(bridgeBase() + '/v1/camera/frame?t=' + Date.now());
+    var resp = await fetch(bridgeBase() + '/v1/camera/frame?t=' + Date.now(), { cache: 'no-store' });
     if (!resp.ok) return null;
     var blob = await resp.blob();
     return await new Promise(function (resolve) {
@@ -179,6 +179,29 @@
       fr.onerror = function () { resolve(null); };
       fr.readAsDataURL(blob);
     });
+  }
+
+  // Current published frame sequence (increments once per captured frame).
+  async function _frameSeq() {
+    try {
+      var resp = await fetch(bridgeBase() + '/v1/camera/status', { cache: 'no-store' });
+      if (!resp.ok) return -1;
+      var s = await resp.json();
+      return (typeof s.frame_seq === 'number') ? s.frame_seq : -1;
+    } catch (e) { return -1; }
+  }
+
+  // Wait until the worker has published `advance` new frames since baseSeq, so
+  // the next fetched frame is guaranteed live (not a stale/cached image).
+  async function _waitForNewFrame(baseSeq, advance, timeoutMs) {
+    if (baseSeq < 0) return false; // worker has no seq yet; caller falls back
+    var deadline = Date.now() + (timeoutMs || 6000);
+    while (Date.now() < deadline) {
+      await _sleep(200);
+      var seq = await _frameSeq();
+      if (seq >= 0 && seq >= baseSeq + advance) return true;
+    }
+    return false;
   }
 
   function _sleep(ms) { return new Promise(function (r) { setTimeout(r, ms); }); }
@@ -322,19 +345,26 @@
     try {
       var key = openaiKey();
 
-      // Ensure the camera is running long enough to produce a fresh frame.
+      // Always capture a GENUINELY FRESH frame. The worker publishes a
+      // frame_seq that increments per captured frame; wait until it advances
+      // past the value seen when the look began so we never describe a stale or
+      // cached image (the repeated "old image" problem).
       var dataUrl = null;
       if (!_state.enabled) {
         var ok = await enableOneShot();
         if (!ok) throw new Error('I could not access the camera.');
         startedHere = true;
-        for (var i = 0; i < 16 && !dataUrl; i++) {
+      }
+      var baseSeq = await _frameSeq();
+      // Wait for at least 2 new frames so the published image is current.
+      var fresh = await _waitForNewFrame(baseSeq, 2, 6000);
+      if (fresh) dataUrl = await _getFrameDataUrl();
+      // Fallbacks if the seq never advanced (older worker / odd driver).
+      if (!dataUrl) {
+        for (var i = 0; i < 8 && !dataUrl; i++) {
           await _sleep(250);
           dataUrl = await _getFrameDataUrl();
         }
-      } else {
-        dataUrl = await _getFrameDataUrl();
-        if (!dataUrl) { await _sleep(400); dataUrl = await _getFrameDataUrl(); }
       }
       if (!dataUrl) throw new Error('I could not get a picture from the camera.');
 

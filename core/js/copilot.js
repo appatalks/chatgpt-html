@@ -445,6 +445,17 @@ async function autoApplySavedMCPConfig() {
           saved = restored;
           localStorage.setItem('mcp_config', JSON.stringify(saved));
           populateMCPForm(saved);
+          // localStorage was wiped (e.g. an app rebuild), so the first-run
+          // setup modal may have already popped before this async restore.
+          // Now that the saved Kusto config is back, dismiss it and mark setup
+          // done so the user is not asked to reconfigure something they have.
+          try {
+            var _k = restored['kusto-mcp-server'];
+            if (_k && _k.env && _k.env.KUSTO_CLUSTER_URL) {
+              localStorage.setItem('eva_standalone_first_run_done', '1');
+              if (typeof hideStandaloneFirstRunModal === 'function') hideStandaloneFirstRunModal();
+            }
+          } catch (_e) {}
         }
       }
     } catch (e) {
