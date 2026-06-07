@@ -23,7 +23,9 @@
     runId: null,
     poll: null,
     status: null,
-    shotTick: 0
+    shotTick: 0,
+    endpoint: '/v1/browser',   // bridge path prefix for the active run type
+    title: 'Browser Agent'
   };
 
   // --- Bridge helpers -------------------------------------------------------
@@ -159,7 +161,7 @@
     if (subEl) subEl.textContent = status.subgoal ? ('Plan: ' + status.subgoal) : '';
 
     var urlEl = document.getElementById('ebpUrl');
-    if (urlEl) urlEl.textContent = status.title || status.url || '';
+    if (urlEl) urlEl.textContent = status.title || status.url || status.active_app || status.screen || '';
 
     var badge = document.getElementById('ebpBadge');
     if (badge) {
@@ -180,7 +182,7 @@
                 status.status === 'awaiting_confirmation' || status.status === 'awaiting_input' ||
                 status.status === 'done');
     if (!live) return;
-    var url = bridgeBase() + '/v1/browser/screenshot?run_id=' +
+    var url = bridgeBase() + _state.endpoint + '/screenshot?run_id=' +
               encodeURIComponent(status.id) + '&t=' + (_state.shotTick++);
     img.src = url;
   }
@@ -257,18 +259,21 @@
   async function launch(goal, opts) {
     opts = opts || {};
     goal = (goal || '').trim();
+    _state.endpoint = opts.endpoint || '/v1/browser';
+    _state.title = opts.title || 'Browser Agent';
     if (!goal) {
-      setChatStatus('error', 'Browser agent: no goal provided.');
+      setChatStatus('error', _state.title + ': no goal provided.');
       return;
     }
     var key = openaiKey();
     if (!key) {
-      setChatStatus('error', 'Browser agent needs an OpenAI key (Settings > Auth).');
+      setChatStatus('error', _state.title + ' needs an OpenAI key (Settings > Auth).');
       return;
     }
 
     closePopup(); // one run at a time
     ensurePopup();
+    _applyTitle();
     render({ id: '', goal: goal, status: 'starting', step: 0 });
 
     var body = {
@@ -282,7 +287,7 @@
     if (opts.max_steps) body.max_steps = opts.max_steps;
 
     try {
-      var resp = await fetch(bridgeBase() + '/v1/browser/run', {
+      var resp = await fetch(bridgeBase() + _state.endpoint + '/run', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body)
@@ -290,18 +295,23 @@
       var data = await resp.json();
       if (!resp.ok) {
         var msg = (data && data.error && data.error.message) || ('HTTP ' + resp.status);
-        setChatStatus('error', 'Browser agent: ' + msg);
+        setChatStatus('error', _state.title + ': ' + msg);
         render({ id: '', goal: goal, status: 'error', error: msg });
         return;
       }
       _state.runId = data.id;
       render(data);
       startPolling();
-      setChatStatus('info', 'Browser agent started.');
+      setChatStatus('info', _state.title + ' started.');
     } catch (e) {
-      setChatStatus('error', 'Browser agent could not reach the bridge.');
+      setChatStatus('error', _state.title + ' could not reach the bridge.');
       render({ id: '', goal: goal, status: 'error', error: String(e) });
     }
+  }
+
+  function _applyTitle() {
+    var t = document.querySelector('#evaBrowserPopup .ebp-title');
+    if (t) t.innerHTML = 'Eva &middot; ' + _state.title;
   }
 
   function startPolling() {
@@ -320,7 +330,7 @@
   async function pollOnce() {
     if (!_state.runId) return;
     try {
-      var resp = await fetch(bridgeBase() + '/v1/browser/status?run_id=' +
+      var resp = await fetch(bridgeBase() + _state.endpoint + '/status?run_id=' +
         encodeURIComponent(_state.runId), { signal: AbortSignal.timeout(8000) });
       if (!resp.ok) return;
       var status = await resp.json();
@@ -336,7 +346,7 @@
   async function confirmRun(approve, text) {
     if (!_state.runId) return;
     try {
-      await fetch(bridgeBase() + '/v1/browser/confirm', {
+      await fetch(bridgeBase() + _state.endpoint + '/confirm', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ run_id: _state.runId, approve: approve, text: text || '' })
@@ -353,7 +363,7 @@
   async function stopRun() {
     if (!_state.runId) { closePopup(); return; }
     try {
-      await fetch(bridgeBase() + '/v1/browser/cancel', {
+      await fetch(bridgeBase() + _state.endpoint + '/cancel', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ run_id: _state.runId })
@@ -370,6 +380,19 @@
 
   global.EvaBrowser = {
     launch: launch,
+    isActive: isActive,
+    close: closePopup
+  };
+
+  // Desktop ('computer use') agent reuses the same popup + controller, pointed
+  // at the bridge's /v1/desktop endpoints.
+  global.EvaDesktop = {
+    launch: function (goal, opts) {
+      opts = opts || {};
+      opts.endpoint = '/v1/desktop';
+      opts.title = opts.title || 'Desktop Agent';
+      return launch(goal, opts);
+    },
     isActive: isActive,
     close: closePopup
   };

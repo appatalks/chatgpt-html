@@ -1984,8 +1984,8 @@ async function _vvPollLogStream() {
       div.textContent = String(ln.text || '');
       el.appendChild(div);
     });
-    // Cap the rendered backlog so the DOM stays light.
-    while (el.childNodes.length > 60) el.removeChild(el.firstChild);
+    // Cap the rendered backlog so the small corner box stays light.
+    while (el.childNodes.length > 24) el.removeChild(el.firstChild);
     el.scrollTop = el.scrollHeight;
   } catch (_) {
     // Bridge unreachable or logs unavailable; stay quiet.
@@ -4712,6 +4712,22 @@ async function renderEvaResponse(content, txtOutput) {
     text = text.replace(/\n{3,}/g, '\n\n').trim();
   }
 
+  // Detect Eva desktop-agent launch marker:
+  // [[EVA_DESKTOP]]{"goal":"..."}[[/EVA_DESKTOP]]
+  var desktopLaunch = null;
+  text = text.replace(/\[\[EVA_DESKTOP\]\]\s*(\{[\s\S]*?\})\s*\[\[\/EVA_DESKTOP\]\]/, function (full, json) {
+    if (!desktopLaunch) {
+      try {
+        var parsed = JSON.parse(json);
+        if (parsed && parsed.goal) desktopLaunch = parsed;
+      } catch (e) { /* ignore malformed block */ }
+    }
+    return desktopLaunch ? '\n_Opening the desktop agent…_\n' : '';
+  });
+  if (desktopLaunch) {
+    text = text.replace(/\n{3,}/g, '\n\n').trim();
+  }
+
   text = text.replace(/^\s*\[\[EVA_FILE\]\]\s+([A-Za-z0-9._-]{1,128})\s*$/gm, function(fullMatch, filename) {
     artifactNames.push(filename);
     return '';
@@ -4870,6 +4886,14 @@ async function renderEvaResponse(content, txtOutput) {
       start_url: browserLaunch.start_url,
       vision_model: browserLaunch.vision_model,
       max_steps: browserLaunch.max_steps
+    });
+  }
+
+  // Launch the desktop ("computer use") agent if Eva requested it.
+  if (desktopLaunch && typeof EvaDesktop !== 'undefined' && EvaDesktop && typeof EvaDesktop.launch === 'function') {
+    EvaDesktop.launch(desktopLaunch.goal, {
+      vision_model: desktopLaunch.vision_model,
+      max_steps: desktopLaunch.max_steps
     });
   }
 

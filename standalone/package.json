@@ -41,6 +41,7 @@
           "core/**",
           "tools/acp_bridge.py",
           "tools/browser_agent.py",
+          "tools/desktop_agent.py",
           "tools/kusto_mcp.py",
           "tools/eva_seed.kql",
           "!config.json",
