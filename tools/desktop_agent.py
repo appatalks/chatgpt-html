@@ -262,10 +262,11 @@ def _parse_action(raw):
 # ---------------------------------------------------------------------------
 
 def _is_sensitive(action):
-    kind = action.get("action")
-    # Launching any application is a notable action; always confirm it.
-    if kind == "launch_app":
-        return True
+    # Launching a PATH-resolved application with no shell is low-risk, and
+    # gating every launch made the agent feel stuck behind an approval prompt.
+    # Launches now proceed automatically; the destructive-intent scan below
+    # still gates genuinely risky actions (delete, shutdown, purchase, etc.),
+    # including a launch whose name/args carry destructive intent.
     probe = " ".join(str(action.get(k, "")) for k in ("reason", "text", "question", "app"))
     if isinstance(action.get("keys"), list):
         probe += " " + " ".join(str(k) for k in action["keys"])
@@ -337,11 +338,57 @@ def _norm_key(k):
     return _KEY_ALIASES.get(k, k)
 
 
+# Common friendly names that vision models reach for, mapped to the candidate
+# binaries that actually exist across desktops. The first candidate found on
+# PATH wins, so this works regardless of which desktop environment is installed.
+_APP_ALIASES = {
+    "calculator": ["gnome-calculator", "kcalc", "qalculate-gtk", "galculator", "mate-calc", "xcalc"],
+    "calc": ["gnome-calculator", "kcalc", "qalculate-gtk", "galculator", "mate-calc", "xcalc"],
+    "files": ["nautilus", "dolphin", "nemo", "thunar", "pcmanfm", "caja"],
+    "file manager": ["nautilus", "dolphin", "nemo", "thunar", "pcmanfm", "caja"],
+    "filemanager": ["nautilus", "dolphin", "nemo", "thunar", "pcmanfm", "caja"],
+    "terminal": ["gnome-terminal", "konsole", "xterm", "alacritty", "kitty", "xfce4-terminal"],
+    "text editor": ["gedit", "kate", "gnome-text-editor", "mousepad", "xed"],
+    "editor": ["gedit", "kate", "gnome-text-editor", "mousepad", "xed"],
+    "browser": ["firefox", "google-chrome", "chromium", "chromium-browser", "brave-browser"],
+    "web browser": ["firefox", "google-chrome", "chromium", "chromium-browser", "brave-browser"],
+    "screenshot": ["gnome-screenshot", "spectacle", "flameshot", "scrot"],
+    "image editor": ["gimp", "krita", "pinta"],
+    "paint": ["gimp", "krita", "pinta", "kolourpaint"],
+    "settings": ["gnome-control-center", "systemsettings5", "systemsettings"],
+}
+
+
+def _resolve_app_binary(app):
+    """Resolve a friendly or exact app name to a real binary on PATH.
+
+    Vision models reach for generic names ("calculator") that are rarely the
+    actual binary ("gnome-calculator"). Try the literal name first, then a
+    curated alias table, then a couple of common naming variants. Returns the
+    absolute binary path or None.
+    """
+    direct = shutil.which(app)
+    if direct:
+        return direct
+    key = app.strip().lower()
+    for cand in _APP_ALIASES.get(key, []):
+        found = shutil.which(cand)
+        if found:
+            return found
+    # Try common variants: gnome-<app>, hyphenated, and stripped 'app' suffix.
+    for variant in ("gnome-" + key, key.replace(" ", "-"), key.replace(" app", "").strip()):
+        if variant and variant != app:
+            found = shutil.which(variant)
+            if found:
+                return found
+    return None
+
+
 def _launch_app(action):
     app = str(action.get("app", "")).strip()
     if not app or not re.fullmatch(r"[A-Za-z0-9._+-]{1,64}", app):
         return "error: invalid app name"
-    binary = shutil.which(app)
+    binary = _resolve_app_binary(app)
     if not binary:
         return f"error: '{app}' is not installed / not on PATH"
     args = action.get("args") or []
@@ -424,9 +471,12 @@ def _worker(rec, api_key, vision_model, director, autonomy, max_steps):
                 break
 
             try:
-                img = gui.screenshot()
+                # Pass an explicit path: pyautogui's Linux backend (scrot) writes
+                # its intermediate file to the CURRENT WORKING DIRECTORY when no
+                # filename is given, which fails when cwd is read-only (e.g. an
+                # AppImage mount). Writing straight to the run dir avoids that.
                 shot_path = os.path.join(_run_dir(run_id), f"step_{step:02d}.png")
-                img.save(shot_path)
+                img = gui.screenshot(shot_path)
                 with open(shot_path, "rb") as f:
                     png = f.read()
             except Exception as e:
@@ -481,6 +531,30 @@ def _worker(rec, api_key, vision_model, director, autonomy, max_steps):
             except Exception as e:
                 result = f"error: {e}"
             _record(rec, step, shot_path, subgoal, raw, action, result)
+
+            # Loop guard: if the same action keeps producing the same result
+            # (e.g. a launch that errors, or a click that changes nothing), the
+            # executor is stuck. After a few identical repeats, stop and ask the
+            # user rather than burning the whole step budget in a tight loop.
+            sig = json.dumps(action, sort_keys=True) + "|" + str(result)
+            if sig == rec.get("_last_sig"):
+                rec["_repeat"] = rec.get("_repeat", 0) + 1
+            else:
+                rec["_repeat"] = 0
+                rec["_last_sig"] = sig
+            if rec["_repeat"] >= 2:
+                q = "I'm repeating the same step without progress"
+                if isinstance(result, str) and result.startswith("error"):
+                    q += " (" + result + ")"
+                q += ". How would you like me to proceed, or should I stop?"
+                answer = _park(rec, "awaiting_input", pending_question=q)
+                if rec["_cancel"].is_set():
+                    rec["status"] = "cancelled"
+                    break
+                rec["_repeat"] = 0
+                rec["_last_sig"] = None
+                subgoal = (subgoal + f"\nUser said: {answer}").strip()
+                rec["subgoal"] = subgoal
 
             time.sleep(0.4)
             step += 1

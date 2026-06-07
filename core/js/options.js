@@ -820,6 +820,75 @@ function injectProactiveBubble(notif) {
   txtOutput.scrollTop = txtOutput.scrollHeight;
 }
 
+// ---------------------------------------------------------------------------
+// Agent feedback loop — make Eva cognisant of what the browser/desktop agent
+// actually did. Fired once when a run reaches a terminal state. It (1) renders
+// a short Eva line summarizing the real outcome, (2) speaks it so the voice
+// view stays in sync, and (3) appends an assistant-role note to the AIG
+// conversation history so follow-up turns ("did it work?") are answered from
+// fact rather than from the intent Eva announced before acting.
+function _evaAgentFeedback(status, endpoint, title) {
+  if (!status) return;
+  var label = (title || 'task').replace(/ Agent$/, '').toLowerCase();
+  var goal = String(status.goal || '').trim();
+  var state = status.status;
+  var spoken;     // natural, spoken/chat-facing sentence
+  var memory;     // factual note for the conversation history
+
+  if (state === 'done') {
+    var res = String(status.result || '').trim();
+    // Distinguish a real completion from a user-declined sensitive action.
+    if (/^Stopped: user declined/i.test(res)) {
+      spoken = 'Okay, I held off' + (goal ? ' on ' + goal : '') + '.';
+      memory = 'Desktop/browser agent stopped: the user declined the action' + (goal ? ' for "' + goal + '"' : '') + '.';
+    } else {
+      spoken = res || ('Done' + (goal ? ' with ' + goal : '') + '.');
+      memory = 'Desktop/browser agent finished' + (goal ? ' "' + goal + '"' : '') + '. Result: ' + (res || 'completed') + '.';
+    }
+  } else if (state === 'cancelled') {
+    spoken = 'I stopped the ' + label + ' before finishing' + (goal ? ' ' + goal : '') + '.';
+    memory = 'Desktop/browser agent was cancelled' + (goal ? ' for "' + goal + '"' : '') + ' before completing.';
+  } else if (state === 'error') {
+    var err = String(status.error || 'an unknown error').trim();
+    spoken = 'I ran into a problem and could not finish' + (goal ? ' ' + goal : '') + ': ' + err + '.';
+    memory = 'Desktop/browser agent failed' + (goal ? ' on "' + goal + '"' : '') + '. Error: ' + err + '.';
+  } else {
+    return;
+  }
+
+  // 1) Render an Eva chat bubble with the real outcome.
+  var txtOutput = document.getElementById('txtOutput');
+  if (txtOutput) {
+    if (typeof hideEvaWelcome === 'function') hideEvaWelcome();
+    var safe = escapeHtml(spoken).replace(/\n/g, '<br>');
+    txtOutput.innerHTML += '<div class="chat-bubble eva-bubble"><span class="eva">Eva:</span> <div class="md">' + safe + '</div></div>';
+    txtOutput.scrollTop = txtOutput.scrollHeight;
+  }
+
+  // 2) Speak it if auto-speak is on or the voice view is open, so the spoken
+  //    narration reflects the actual result instead of the pre-action intent.
+  try {
+    var autoSpeakEl = document.getElementById('autoSpeak');
+    var voiceOpen = (typeof _vv !== 'undefined' && _vv.open);
+    if ((voiceOpen || (autoSpeakEl && autoSpeakEl.checked)) && typeof speakText === 'function') {
+      speakText(spoken);
+    }
+  } catch (_) {}
+
+  // 3) Append a factual assistant note to the AIG history so the next turn is
+  //    grounded in what really happened.
+  try {
+    var storageKey = 'aigMessages';
+    var hist = JSON.parse(localStorage.getItem(storageKey) || '[]');
+    if (Array.isArray(hist)) {
+      hist.push({ role: 'assistant', content: '[Action outcome] ' + memory });
+      localStorage.setItem(storageKey, JSON.stringify(hist));
+    }
+  } catch (_) {}
+
+  if (typeof lastResponse === 'string') lastResponse = spoken;
+}
+
 async function pollNotifications() {
   if (_notifState.polling) return;
   _notifState.polling = true;
@@ -2663,6 +2732,14 @@ function _vvHideAssets() {
 // --- Voice recognition ---
 
 function _vvToggleListening() {
+  // Guard against the desktop agent toggling Eva's own listening. While a
+  // desktop ("computer use") run is active, the agent drives the real mouse and
+  // can land a click on Eva's orb, which would silently stop her listening
+  // mid-task ("the orb went unlit on its own"). Ignore orb toggles during a run.
+  if (typeof EvaDesktop !== 'undefined' && EvaDesktop &&
+      typeof EvaDesktop.isActive === 'function' && EvaDesktop.isActive()) {
+    return;
+  }
   if (_vv.recognition || _vv.whisperMode) {
     _vvStopListening();
   } else {
@@ -2953,6 +3030,8 @@ function _vvAfterTurn() {
 // Hard-stop any TTS playback. Pausing the audio element silences the network
 // voices; cancel() stops the browser SpeechSynthesis engine.
 function _vvStopTTS() {
+  // Cancel any in-flight chunked playback so queued sentences do not resume.
+  if (typeof _ttsChunk !== 'undefined') { _ttsChunk.cancelled = true; _ttsChunk.active = false; }
   var audio = document.getElementById('audioPlayback');
   if (audio) {
     try { audio.pause(); } catch (e) {}
@@ -3068,12 +3147,50 @@ function _vvHandleTranscript(transcript) {
   }
 }
 
+// Short, varied acknowledgment phrases spoken instantly when a voice command is
+// received, before the (slower) real reply is generated and synthesized.
+var _VV_ACK_PHRASES = [
+  'On it.', 'One moment.', 'Let me take a look.', 'Working on it.',
+  'Sure, give me a second.', 'Okay, looking into that.', 'Got it.', 'Right away.'
+];
+
+// Speak an instant local acknowledgment via the browser speech synth (offline,
+// near-zero latency) regardless of the configured reply TTS engine, so there is
+// immediate audible feedback while the cognition pipeline runs. The `_ackActive`
+// flag tells the voice-view speech monitor to ignore this filler so it does not
+// count as the real reply starting.
+function _vvSpeakAck() {
+  try {
+    if (typeof window.speechSynthesis === 'undefined' ||
+        typeof window.SpeechSynthesisUtterance === 'undefined') return;
+    var phrase = _VV_ACK_PHRASES[Math.floor(Math.random() * _VV_ACK_PHRASES.length)];
+    _vv._ackActive = true;
+    if (_vv._ackTimer) { clearTimeout(_vv._ackTimer); _vv._ackTimer = null; }
+    var u = new SpeechSynthesisUtterance(phrase);
+    u.lang = 'en-US';
+    u.rate = 1.05;
+    u.pitch = 1.0;
+    u.volume = 0.9;
+    u.onend = function () { _vv._ackActive = false; };
+    u.onerror = function () { _vv._ackActive = false; };
+    try { window.speechSynthesis.cancel(); } catch (_) {}
+    window.speechSynthesis.speak(u);
+    // Safety: clear the guard even if onend never fires (some engines drop it).
+    _vv._ackTimer = setTimeout(function () { _vv._ackActive = false; }, 4000);
+  } catch (e) {
+    _vv._ackActive = false;
+  }
+}
+
 function _vvSendCommand(command) {
   _vv.lastTranscript = command;
   _vv.cmdStart = performance.now();
   if (_vv.awakeTimer) { clearTimeout(_vv.awakeTimer); _vv.awakeTimer = null; }
   _vvSetStatus('thinking');
   _vvHideAssets();
+  // Speak an instant local acknowledgment to cover pipeline + TTS latency, so
+  // the turn does not feel like dead air before the real reply is synthesized.
+  _vvSpeakAck();
 
   // Show command in transcript area
   var transcriptEl = document.getElementById('vvTranscript');
@@ -3202,7 +3319,9 @@ function _vvWatchForResponse() {
   if (synth) {
     _vv._synthPoll = setInterval(function() {
       if (finished || !_vv.open) { clearInterval(_vv._synthPoll); _vv._synthPoll = null; return; }
-      if (synth.speaking) beginSpeaking();
+      // Ignore the short acknowledgment filler so it does not flip the phase
+      // to 'speaking' before the real reply audio actually starts.
+      if (synth.speaking && !_vv._ackActive) beginSpeaking();
     }, 200);
   }
 
@@ -3245,6 +3364,18 @@ function _vvRestoreAutoSpeak() {
 
 function _vvWaitForSpeechEnd(callback) {
   var audio = document.getElementById('audioPlayback');
+
+  // Chunked TTS fires the audio element's 'ended' between sentence chunks, so
+  // wait for the whole chunk queue to drain rather than a single 'ended'.
+  if (typeof _ttsChunk !== 'undefined' && _ttsChunk.active) {
+    var chunkPoll = setInterval(function () {
+      if (!_vv.open || !_ttsChunk.active || _ttsChunk.cancelled) {
+        clearInterval(chunkPoll); setTimeout(callback, 300);
+      }
+    }, 300);
+    setTimeout(function () { clearInterval(chunkPoll); callback(); }, 600000);
+    return;
+  }
 
   var synth = window.speechSynthesis;
   if (synth && synth.speaking) {
@@ -4267,6 +4398,12 @@ function insertImage() {
 function sanitizeForSpeech(input) {
   if (input == null) return '';
   var t = String(input);
+  // Strip Eva agent/action markers so the synthesizer never reads their JSON
+  // payload aloud (e.g. [[EVA_DESKTOP]]{"goal":"..."}[[/EVA_DESKTOP]]). Remove
+  // well-formed open/close pairs first, then any stray standalone markers.
+  t = t.replace(/\[\[EVA_[A-Z]+\]\][\s\S]*?\[\[\/EVA_[A-Z]+\]\]/g, ' ');
+  t = t.replace(/\[\[\/?EVA_[A-Z]+\]\]/g, ' ');
+  t = t.replace(/\[\[\/?EVA_FILE\]\][^\n]*/g, ' ');
   // Remove only well-formed HTML tags. Stray `<` characters are preserved.
   var prev;
   do {
@@ -4298,6 +4435,116 @@ function sanitizeForSpeech(input) {
   // Collapse runs of blank lines so the synthesizer does not pause forever.
   t = t.replace(/\n{3,}/g, '\n\n');
   return t.trim();
+}
+
+// ── Chunked text-to-speech ─────────────────────────────────────────────
+// Shared state for sentence-chunked playback. Splitting a reply into sentence
+// chunks lets the first chunk start playing while later chunks are still being
+// synthesized, so spoken replies begin far sooner than waiting for the whole
+// audio blob. The voice view consults `_ttsChunk.active` to know when the
+// entire reply (not just the first chunk) has finished.
+var _ttsChunk = { active: false, cancelled: false, _audio: null, _onEnded: null };
+
+// Split text into ordered chunks for incremental synthesis. The first sentence
+// is its own chunk for the fastest possible start; the rest are packed up to a
+// soft character budget so longer replies are not over-fragmented.
+function _ttsSplitChunks(text) {
+  var clean = String(text || '').replace(/\s+/g, ' ').trim();
+  if (!clean) return [];
+  var sentences = clean.match(/[^.!?…]+[.!?…]+(?:["')\]]+)?|[^.!?…]+$/g) || [clean];
+  sentences = sentences.map(function (s) { return s.trim(); }).filter(Boolean);
+  if (sentences.length <= 1) return sentences.length ? sentences : [clean];
+  var chunks = [sentences[0]];
+  var cur = '';
+  var MAX = 240;
+  for (var i = 1; i < sentences.length; i++) {
+    var s = sentences[i];
+    if (!cur) cur = s;
+    else if (cur.length + 1 + s.length <= MAX) cur += ' ' + s;
+    else { chunks.push(cur); cur = s; }
+  }
+  if (cur) chunks.push(cur);
+  return chunks;
+}
+
+// Speak `text` via OpenAI TTS one sentence chunk at a time. Chunk N+1 is
+// synthesized while chunk N is still playing, so audio starts after the first
+// sentence rather than after the whole reply has been synthesized.
+function _ttsSpeakOpenAIChunked(text, key, voice) {
+  var audio = document.getElementById('audioPlayback');
+  var src = document.getElementById('audioSource');
+  if (!audio) return;
+  var chunks = _ttsSplitChunks(text);
+  if (!chunks.length) return;
+
+  // Tear down any previous chunked run still attached to the audio element.
+  if (_ttsChunk._onEnded && _ttsChunk._audio) {
+    try { _ttsChunk._audio.removeEventListener('ended', _ttsChunk._onEnded); } catch (_) {}
+  }
+
+  var urls = new Array(chunks.length);     // object URLs once synthesized
+  var fetches = new Array(chunks.length);  // in-flight synthesis promises
+  var idx = 0;
+
+  _ttsChunk.cancelled = false;
+  _ttsChunk.active = true;
+  _ttsChunk._audio = audio;
+
+  function synth(i) {
+    if (i < 0 || i >= chunks.length) return Promise.resolve();
+    if (urls[i]) return Promise.resolve(urls[i]);
+    if (fetches[i]) return fetches[i];
+    fetches[i] = fetch('https://api.openai.com/v1/audio/speech', {
+      method: 'POST',
+      headers: { 'Authorization': 'Bearer ' + key, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ model: 'gpt-4o-mini-tts', voice: voice, input: chunks[i], response_format: 'mp3' })
+    }).then(function (resp) {
+      if (!resp.ok) return resp.text().then(function (t) { throw new Error('OpenAI TTS ' + resp.status + ': ' + t.slice(0, 200)); });
+      return resp.blob();
+    }).then(function (blob) { urls[i] = URL.createObjectURL(blob); return urls[i]; });
+    return fetches[i];
+  }
+
+  function finish() {
+    if (!_ttsChunk.active) return;
+    _ttsChunk.active = false;
+    try { audio.removeEventListener('ended', onEnded); } catch (_) {}
+    _ttsChunk._onEnded = null;
+    for (var i = 0; i < urls.length; i++) { if (urls[i]) { try { URL.revokeObjectURL(urls[i]); } catch (_) {} } }
+  }
+
+  function onEnded() {
+    if (_ttsChunk.cancelled) { finish(); return; }
+    if (idx + 1 < chunks.length) playFrom(idx + 1);
+    else finish();
+  }
+
+  function playFrom(i) {
+    if (_ttsChunk.cancelled) { finish(); return; }
+    if (i >= chunks.length) { finish(); return; }
+    idx = i;
+    synth(i).then(function () {
+      if (_ttsChunk.cancelled) { finish(); return; }
+      synth(i + 1); // prefetch the next chunk while this one plays
+      if (src) src.src = urls[i];
+      audio.load();
+      audio.setAttribute('autoplay', 'true');
+      try { audio.play(); } catch (_) {}
+    }).catch(function (err) {
+      console.warn('OpenAI TTS chunk error:', err && err.message ? err.message : err);
+      var resEl = document.getElementById('result');
+      if (idx === 0 && resEl) resEl.textContent = (err && err.message) ? err.message : String(err);
+      // Skip the failed chunk so one error does not kill the rest of the reply.
+      if (idx + 1 < chunks.length) playFrom(idx + 1); else finish();
+    });
+  }
+
+  var resultEl0 = document.getElementById('result');
+  if (resultEl0) resultEl0.textContent = '';
+  _ttsChunk._onEnded = onEnded;
+  audio.addEventListener('ended', onEnded);
+  synth(0); synth(1);
+  playFrom(0);
 }
 
 function speakText() {
@@ -4373,40 +4620,9 @@ function speakText() {
         Tatyana: 'shimmer'
       };
       var oaVoice = openaiVoiceMap[speechParams.VoiceId] || 'nova';
-      fetch('https://api.openai.com/v1/audio/speech', {
-        method: 'POST',
-        headers: {
-          'Authorization': 'Bearer ' + openaiKey,
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-          model: 'gpt-4o-mini-tts',
-          voice: oaVoice,
-          input: speechParams.Text,
-          response_format: 'mp3'
-        })
-      }).then(function(resp) {
-        if (!resp.ok) {
-          return resp.text().then(function(t) { throw new Error('OpenAI TTS ' + resp.status + ': ' + t.slice(0, 200)); });
-        }
-        return resp.blob();
-      }).then(function(blob) {
-        var url = URL.createObjectURL(blob);
-        var src = document.getElementById('audioSource');
-        var audio = document.getElementById('audioPlayback');
-        if (src) src.src = url;
-        if (audio) {
-          audio.load();
-          audio.setAttribute('autoplay', 'true');
-          try { audio.play(); } catch (_) {}
-        }
-        var resultEl2 = document.getElementById('result');
-        if (resultEl2) resultEl2.textContent = '';
-      }).catch(function(err) {
-        var resultEl3 = document.getElementById('result');
-        var msg3 = (err && err.message) ? err.message : String(err);
-        if (resultEl3) resultEl3.textContent = msg3; else console.warn('OpenAI TTS error:', msg3);
-      });
+      // Sentence-chunked playback: start speaking the first sentence while the
+      // rest is still being synthesized, instead of waiting for the whole blob.
+      _ttsSpeakOpenAIChunked(speechParams.Text, openaiKey, oaVoice);
       return;
     }
 
@@ -4885,7 +5101,8 @@ async function renderEvaResponse(content, txtOutput) {
     EvaBrowser.launch(browserLaunch.goal, {
       start_url: browserLaunch.start_url,
       vision_model: browserLaunch.vision_model,
-      max_steps: browserLaunch.max_steps
+      max_steps: browserLaunch.max_steps,
+      onComplete: _evaAgentFeedback
     });
   }
 
@@ -4893,7 +5110,8 @@ async function renderEvaResponse(content, txtOutput) {
   if (desktopLaunch && typeof EvaDesktop !== 'undefined' && EvaDesktop && typeof EvaDesktop.launch === 'function') {
     EvaDesktop.launch(desktopLaunch.goal, {
       vision_model: desktopLaunch.vision_model,
-      max_steps: desktopLaunch.max_steps
+      max_steps: desktopLaunch.max_steps,
+      onComplete: _evaAgentFeedback
     });
   }
 

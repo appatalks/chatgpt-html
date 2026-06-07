@@ -25,7 +25,9 @@
     status: null,
     shotTick: 0,
     endpoint: '/v1/browser',   // bridge path prefix for the active run type
-    title: 'Browser Agent'
+    title: 'Browser Agent',
+    onComplete: null,          // fired once when a run reaches a terminal state
+    completed: false
   };
 
   // --- Bridge helpers -------------------------------------------------------
@@ -261,6 +263,8 @@
     goal = (goal || '').trim();
     _state.endpoint = opts.endpoint || '/v1/browser';
     _state.title = opts.title || 'Browser Agent';
+    _state.onComplete = (typeof opts.onComplete === 'function') ? opts.onComplete : null;
+    _state.completed = false;
     if (!goal) {
       setChatStatus('error', _state.title + ': no goal provided.');
       return;
@@ -337,6 +341,14 @@
       render(status);
       if (status.status === 'done' || status.status === 'cancelled' || status.status === 'error') {
         stopPolling();
+        // Fire the completion hook exactly once so the caller (Eva) can become
+        // aware of the actual outcome and acknowledge it.
+        if (!_state.completed) {
+          _state.completed = true;
+          if (typeof _state.onComplete === 'function') {
+            try { _state.onComplete(status, _state.endpoint, _state.title); } catch (e) {}
+          }
+        }
       }
     } catch (e) {
       // transient; keep polling

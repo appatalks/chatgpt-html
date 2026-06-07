@@ -5750,11 +5750,17 @@ class BridgeHandler(BaseHTTPRequestHandler):
             "applications (e.g. GIMP, a file manager, an editor). For a supervised desktop task, emit a single "
             "line of the form: [[EVA_DESKTOP]]{\"goal\":\"<plain-language task, naming the app if relevant>\"}[[/EVA_DESKTOP]]. "
             "A floating window opens, a vision model sees the screen and launches/clicks/types via the real "
-            "mouse and keyboard, and it pauses for your approval before launching an app or any destructive "
-            "action. Use this for genuine desktop tasks (\"open GIMP and create a picture\"), not for things a "
+            "mouse and keyboard. It opens apps automatically and only pauses for your approval before a "
+            "genuinely destructive action. Use this for genuine desktop tasks (\"open GIMP and create a picture\"), not for things a "
             "browser or a direct answer handles better. Emit at most one EVA_DESKTOP block per reply, and only "
             "when the user actually asked to do something on the desktop. Do NOT say you cannot open or control "
-            "desktop applications.\n\n"
+            "desktop applications.\n"
+            "- ACT, DON'T EXPLAIN: when the user asks you to DO an actionable task (open or operate an app, run "
+            "a browser flow), act on the FIRST request by emitting the appropriate marker. Do NOT instead list "
+            "the manual steps for the user to follow, and do NOT wait to be told 'do it yourself' — describing "
+            "the steps instead of doing it is a failure. Before the marker, write ONE short present/future-tense "
+            "sentence announcing what you are about to do (\"I'm opening GIMP and starting a new canvas now.\"), "
+            "not a past-tense report after the fact. The agent then carries out the task.\n\n"
         )
 
         if no_tools:
