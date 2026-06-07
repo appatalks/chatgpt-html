@@ -1544,7 +1544,9 @@ body.theme-lcars .mic-sending { background-color: var(--ld-arctic-ice) !importan
   bottom: 24px;
   width: 380px;
   max-width: calc(100vw - 32px);
-  z-index: 4000;
+  /* Above the fullscreen voice view (z-index 10000) so the agent's live view
+     and its Approve/Decline prompt are never hidden behind the orb overlay. */
+  z-index: 10001;
   display: flex;
   flex-direction: column;
   background: #1a1e2e;

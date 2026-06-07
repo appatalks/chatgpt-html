@@ -251,6 +251,13 @@ register_dependencies() {
     queue "Playwright Chromium browser" "$PYTHON -m playwright install chromium"
   fi
 
+  hr; info "Desktop agent (computer use)"; hr
+  if have_pymod pyautogui; then
+    ok "pyautogui present"; PRESENT_COUNT=$((PRESENT_COUNT+1))
+  else
+    queue "pyautogui (desktop control)" "$(pip_install_cmd pyautogui)"
+  fi
+
   if [ "$WANT_SKILL_DEPS" = "1" ]; then
     hr; info "Skill toolchains (PDF / office / OCR)"; hr
     need_pymod pypdf       pypdf       "pypdf (PDF read/merge/split)"

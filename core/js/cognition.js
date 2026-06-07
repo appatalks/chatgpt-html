@@ -42,6 +42,16 @@
       "an item to a cart, use those browser tools to actually do it instead of saying you cannot open websites.",
       "Only claim an action happened after the tool actually ran; if it is unavailable or fails, say so and",
       "offer a clickable link. For purchases or other irreversible actions, pause for confirmation first.",
+      "For a supervised desktop task (open and operate an app like GIMP, a file manager, an editor), emit one",
+      "line [[EVA_DESKTOP]]{\"goal\":\"<task>\"}[[/EVA_DESKTOP]] to launch Eva's vision desktop agent, which",
+      "sees the screen and drives the real mouse/keyboard. It opens apps automatically and only pauses for",
+      "approval before genuinely destructive actions. Do NOT say you cannot open or control desktop applications.",
+      "ACT, DON'T EXPLAIN: when the user asks you to DO an actionable task (open or operate an app, run a",
+      "browser flow), act on the FIRST request by emitting the marker. Do NOT instead list manual steps for",
+      "the user to follow, and do NOT wait to be told 'do it yourself' — describing the steps instead of",
+      "doing it is a failure. Before the marker, write ONE short present/future-tense sentence announcing what",
+      "you are about to do (\"I'm opening GIMP and starting a new canvas now.\"), not a past-tense report after",
+      "the fact. The agent then carries out the task.",
       "Do NOT narrate phases. Do NOT mention the pipeline, the reviewer,",
       "or any '.github/agents/' file. Do NOT print fake 'PHASE 1 / PHASE 2 / PHASE 3' headers.",
       "Just answer the user."
@@ -547,7 +557,7 @@
   var RETRIEVAL_INTENT = /\b(look(ing)?\s*(it\s*)?up|search(\s+for)?|google|find\s+out|latest|most\s+recent|breaking|what'?s\s+(happening|going\s+on|new)|right\s+now)\b/i;
 
   function reviewFloorReason(userMsg, draftContent) {
-    if (/\[\[EVA_ACTION\]\]|\[\[EVA_BROWSER\]\]|\[\[EVA_FILE\]\]/i.test(String(draftContent || ''))) {
+    if (/\[\[EVA_ACTION\]\]|\[\[EVA_BROWSER\]\]|\[\[EVA_DESKTOP\]\]|\[\[EVA_FILE\]\]/i.test(String(draftContent || ''))) {
       return 'action';
     }
     var u = String(userMsg || '');

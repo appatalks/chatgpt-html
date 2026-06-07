@@ -51,6 +51,13 @@ except Exception as _ba_err:  # pragma: no cover - defensive
     _BROWSER_AGENT = None
     print(f"[Bridge] Browser agent module unavailable: {_ba_err}")
 
+# Vision desktop agent (pyautogui is imported lazily inside the module).
+try:
+    import desktop_agent as _DESKTOP_AGENT
+except Exception as _da_err:  # pragma: no cover - defensive
+    _DESKTOP_AGENT = None
+    print(f"[Bridge] Desktop agent module unavailable: {_da_err}")
+
 # ---------------------------------------------------------------------------
 # ACP Client — manages the copilot subprocess and JSON-RPC communication
 # ---------------------------------------------------------------------------
@@ -4505,6 +4512,10 @@ class BridgeHandler(BaseHTTPRequestHandler):
             self._browser_status()
         elif parsed_path == "/v1/browser/screenshot":
             self._browser_screenshot()
+        elif parsed_path == "/v1/desktop/status":
+            self._desktop_status()
+        elif parsed_path == "/v1/desktop/screenshot":
+            self._desktop_screenshot()
         elif parsed_path.startswith("/v1/files/"):
             requested_name = urllib.parse.unquote(parsed_path.split("/v1/files/", 1)[1])
             self._serve_artifact(requested_name)
@@ -4525,6 +4536,12 @@ class BridgeHandler(BaseHTTPRequestHandler):
             self._telemetry_ingest()
         elif parsed_path == "/v1/browser/run":
             self._browser_run()
+        elif parsed_path == "/v1/desktop/run":
+            self._desktop_run()
+        elif parsed_path == "/v1/desktop/confirm":
+            self._desktop_confirm()
+        elif parsed_path == "/v1/desktop/cancel":
+            self._desktop_cancel()
         elif parsed_path == "/v1/browser/confirm":
             self._browser_confirm()
         elif parsed_path == "/v1/browser/cancel":
@@ -5728,7 +5745,22 @@ class BridgeHandler(BaseHTTPRequestHandler):
             "A floating Eva-themed window opens, drives a real Chromium with screenshots, and pauses for the "
             "user's approval before any purchase or sign-in. Use this when the user wants to watch the work "
             "happen; use the direct Playwright tools above for quick one-off navigations. Emit at most one "
-            "EVA_BROWSER block per reply, and only when the user actually asked for a browser task.\n\n"
+            "EVA_BROWSER block per reply, and only when the user actually asked for a browser task.\n"
+            "- DESKTOP CONTROL: you can also operate the user's whole desktop by sight, including launching "
+            "applications (e.g. GIMP, a file manager, an editor). For a supervised desktop task, emit a single "
+            "line of the form: [[EVA_DESKTOP]]{\"goal\":\"<plain-language task, naming the app if relevant>\"}[[/EVA_DESKTOP]]. "
+            "A floating window opens, a vision model sees the screen and launches/clicks/types via the real "
+            "mouse and keyboard. It opens apps automatically and only pauses for your approval before a "
+            "genuinely destructive action. Use this for genuine desktop tasks (\"open GIMP and create a picture\"), not for things a "
+            "browser or a direct answer handles better. Emit at most one EVA_DESKTOP block per reply, and only "
+            "when the user actually asked to do something on the desktop. Do NOT say you cannot open or control "
+            "desktop applications.\n"
+            "- ACT, DON'T EXPLAIN: when the user asks you to DO an actionable task (open or operate an app, run "
+            "a browser flow), act on the FIRST request by emitting the appropriate marker. Do NOT instead list "
+            "the manual steps for the user to follow, and do NOT wait to be told 'do it yourself' — describing "
+            "the steps instead of doing it is a failure. Before the marker, write ONE short present/future-tense "
+            "sentence announcing what you are about to do (\"I'm opening GIMP and starting a new canvas now.\"), "
+            "not a past-tense report after the fact. The agent then carries out the task.\n\n"
         )
 
         if no_tools:
@@ -6516,6 +6548,115 @@ class BridgeHandler(BaseHTTPRequestHandler):
             return
         run_id = (data.get("run_id") or "").strip()
         ok = bool(_BROWSER_AGENT) and _BROWSER_AGENT.cancel(run_id)
+        self._json_response(200 if ok else 404, {"ok": ok})
+
+    # ── Desktop agent (computer use) ──────────────────────────────────
+    def _make_desktop_director(self):
+        """Wire Claude (via ACP) as the text-only director for the desktop agent."""
+        client = acp_client
+        if not client:
+            return None
+
+        def director(goal, state):
+            prompt = (
+                "You are the director for a desktop automation agent. You plan; a "
+                "separate vision model looks at the screen, launches apps, clicks, "
+                "and types.\n"
+                f"User goal: {goal}\n"
+                f"Current state: {state}\n"
+                "Reply with ONE short imperative subgoal (a single sentence) for the "
+                "executor's next few actions. No preamble, no markdown, no lists."
+            )
+            try:
+                res = client.prompt(prompt, timeout=60)
+                if isinstance(res, dict):
+                    return (res.get("text") or "").strip()[:300]
+            except Exception as e:
+                print(f"[Bridge] desktop director prompt failed: {e}")
+            return ""
+
+        return director
+
+    def _desktop_run(self):
+        data, err = self._read_json_body()
+        if err:
+            self._json_response(400, {"error": {"message": err}})
+            return
+        if _DESKTOP_AGENT is None:
+            self._json_response(503, {"error": {"message": "Desktop agent module not loaded"}})
+            return
+        ok, detail = _DESKTOP_AGENT.pyautogui_available()
+        if not ok:
+            self._json_response(503, {"error": {"message":
+                detail + ". Install with: python3 -m pip install --user --break-system-packages pyautogui"}})
+            return
+        api_key = _set_openai_key_from(data)
+        use_director = data.get("use_director", True)
+        director = self._make_desktop_director() if use_director else None
+        try:
+            status = _DESKTOP_AGENT.start_run(
+                goal=(data.get("goal") or "").strip(),
+                api_key=api_key,
+                vision_model=(data.get("vision_model") or None),
+                director=director,
+                autonomy=(data.get("autonomy") or "pause"),
+                max_steps=data.get("max_steps", 25),
+            )
+        except Exception as e:
+            self._json_response(400, {"error": {"message": str(e)}})
+            return
+        self._json_response(202, status)
+
+    def _desktop_status(self):
+        qs = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
+        run_id = (qs.get("run_id") or [""])[0]
+        status = _DESKTOP_AGENT.public_status(run_id) if _DESKTOP_AGENT else None
+        if not status:
+            self._json_response(404, {"error": {"message": "unknown run_id"}})
+            return
+        self._json_response(200, status)
+
+    def _desktop_screenshot(self):
+        qs = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
+        run_id = (qs.get("run_id") or [""])[0]
+        path = _DESKTOP_AGENT.latest_screenshot_path(run_id) if _DESKTOP_AGENT else None
+        if not path:
+            self._json_response(404, {"error": {"message": "no screenshot yet"}})
+            return
+        try:
+            with open(path, "rb") as f:
+                body = f.read()
+        except Exception:
+            self._json_response(404, {"error": {"message": "screenshot unavailable"}})
+            return
+        try:
+            self.send_response(200)
+            self._cors_headers()
+            self.send_header("Content-Type", "image/png")
+            self.send_header("Cache-Control", "no-store")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+        except BrokenPipeError:
+            pass
+
+    def _desktop_confirm(self):
+        data, err = self._read_json_body()
+        if err:
+            self._json_response(400, {"error": {"message": err}})
+            return
+        run_id = (data.get("run_id") or "").strip()
+        ok = bool(_DESKTOP_AGENT) and _DESKTOP_AGENT.resolve(
+            run_id, approve=bool(data.get("approve", True)), text=(data.get("text") or ""))
+        self._json_response(200 if ok else 404, {"ok": ok})
+
+    def _desktop_cancel(self):
+        data, err = self._read_json_body()
+        if err:
+            self._json_response(400, {"error": {"message": err}})
+            return
+        run_id = (data.get("run_id") or "").strip()
+        ok = bool(_DESKTOP_AGENT) and _DESKTOP_AGENT.cancel(run_id)
         self._json_response(200 if ok else 404, {"ok": ok})
 
     def _json_response(self, status, data):
