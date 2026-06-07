@@ -889,6 +889,36 @@ function _evaAgentFeedback(status, endpoint, title) {
   if (typeof lastResponse === 'string') lastResponse = spoken;
 }
 
+// Render + speak the result of an Eva "look" (webcam vision). Mirrors the agent
+// feedback path: a chat bubble, optional speech, and a factual history note so
+// follow-ups ("what colour was it?") are grounded in what she actually saw.
+function _evaCameraLookResult(desc) {
+  desc = String(desc || '').trim();
+  if (!desc) return;
+  var txtOutput = document.getElementById('txtOutput');
+  if (txtOutput) {
+    if (typeof hideEvaWelcome === 'function') hideEvaWelcome();
+    var safe = escapeHtml(desc).replace(/\n/g, '<br>');
+    txtOutput.innerHTML += '<div class="chat-bubble eva-bubble"><span class="eva">Eva:</span> <div class="md">' + safe + '</div></div>';
+    txtOutput.scrollTop = txtOutput.scrollHeight;
+  }
+  try {
+    var autoSpeakEl = document.getElementById('autoSpeak');
+    var voiceOpen = (typeof _vv !== 'undefined' && _vv.open);
+    if ((voiceOpen || (autoSpeakEl && autoSpeakEl.checked)) && typeof speakText === 'function') {
+      speakText(desc);
+    }
+  } catch (_) {}
+  try {
+    var hist = JSON.parse(localStorage.getItem('aigMessages') || '[]');
+    if (Array.isArray(hist)) {
+      hist.push({ role: 'assistant', content: '[Camera] I looked through the webcam and saw: ' + desc });
+      localStorage.setItem('aigMessages', JSON.stringify(hist));
+    }
+  } catch (_) {}
+  if (typeof lastResponse === 'string') lastResponse = desc;
+}
+
 async function pollNotifications() {
   if (_notifState.polling) return;
   _notifState.polling = true;
@@ -1615,6 +1645,43 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
+  // Camera presence (auto-wake): toggle the local webcam sensor. Restore the
+  // persisted choice, but only auto-start the camera if it was previously on.
+  var cameraPresenceEl = document.getElementById('cameraPresence');
+  if (cameraPresenceEl) {
+    var savedCam = false;
+    try { savedCam = localStorage.getItem('cameraPresence') === '1'; } catch (e) {}
+    cameraPresenceEl.checked = savedCam;
+    if (savedCam && typeof EvaCamera !== 'undefined' && EvaCamera) {
+      EvaCamera.enable();
+    }
+    cameraPresenceEl.addEventListener('change', function () {
+      if (typeof EvaCamera === 'undefined' || !EvaCamera) return;
+      if (cameraPresenceEl.checked) {
+        EvaCamera.enable().then(function (ok) {
+          if (!ok) cameraPresenceEl.checked = false;
+        });
+      } else {
+        EvaCamera.disable();
+      }
+    });
+  }
+
+  // Vision provider for camera "looks" (GitHub-hosted / OpenAI direct / Copilot).
+  // Persisted to the same localStorage key the camera module reads.
+  var cameraVisionProviderEl = document.getElementById('cameraVisionProvider');
+  if (cameraVisionProviderEl) {
+    var savedProvider = '';
+    try { savedProvider = localStorage.getItem('cameraVisionProvider') || ''; } catch (e) {}
+    if (savedProvider) {
+      var hasProv = Array.from(cameraVisionProviderEl.options).some(function (o) { return o.value === savedProvider; });
+      if (hasProv) cameraVisionProviderEl.value = savedProvider;
+    }
+    cameraVisionProviderEl.addEventListener('change', function () {
+      try { localStorage.setItem('cameraVisionProvider', cameraVisionProviderEl.value); } catch (e) {}
+    });
+  }
+
   function toggleSettings(event) {
     event.stopPropagation();
     var overlay = document.getElementById('settingsOverlay');
@@ -1952,6 +2019,16 @@ function closeVoiceView() {
   if (_vv._postTextTimer) { clearTimeout(_vv._postTextTimer); _vv._postTextTimer = null; }
   _vvStopBargeMonitor();
   _vvStopLogStream();
+  // Clear the embedded vision panel so a stale frame does not linger on reopen.
+  var vvVision = document.getElementById('vvVision');
+  if (vvVision) {
+    vvVision.classList.remove('open', 'looking');
+    vvVision.setAttribute('aria-hidden', 'true');
+    var vvShot = document.getElementById('vvVisionShot');
+    if (vvShot) vvShot.removeAttribute('src');
+    var vvText = document.getElementById('vvVisionText');
+    if (vvText) vvText.textContent = '';
+  }
   if (_vv._wasAutoSpeak !== undefined) {
     var autoSpeak = document.getElementById('autoSpeak');
     if (autoSpeak) autoSpeak.checked = _vv._wasAutoSpeak;
@@ -4944,6 +5021,25 @@ async function renderEvaResponse(content, txtOutput) {
     text = text.replace(/\n{3,}/g, '\n\n').trim();
   }
 
+  // Detect Eva camera "look" marker:
+  // [[EVA_LOOK]]{"question":"..."}[[/EVA_LOOK]]  (question optional)
+  var cameraLook = null;
+  text = text.replace(/\[\[EVA_LOOK\]\]\s*(\{[\s\S]*?\})?\s*\[\[\/EVA_LOOK\]\]/, function (full, json) {
+    if (!cameraLook) {
+      cameraLook = { question: '' };
+      if (json) {
+        try {
+          var parsed = JSON.parse(json);
+          if (parsed && typeof parsed.question === 'string') cameraLook.question = parsed.question;
+        } catch (e) { /* tolerate a bare marker with no JSON */ }
+      }
+    }
+    return '\n_Taking a look…_\n';
+  });
+  if (cameraLook) {
+    text = text.replace(/\n{3,}/g, '\n\n').trim();
+  }
+
   text = text.replace(/^\s*\[\[EVA_FILE\]\]\s+([A-Za-z0-9._-]{1,128})\s*$/gm, function(fullMatch, filename) {
     artifactNames.push(filename);
     return '';
@@ -5112,6 +5208,15 @@ async function renderEvaResponse(content, txtOutput) {
       vision_model: desktopLaunch.vision_model,
       max_steps: desktopLaunch.max_steps,
       onComplete: _evaAgentFeedback
+    });
+  }
+
+  // Look through the webcam if Eva requested it (Eva's eyes).
+  if (cameraLook && typeof EvaCamera !== 'undefined' && EvaCamera && typeof EvaCamera.look === 'function') {
+    EvaCamera.look(cameraLook.question).then(function (desc) {
+      _evaCameraLookResult(desc || 'I could not make out anything.');
+    }).catch(function (err) {
+      _evaCameraLookResult('I tried to look but ' + ((err && err.message) ? err.message : 'something went wrong') + '.');
     });
   }
 

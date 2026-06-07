@@ -20,6 +20,7 @@
   <script src="core/js/cognition.js"></script>
   <script src="core/js/skills.js"></script>
   <script src="core/js/browser-agent.js"></script>
+  <script src="core/js/camera.js"></script>
   <script src="core/js/aig.js"></script>
   <script src="core/js/dalle3.js"></script>
   <script src="core/js/idb-store.js"></script>
@@ -294,6 +295,22 @@
 
         <label for="autoSpeak">Auto Speak:</label>
         <input type="checkbox" id="autoSpeak">
+
+        <label for="cameraPresence">Camera presence (auto-wake):</label>
+        <input type="checkbox" id="cameraPresence">
+        <div class="auth-note" id="cameraPresenceNote" style="margin:4px 0 0;font-size:11px;opacity:0.75">
+          Eva watches the webcam locally and wakes when she sees you. Frames stay on this machine unless you ask her to look.
+        </div>
+
+        <label for="cameraVisionProvider">Vision model (when Eva looks):</label>
+        <select id="cameraVisionProvider">
+          <option value="github">GitHub-hosted gpt-4o (PAT)</option>
+          <option value="openai">OpenAI direct gpt-4o (key)</option>
+          <option value="copilot">Copilot / Claude (bridge)</option>
+        </select>
+        <div class="auth-note" id="cameraVisionNote" style="margin:4px 0 0;font-size:11px;opacity:0.75">
+          Which backend describes what Eva sees. The others are automatic fallbacks if the chosen one is unavailable.
+        </div>
 
         <hr style="margin:14px 0;border:none;border-top:1px solid rgba(127,127,127,0.25)">
         <div class="auth-note" style="margin:0">
@@ -893,6 +910,13 @@
     <button id="voiceViewClose" class="voice-view-close" type="button" aria-label="Exit voice view">&times;</button>
     <!-- Faint background log feed (bridge stdout) -->
     <div id="vvLogStream" class="vv-log-stream" aria-hidden="true"></div>
+    <!-- Faint embedded vision panel (what Eva is looking at), mirrors the log feed on the right -->
+    <div id="vvVision" class="vv-vision" aria-hidden="true">
+      <div class="vv-vision-frame">
+        <img id="vvVisionShot" class="vv-vision-shot" alt="" />
+      </div>
+      <div id="vvVisionText" class="vv-vision-text"></div>
+    </div>
     <!-- Scanline overlay -->
     <div class="vv-scanline"></div>
     <!-- Top HUD bar -->

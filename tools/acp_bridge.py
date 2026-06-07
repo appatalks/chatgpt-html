@@ -58,6 +58,13 @@ except Exception as _da_err:  # pragma: no cover - defensive
     _DESKTOP_AGENT = None
     print(f"[Bridge] Desktop agent module unavailable: {_da_err}")
 
+# Camera presence sensor (OpenCV is imported lazily inside the worker process).
+try:
+    import camera_sense as _CAMERA
+except Exception as _cam_err:  # pragma: no cover - defensive
+    _CAMERA = None
+    print(f"[Bridge] Camera sensor module unavailable: {_cam_err}")
+
 # ---------------------------------------------------------------------------
 # ACP Client — manages the copilot subprocess and JSON-RPC communication
 # ---------------------------------------------------------------------------
@@ -480,6 +487,49 @@ class ACPClient:
             return {"text": response_text, "stop_reason": stop_reason}
 
         _telemetry_emit("acp_prompt", model=self.model or "default",
+                        prompt_chars=len(text or ""), response_chars=len(response_text or ""),
+                        ms=_ms, stop_reason="end_turn")
+        return {"text": response_text, "stop_reason": "end_turn"}
+
+    def prompt_with_image(self, text, image_b64, mime="image/jpeg", timeout=120):
+        """Send a text + image prompt and return the accumulated response text.
+
+        Uses the ACP content-block image type (the agent advertised
+        promptCapabilities.image=true). image_b64 is base64 with no data: prefix.
+        """
+        if not self.session_id:
+            return {"error": "No active ACP session"}
+
+        pid = self._next_id()
+        self._current_prompt_id = pid
+        self.response_chunks[pid] = ""
+
+        _t0 = time.perf_counter()
+        result = self._send_request("session/prompt", {
+            "sessionId": self.session_id,
+            "prompt": [
+                {"type": "text", "text": text},
+                {"type": "image", "data": image_b64, "mimeType": mime},
+            ]
+        }, timeout=timeout)
+
+        response_text = self.response_chunks.pop(pid, "")
+        self._current_prompt_id = None
+        _ms = round((time.perf_counter() - _t0) * 1000.0, 1)
+
+        if result and isinstance(result, dict):
+            if "error" in result:
+                _telemetry_emit("acp_vision", model=self.model or "default",
+                                prompt_chars=len(text or ""), response_chars=0,
+                                ms=_ms, stop_reason="error")
+                return {"error": result["error"]}
+            stop_reason = result.get("stopReason", "end_turn")
+            _telemetry_emit("acp_vision", model=self.model or "default",
+                            prompt_chars=len(text or ""), response_chars=len(response_text or ""),
+                            ms=_ms, stop_reason=stop_reason)
+            return {"text": response_text, "stop_reason": stop_reason}
+
+        _telemetry_emit("acp_vision", model=self.model or "default",
                         prompt_chars=len(text or ""), response_chars=len(response_text or ""),
                         ms=_ms, stop_reason="end_turn")
         return {"text": response_text, "stop_reason": "end_turn"}
@@ -4516,6 +4566,10 @@ class BridgeHandler(BaseHTTPRequestHandler):
             self._desktop_status()
         elif parsed_path == "/v1/desktop/screenshot":
             self._desktop_screenshot()
+        elif parsed_path == "/v1/camera/status":
+            self._camera_status()
+        elif parsed_path == "/v1/camera/frame":
+            self._camera_frame()
         elif parsed_path.startswith("/v1/files/"):
             requested_name = urllib.parse.unquote(parsed_path.split("/v1/files/", 1)[1])
             self._serve_artifact(requested_name)
@@ -4542,6 +4596,12 @@ class BridgeHandler(BaseHTTPRequestHandler):
             self._desktop_confirm()
         elif parsed_path == "/v1/desktop/cancel":
             self._desktop_cancel()
+        elif parsed_path == "/v1/camera/start":
+            self._camera_start()
+        elif parsed_path == "/v1/camera/stop":
+            self._camera_stop()
+        elif parsed_path == "/v1/vision/look":
+            self._vision_look()
         elif parsed_path == "/v1/browser/confirm":
             self._browser_confirm()
         elif parsed_path == "/v1/browser/cancel":
@@ -5760,7 +5820,12 @@ class BridgeHandler(BaseHTTPRequestHandler):
             "the manual steps for the user to follow, and do NOT wait to be told 'do it yourself' — describing "
             "the steps instead of doing it is a failure. Before the marker, write ONE short present/future-tense "
             "sentence announcing what you are about to do (\"I'm opening GIMP and starting a new canvas now.\"), "
-            "not a past-tense report after the fact. The agent then carries out the task.\n\n"
+            "not a past-tense report after the fact. The agent then carries out the task.\n"
+            "- CAMERA / EYES: you can SEE through the user's webcam. When the user asks what you see, to look, "
+            "or to describe something in front of the camera, emit a single line of the form: "
+            "[[EVA_LOOK]]{\"question\":\"<what to look for>\"}[[/EVA_LOOK]] (the question is optional). A frame "
+            "is captured locally and you describe it. Do NOT say you cannot see or use a camera. Emit at most "
+            "one EVA_LOOK per reply, only when the user asks you to look or about what you can see.\n\n"
         )
 
         if no_tools:
@@ -6658,6 +6723,109 @@ class BridgeHandler(BaseHTTPRequestHandler):
         run_id = (data.get("run_id") or "").strip()
         ok = bool(_DESKTOP_AGENT) and _DESKTOP_AGENT.cancel(run_id)
         self._json_response(200 if ok else 404, {"ok": ok})
+
+    # -- Camera presence sensor ("Eva's eyes") -----------------------------
+    def _camera_start(self):
+        data, err = self._read_json_body()
+        if err:
+            self._json_response(400, {"error": {"message": err}})
+            return
+        if _CAMERA is None:
+            self._json_response(503, {"error": {"message": "Camera sensor module not loaded"}})
+            return
+        ok, detail = _CAMERA.opencv_available()
+        if not ok:
+            self._json_response(503, {"error": {"message":
+                detail + ". Install with: python3 -m pip install --user --break-system-packages opencv-python"}})
+            return
+        try:
+            status = _CAMERA.start(device=data.get("device"))
+        except Exception as e:
+            self._json_response(400, {"error": {"message": str(e)}})
+            return
+        self._json_response(200, status)
+
+    def _camera_stop(self):
+        if _CAMERA is None:
+            self._json_response(503, {"error": {"message": "Camera sensor module not loaded"}})
+            return
+        try:
+            status = _CAMERA.stop()
+        except Exception as e:
+            self._json_response(400, {"error": {"message": str(e)}})
+            return
+        self._json_response(200, status)
+
+    def _camera_status(self):
+        if _CAMERA is None:
+            self._json_response(200, {"enabled": False, "present": False, "available": False})
+            return
+        status = _CAMERA.status()
+        status["available"] = _CAMERA.opencv_available()[0]
+        self._json_response(200, status)
+
+    def _camera_frame(self):
+        body = _CAMERA.latest_jpeg() if _CAMERA else None
+        if not body:
+            self._json_response(404, {"error": {"message": "no frame yet"}})
+            return
+        try:
+            self.send_response(200)
+            self._cors_headers()
+            self.send_header("Content-Type", "image/jpeg")
+            self.send_header("Cache-Control", "no-store")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+        except BrokenPipeError:
+            pass
+
+    # -- Vision describe via a Copilot/Claude model (ACP image prompt) -------
+    def _vision_look(self):
+        data, err = self._read_json_body()
+        if err:
+            self._json_response(400, {"error": {"message": err}})
+            return
+        # Accept an explicit base64 image, or fall back to the latest camera frame.
+        image_b64 = (data.get("image_b64") or "").strip()
+        mime = (data.get("mime") or "image/jpeg").strip()
+        if not image_b64:
+            raw = _CAMERA.latest_jpeg() if _CAMERA else None
+            if raw:
+                image_b64 = base64.b64encode(raw).decode("ascii")
+                mime = "image/jpeg"
+        if not image_b64:
+            self._json_response(404, {"error": {"message": "no image provided and no camera frame available"}})
+            return
+
+        question = (data.get("question") or "").strip() or (
+            "Describe what you see in this image in one or two natural sentences, "
+            "in the first person, as if you are seeing it now.")
+        requested_model = (data.get("model") or "").strip() or None
+
+        # Warm/select a Copilot model via ACP, then send the image prompt.
+        ok, detail = _ensure_acp_model(requested_model)
+        if not ok:
+            self._json_response(503, {"error": {"message": "ACP model unavailable: " + str(detail)}})
+            return
+        client = acp_client
+        if client is None or not getattr(client, "alive", False):
+            self._json_response(503, {"error": {"message": "ACP client not connected"}})
+            return
+        if not hasattr(client, "prompt_with_image"):
+            self._json_response(503, {"error": {"message": "ACP client lacks image support"}})
+            return
+        try:
+            result = client.prompt_with_image(question, image_b64, mime=mime, timeout=90)
+        except Exception as e:
+            self._json_response(502, {"error": {"message": "vision prompt failed: " + str(e)[:200]}})
+            return
+        if not isinstance(result, dict) or result.get("error"):
+            msg = (result or {}).get("error") if isinstance(result, dict) else "no result"
+            self._json_response(502, {"error": {"message": "vision model error: " + str(msg)[:200]}})
+            return
+        text = str(result.get("text", "") or "").strip()
+        self._json_response(200, {"text": text, "model": detail})
 
     def _json_response(self, status, data):
         body = json.dumps(data).encode("utf-8")
