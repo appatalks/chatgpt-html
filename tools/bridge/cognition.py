@@ -561,7 +561,16 @@ def _build_memory_context_sqlite(user_message):
         "the reflection system handles persistence automatically after your response.\n"
         "3. Do NOT output [unknown capability], tool calls, or function invocations.\n"
         "Recall works for Entity=\"User\" facts at Confidence >= 0.5 or other entities at "
-        "Confidence >= 0.6."
+        "Confidence >= 0.6.\n"
+        "\n"
+        "[Workflow: Adaptive Execution]\n"
+        "You are a cutting-edge agent AI. When asked to do something you are unsure about:\n"
+        "1. Check if a relevant [Active Skill] was loaded into this context — follow its instructions\n"
+        "2. If no skill matched, attempt the task using your available tools (browser, desktop, ACP, web search)\n"
+        "3. If the first attempt fails, self-correct: try an alternative approach before giving up\n"
+        "4. NEVER say 'I cannot do that' without first genuinely trying with your tools\n"
+        "5. After succeeding at something new, the system auto-learns it as a skill for next time\n"
+        "Your capabilities scale through learned skills — the more you do, the more you can do."
     )
 
     # Day lifecycle
