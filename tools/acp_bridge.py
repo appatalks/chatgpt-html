@@ -737,7 +737,7 @@ _SEMANTIC_POOL_SIZE = 150   # max facts ranked per recall (Knowledge is small)
 # ── Memory backend selection ───────────────────────────────────────────────
 # "kusto" = Azure Data Explorer (default, existing behavior)
 # "sqlite" = local SQLite file via tools/sqlite_memory.py
-_memory_backend = os.environ.get("EVA_MEMORY_BACKEND", "").strip().lower() or "kusto"
+_memory_backend = os.environ.get("EVA_MEMORY_BACKEND", "").strip().lower() or None
 _sqlite_mem = None  # SqliteMemory instance, created lazily when backend == "sqlite"
 _MEMORY_BACKEND_PREF_PATH = os.path.expanduser("~/.config/eva-standalone/memory_backend.txt")
 
@@ -754,6 +754,8 @@ def _resolve_memory_backend():
                     _memory_backend = saved
         except Exception:
             pass
+    if _memory_backend not in ("kusto", "sqlite"):
+        _memory_backend = "kusto"
     return _memory_backend
 
 def _get_sqlite_mem():
@@ -3162,7 +3164,7 @@ def _build_memory_context_sqlite(user_message):
         "You learn continuously. When the user shares a durable fact about themselves "
         "(preferences, plans, relationships, possessions, lists like a playlist), or explicitly "
         "asks you to remember/save something, persist it using the ingest tool.\n"
-        "1. Call kusto_ingest_inline with table=\"Knowledge\" and a data row per fact.\n"
+        "1. Call the memory ingest tool with table=\"Knowledge\" and a data row per fact.\n"
         "2. Each row must use these columns: Timestamp (current UTC ISO-8601), Entity, Relation, "
         "Value, Confidence, Source, Decay.\n"
         "   • Entity: use \"User\" for facts about the user; otherwise the proper-noun subject.\n"
@@ -3172,7 +3174,13 @@ def _build_memory_context_sqlite(user_message):
         "3. Split distinct facts into separate rows. Do NOT save ephemeral chit-chat.\n"
         "4. After saving, briefly confirm what you stored.\n"
         "5. Recall works only for Entity=\"User\" facts at Confidence >= 0.5 or other entities at "
-        "Confidence >= 0.6."
+        "Confidence >= 0.6.\n"
+        "\n"
+        "[Important: Your memory tools are internal.]\n"
+        "Memory reads and writes happen automatically through your cognition layer. "
+        "Do NOT attempt to call kusto_query or kusto_ingest_inline — those are Kusto-specific "
+        "tools and are not available in local mode. Instead, rely on the [Memory] context below "
+        "and the automatic reflection system to read and write facts."
     )
 
     # Day lifecycle
