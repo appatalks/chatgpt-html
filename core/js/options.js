@@ -3397,6 +3397,11 @@ function _vvBargeIn() {
   if (_vv.phase !== 'speaking') return;
   if (typeof _vv._finishSpeaking === 'function') {
     _vv._finishSpeaking(true);
+  } else {
+    // Fallback: finishSpeaking not set (stale state). Force recovery.
+    _vvStopTTS();
+    _vvStopBargeMonitor();
+    _vvAfterBarge();
   }
 }
 
@@ -3405,6 +3410,15 @@ function _vvBargeIn() {
 function _vvAfterBarge() {
   if (!_vv.open) return;
   if (!(_vv.recognition || _vv.whisperMode)) { _vvSetStatus('idle'); return; }
+  // Re-arm speech recognition in case the browser killed it during TTS
+  if (_vv.recognition) {
+    try { _vv.recognition.stop(); } catch (_) {}
+    setTimeout(function() {
+      if (_vv.open) {
+        try { _vv.recognition.start(); } catch (_) {}
+      }
+    }, 200);
+  }
   _vvEnterAwake(_vv.convoTimeoutMs);
   if (_vv.whisperMode) _vvWhisperRecord();
 }
