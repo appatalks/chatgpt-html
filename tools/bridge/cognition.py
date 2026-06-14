@@ -872,7 +872,7 @@ def _post_response_reflection_sqlite(user_message, assistant_response, model_nam
     _st.session_exchange_count += 1
     _st.session_conversation_buffer.append((user_message[:500], assistant_response[:500]))
     if len(_st.session_conversation_buffer) > 10:
-        _st.session_conversation_buffer = _session_conversation_buffer[-10:]
+        _st.session_conversation_buffer = _st.session_conversation_buffer[-10:]
 
     is_significant = (
         len(assistant_response) > 800 or
@@ -934,7 +934,7 @@ def _post_response_reflection_sqlite(user_message, assistant_response, model_nam
                 "Timestamp": now,
             }])
             print(f"[Cognition/SQLite] Auto-summary: {summary_text[:100]}")
-            _st.session_conversation_buffer = _session_conversation_buffer[-10:]
+            _st.session_conversation_buffer = _st.session_conversation_buffer[-10:]
         except Exception as e:
             print(f"[Cognition/SQLite] Summary error: {e}")
 
@@ -1490,6 +1490,6 @@ def _post_response_reflection(user_message, assistant_response, model_name):
         print(f"[Cognition] Auto-summary: {summary_text[:100]}")
 
         # Trim buffer to prevent unbounded growth
-        _st.session_conversation_buffer = _session_conversation_buffer[-10:]
+        _st.session_conversation_buffer = _st.session_conversation_buffer[-10:]
 
 
