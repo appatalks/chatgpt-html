@@ -3943,6 +3943,7 @@ function unloadThemeStylesheet(themeName) {
 // Track user intent for image handling
 var _lastUserAskedGenerate = false;
 var _lastUserImageSubject = '';  // extracted from user's message before send
+var _lastUserAskedImage = false; // true if user asked for any image (generate, show, find)
 
 /**
  * Extract image subject from the user's own message.
@@ -3967,6 +3968,7 @@ function _detectGenerationIntent() {
     var userText = txtMsg.innerText || txtMsg.textContent || '';
     _lastUserAskedGenerate = _isGenerationRequest(userText);
     _lastUserImageSubject = _extractUserImageSubject(userText);
+    _lastUserAskedImage = _isImageRequest(userText);
   }
 }
 
@@ -5242,6 +5244,16 @@ function _isGenerationRequest(text) {
 }
 
 /**
+ * Check if user's message is asking for any image (generation, search, or show).
+ */
+function _isImageRequest(text) {
+  if (!text) return false;
+  return _isGenerationRequest(text) ||
+         /\b(show|find|display|search|look up|get|fetch)\b.*\b(image|picture|photo|illustration)\b/i.test(text) ||
+         /\b(image|picture|photo)\b.*\b(of|for|about)\b/i.test(text);
+}
+
+/**
  * Generate an image using OpenAI's current image model (gpt-image-1).
  * @returns {Promise<string|null>} Image URL/data URI or null
  */
@@ -5384,17 +5396,26 @@ async function renderEvaResponse(content, txtOutput) {
 
   var imagePlaceholders = [];
   var seen = {};
-  imagePatterns.forEach(function(rx) {
-    var match;
-    while ((match = rx.exec(text)) !== null) {
-      if (!seen[match[0]]) {
-        seen[match[0]] = true;
-        // Use the user's original subject if available, otherwise extract from AI description
-        var query = _lastUserImageSubject || _extractImageSubject(match[1].trim());
-        imagePlaceholders.push({ full: match[0], query: query });
+  // Only resolve image placeholders when the user actually asked for an image.
+  // When the model drops [Image of ...] unprompted, strip the placeholder quietly.
+  if (_lastUserAskedImage) {
+    imagePatterns.forEach(function(rx) {
+      var match;
+      while ((match = rx.exec(text)) !== null) {
+        if (!seen[match[0]]) {
+          seen[match[0]] = true;
+          var query = _lastUserImageSubject || _extractImageSubject(match[1].trim());
+          imagePlaceholders.push({ full: match[0], query: query });
+        }
       }
-    }
-  });
+    });
+  } else {
+    // Strip unrequested image placeholders from the response
+    imagePatterns.forEach(function(rx) {
+      text = text.replace(rx, '');
+    });
+    text = text.replace(/\n{3,}/g, '\n\n');
+  }
 
   // Limit to 3 images per response
   imagePlaceholders = imagePlaceholders.slice(0, 3);
