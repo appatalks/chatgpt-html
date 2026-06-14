@@ -1088,7 +1088,25 @@ function _evaAgentFeedback(status, endpoint, title) {
 
   if (typeof lastResponse === 'string') lastResponse = spoken;
 
-  // 4) Auto-learn: when a complex task completes successfully, extract a reusable skill.
+  // 4) Return voice mode to listening after agent completion. The voice state
+  //    machine may be stuck in 'speaking' or 'thinking' since the agent ran
+  //    outside the normal turn cycle. Nudge it back after TTS finishes.
+  try {
+    if (typeof _vv !== 'undefined' && _vv.open) {
+      setTimeout(function() {
+        if (_vv.phase === 'speaking' || _vv.phase === 'thinking') {
+          if (typeof _vv._finishSpeaking === 'function') {
+            _vv._finishSpeaking(false);
+          } else {
+            _vvStopTTS();
+            _vvAfterTurn();
+          }
+        }
+      }, 3000); // give TTS time to finish the completion sentence
+    }
+  } catch (_) {}
+
+  // 5) Auto-learn: when a complex task completes successfully, extract a reusable skill.
   if (state === 'done' && goal && typeof autoLearnSkill === 'function') {
     try {
       var hist = JSON.parse(localStorage.getItem('aigMessages') || '[]');
