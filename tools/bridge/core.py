@@ -1919,9 +1919,6 @@ class BridgeHandler(BaseHTTPRequestHandler):
         if internal:
             skip_acp = True
             _acp_route = "internal-cognition"
-        elif model_for_response == "lmstudio":
-            skip_acp = True
-            _acp_route = "lmstudio-no-tools"
         elif not _st.acp_client:
             skip_acp = True
             _acp_route = "acp-unavailable"
