@@ -49,6 +49,7 @@ from http.server import HTTPServer, ThreadingHTTPServer, BaseHTTPRequestHandler
 # Centralized constants (paths, schemas, thresholds).
 # Aliased with underscore prefix so existing code keeps working as-is.
 from bridge import config as _cfg
+from bridge import state as _st
 
 # Vision browser agent (Playwright is imported lazily inside the module, so this
 # import never fails even when Playwright is not installed).
@@ -548,14 +549,14 @@ class ACPClient:
 
 def _refresh_kusto_token():
     """Try to refresh the cached Kusto token using the stored credential. Returns True if refreshed."""
-    global _kusto_token_cache, _kusto_credential, _kusto_table_columns_cache
-    if not _kusto_credential:
+    # global statement removed — writes go to _st.*
+    if not _st.kusto_credential:
         return False
     try:
-        prior = _kusto_token_cache
-        token = _kusto_credential.get_token("https://kusto.kusto.windows.net/.default")
-        _kusto_token_cache = token.token
-        _kusto_table_columns_cache = {}
+        prior = _st.kusto_token_cache
+        token = _st.kusto_credential.get_token("https://kusto.kusto.windows.net/.default")
+        _st.kusto_token_cache = token.token
+        _st.kusto_table_columns_cache = {}
         refresh_state = "updated" if token.token != prior else "unchanged"
         print(f"[Bridge] Kusto token refreshed ({refresh_state}, length: {len(token.token)})")
         return True
@@ -565,23 +566,23 @@ def _refresh_kusto_token():
 
 def _inject_kusto_token(mcp_config):
     """Inject cached Kusto token into MCP config if kusto-mcp-server is present."""
-    global _kusto_token_cache
+    # global statement removed — writes go to _st.*
     if not mcp_config or "kusto-mcp-server" not in mcp_config:
         return mcp_config
 
     _refresh_kusto_token()
 
-    if _kusto_token_cache:
+    if _st.kusto_token_cache:
         if "env" not in mcp_config["kusto-mcp-server"]:
             mcp_config["kusto-mcp-server"]["env"] = {}
-        mcp_config["kusto-mcp-server"]["env"]["KUSTO_ACCESS_TOKEN"] = _kusto_token_cache
+        mcp_config["kusto-mcp-server"]["env"]["KUSTO_ACCESS_TOKEN"] = _st.kusto_token_cache
 
     return mcp_config
 
 def _ensure_kusto_token():
     """Ensure the bridge has a Kusto token for direct bridge-side Kusto calls."""
-    global _kusto_token_cache, _kusto_credential
-    if _kusto_token_cache:
+    # global statement removed — writes go to _st.*
+    if _st.kusto_token_cache:
         return True, ""
     if _refresh_kusto_token():
         return True, ""
@@ -594,8 +595,8 @@ def _ensure_kusto_token():
         credential = DeviceCodeCredential(cache_persistence_options=cache_opts)
         token = credential.get_token("https://kusto.kusto.windows.net/.default")
         if token and getattr(token, "token", None):
-            _kusto_token_cache = token.token
-            _kusto_credential = credential
+            _st.kusto_token_cache = token.token
+            _st.kusto_credential = credential
             print(f"[Bridge] Kusto token obtained for direct query calls (length: {len(token.token)})")
             return True, ""
         return False, "Kusto token request returned no token"
@@ -605,7 +606,7 @@ def _ensure_kusto_token():
 
 def _try_kusto_silent_auth():
     """Attempt MSAL silent token refresh from cached credentials. Returns True if successful."""
-    global _kusto_token_cache, _kusto_credential
+    # global statement removed — writes go to _st.*
     try:
         import msal as _msal
         _cache_path = os.path.expanduser("~/.azure/msal_token_cache.json")
@@ -631,8 +632,8 @@ def _try_kusto_silent_auth():
         )
         token = msal_cred.get_token("https://kusto.kusto.windows.net/.default")
         if token and getattr(token, "token", None):
-            _kusto_token_cache = token.token
-            _kusto_credential = msal_cred
+            _st.kusto_token_cache = token.token
+            _st.kusto_credential = msal_cred
             print(f"[Bridge] Kusto token refreshed silently from MSAL cache (length: {len(token.token)})")
             return True
         return False
@@ -691,24 +692,24 @@ def _same_kusto_cluster(left, right):
 # HTTP Server — exposes the ACP client as an OpenAI-compatible endpoint
 # ---------------------------------------------------------------------------
 
-acp_client = None  # Global ACP client instance (points at the most-recently-used warm client)
+acp_client = _st.acp_client  # alias; mutable state lives in bridge.state
 # Warm client pool: keep one live Copilot CLI per model so switching between the
 # cognition draft model and the reviewer model does not tear down and respawn the
 # CLI on every turn. Keyed by model name; bounded by _ACP_POOL_MAX (LRU eviction).
-_acp_pool = {}            # model_key -> ACPClient
-_acp_pool_order = []      # model_key list, least-recently-used first
-_acp_pool_lock = threading.RLock()
+_acp_pool = _st.acp_pool
+_acp_pool_order = _st.acp_pool_order
+_acp_pool_lock = _st.acp_pool_lock
 _ACP_POOL_MAX = _cfg.ACP_POOL_MAX
-_kusto_token_cache = None  # Cached Kusto access token (survives model switches)
-_kusto_credential = None   # Cached credential object for token refresh
-_last_interaction_date = None  # Track last interaction date for day lifecycle
-_cognition_enabled = False  # Whether cognitive hooks are active (requires Kusto)
-_session_exchange_count = 0  # Exchange counter for auto-reflection triggers
-_session_conversation_buffer = []  # Buffer of recent (user, assistant) pairs for summarization
-_cognition_launch_iso = None  # UTC timestamp that marks the start of this bridge run
-_cognition_launch_id = None  # Human-readable launch identifier for this bridge run
-_cognition_candidate_counts = {}  # Lowercased entity -> mention count in current launch
-_candidate_history_cache = {}  # { entity_lower: (timestamp_epoch, mentions, max_confidence) }
+# _kusto_token_cache -> _st.kusto_token_cache
+# _kusto_credential -> _st.kusto_credential
+# _last_interaction_date -> _st.last_interaction_date
+# _cognition_enabled -> _st.cognition_enabled
+# _session_exchange_count -> _st.session_exchange_count
+# _session_conversation_buffer -> _st.session_conversation_buffer
+# _cognition_launch_iso -> _st.cognition_launch_iso
+# _cognition_launch_id -> _st.cognition_launch_id
+_cognition_candidate_counts = _st.cognition_candidate_counts
+_candidate_history_cache = _st.candidate_history_cache
 _CANDIDATE_HISTORY_TTL_SECONDS = _cfg.CANDIDATE_HISTORY_TTL_SECONDS
 _CONVO_CONTENT_CAP = _cfg.CONVO_CONTENT_CAP
 _ARTIFACTS_DIR = _cfg.ARTIFACTS_DIR
@@ -716,11 +717,11 @@ _KUSTO_CLUSTER_CACHE_PATH = _cfg.KUSTO_CLUSTER_CACHE_PATH
 _MCP_CONFIG_CACHE_PATH = _cfg.MCP_CONFIG_CACHE_PATH
 _ALERTS_CONFIG_PATH = _cfg.ALERTS_CONFIG_PATH
 _NOTIFY_PATH = _cfg.NOTIFY_PATH
-_kusto_table_columns_cache = {}  # (cluster, db, table) -> [columns]
+# _kusto_table_columns_cache -> _st.kusto_table_columns_cache
 _kusto_database_locked = _env_truthy("KUSTO_DATABASE_LOCKED") or _env_truthy("EVA_KUSTO_LOCKED")
-_active_kusto_db = os.environ.get("KUSTO_DATABASE", "").strip()
-_active_kusto_cluster = os.environ.get("KUSTO_CLUSTER_URL", "").strip()
-_bridge_bind_address = "127.0.0.1"
+# _active_kusto_db -> _st.active_kusto_db
+# _active_kusto_cluster -> _st.active_kusto_cluster
+# _bridge_bind_address -> _st.bridge_bind_address
 _LMSTUDIO_ALLOWED_PORTS = _cfg.LMSTUDIO_ALLOWED_PORTS
 _HTTP_CONTENT_TYPE_RE = _cfg.HTTP_CONTENT_TYPE_RE
 
@@ -729,55 +730,55 @@ _HTTP_CONTENT_TYPE_RE = _cfg.HTTP_CONTENT_TYPE_RE
 # Embeddings are computed on demand via the OpenAI embeddings API and cached
 # on disk keyed by text hash, so the Knowledge table needs no schema change and
 # facts written by any path (regex backstop or the LLM ingest tool) are covered.
-_openai_api_key_cache = ""
+# _openai_api_key_cache -> _st.openai_api_key_cache
 _EMBEDDING_MODEL = _cfg.EMBEDDING_MODEL
 _EMBEDDING_CACHE_PATH = _cfg.EMBEDDING_CACHE_PATH
-_embedding_cache = None  # lazy-loaded dict: sha1(text) -> [floats]
-_embedding_cache_lock = threading.Lock()
-_embedding_disabled_logged = False
+# _embedding_cache -> _st.embedding_cache
+_embedding_cache_lock = _st.embedding_cache_lock
+# _embedding_disabled_logged -> _st.embedding_disabled_logged
 _SEMANTIC_MIN_SCORE = _cfg.SEMANTIC_MIN_SCORE
 _SEMANTIC_POOL_SIZE = _cfg.SEMANTIC_POOL_SIZE
 
 # ── Memory backend selection ───────────────────────────────────────────────
 # "kusto" = Azure Data Explorer (default, existing behavior)
 # "sqlite" = local SQLite file via tools/sqlite_memory.py
-_memory_backend = os.environ.get("EVA_MEMORY_BACKEND", "").strip().lower() or None
-_sqlite_mem = None  # SqliteMemory instance, created lazily when backend == "sqlite"
+# _memory_backend -> _st.memory_backend
+# _sqlite_mem -> _st.sqlite_mem
 _MEMORY_BACKEND_PREF_PATH = _cfg.MEMORY_BACKEND_PREF_PATH
 
 def _resolve_memory_backend():
     """Return the active memory backend name, checking persisted preference."""
-    global _memory_backend
-    if _memory_backend not in ("kusto", "sqlite"):
+    # global statement removed — writes go to _st.*
+    if _st.memory_backend not in ("kusto", "sqlite"):
         # Check persisted preference
         try:
             if os.path.isfile(_MEMORY_BACKEND_PREF_PATH):
                 with open(_MEMORY_BACKEND_PREF_PATH) as f:
                     saved = f.read().strip().lower()
                 if saved in ("kusto", "sqlite"):
-                    _memory_backend = saved
+                    _st.memory_backend = saved
         except Exception:
             pass
-    if _memory_backend not in ("kusto", "sqlite"):
-        _memory_backend = "kusto"
-    return _memory_backend
+    if _st.memory_backend not in ("kusto", "sqlite"):
+        _st.memory_backend = "kusto"
+    return _st.memory_backend
 
 def _get_sqlite_mem():
     """Return the global SqliteMemory instance, creating it on first use."""
-    global _sqlite_mem
-    if _sqlite_mem is None:
+    # global statement removed — writes go to _st.*
+    if _st.sqlite_mem is None:
         from sqlite_memory import SqliteMemory
         db_path = os.environ.get("EVA_MEMORY_DB", os.path.expanduser("~/.eva/memory.db"))
-        _sqlite_mem = SqliteMemory(db_path)
-        print(f"[Bridge] SQLite memory initialized: {_sqlite_mem.db_path}")
-    return _sqlite_mem
+        _st.sqlite_mem = SqliteMemory(db_path)
+        print(f"[Bridge] SQLite memory initialized: {_st.sqlite_mem.db_path}")
+    return _st.sqlite_mem
 
 def _set_memory_backend(backend):
     """Switch the active memory backend and persist the choice."""
-    global _memory_backend
+    # global statement removed — writes go to _st.*
     if backend not in ("kusto", "sqlite"):
         return False
-    _memory_backend = backend
+    _st.memory_backend = backend
     try:
         os.makedirs(os.path.dirname(_MEMORY_BACKEND_PREF_PATH), exist_ok=True)
         with open(_MEMORY_BACKEND_PREF_PATH, "w") as f:
@@ -808,35 +809,35 @@ _MEMORY_SYNONYMS = {
 def _set_openai_key_from(data):
     """Cache the OpenAI API key from a request body or environment for embeddings.
     Background threads (reflection/recall) reuse the cached value."""
-    global _openai_api_key_cache
+    # global statement removed — writes go to _st.*
     key = ""
     if isinstance(data, dict):
         key = (data.get("openai_api_key") or "").strip()
     if not key:
         key = os.environ.get("OPENAI_API_KEY", "").strip()
     if key:
-        _openai_api_key_cache = key
-    return _openai_api_key_cache
+        _st.openai_api_key_cache = key
+    return _st.openai_api_key_cache
 
 
 def _load_embedding_cache():
-    global _embedding_cache
-    if _embedding_cache is not None:
-        return _embedding_cache
+    # global statement removed — writes go to _st.*
+    if _st.embedding_cache is not None:
+        return _st.embedding_cache
     with _embedding_cache_lock:
-        if _embedding_cache is not None:
-            return _embedding_cache
+        if _st.embedding_cache is not None:
+            return _st.embedding_cache
         try:
             with open(_EMBEDDING_CACHE_PATH) as f:
                 loaded = json.load(f)
-            _embedding_cache = loaded if isinstance(loaded, dict) else {}
+            _st.embedding_cache = loaded if isinstance(loaded, dict) else {}
         except Exception:
-            _embedding_cache = {}
-    return _embedding_cache
+            _st.embedding_cache = {}
+    return _st.embedding_cache
 
 
 def _save_embedding_cache():
-    cache = _embedding_cache
+    cache = _st.embedding_cache
     if cache is None:
         return
     try:
@@ -853,9 +854,9 @@ def _embed_texts(texts):
     """Return {text: vector} for the given texts using a persistent cache and a
     single batched OpenAI embeddings call for cache misses. Returns whatever is
     available (possibly empty) without raising, so recall degrades to lexical."""
-    global _embedding_disabled_logged
+    # global statement removed — writes go to _st.*
     import hashlib
-    key = _openai_api_key_cache or os.environ.get("OPENAI_API_KEY", "").strip()
+    key = _st.openai_api_key_cache or os.environ.get("OPENAI_API_KEY", "").strip()
 
     unique = []
     seen = set()
@@ -880,9 +881,9 @@ def _embed_texts(texts):
 
     if missing:
         if not key:
-            if not _embedding_disabled_logged:
+            if not _st.embedding_disabled_logged:
                 print("[Cognition] No OpenAI key for embeddings; recall uses lexical match only")
-                _embedding_disabled_logged = True
+                _st.embedding_disabled_logged = True
             return result
         try:
             import requests as _req
@@ -1060,15 +1061,15 @@ _BG_PROPOSALS_LATEST_QUERY = (
     "| summarize arg_max(_SortAt, *) by ProposalId "
     "| project-away _SortAt"
 )
-_bg_loop_thread = None
-_bg_loop_stop = threading.Event()
-_bg_loop_enabled = True
-_bg_loop_interval_seconds = 7200
-_bg_last_tick_iso = ""
-_bg_last_error = ""
-_bg_last_activity = {}
-_last_user_activity_ts = 0.0
-_bg_tick_lock = threading.Lock()
+# _bg_loop_thread -> _st.bg_loop_thread
+_bg_loop_stop = _st.bg_loop_stop
+# _bg_loop_enabled -> _st.bg_loop_enabled
+# _bg_loop_interval_seconds -> _st.bg_loop_interval_seconds
+# _bg_last_tick_iso -> _st.bg_last_tick_iso
+# _bg_last_error -> _st.bg_last_error
+# _bg_last_activity -> _st.bg_last_activity
+# _last_user_activity_ts -> _st.last_user_activity_ts
+_bg_tick_lock = _st.bg_tick_lock
 
 # ---------------------------------------------------------------------------
 # Cron scheduler — user-defined scheduled tasks
@@ -1077,23 +1078,23 @@ _CRON_TASKS_PATH = os.path.join(
     os.environ.get("XDG_CONFIG_HOME", os.path.expanduser("~/.config")),
     "eva-standalone", "cron_tasks.json"
 )
-_cron_tasks = []      # list of {id, label, schedule, prompt, enabled, last_run, next_run, created_at}
-_cron_lock = threading.Lock()
+# _cron_tasks -> _st.cron_tasks
+_cron_lock = _st.cron_lock
 
 
 def _load_cron_tasks():
-    global _cron_tasks
+    # global statement removed — writes go to _st.*
     try:
         with open(_CRON_TASKS_PATH, "r") as f:
-            _cron_tasks = json.load(f)
+            _st.cron_tasks = json.load(f)
     except (FileNotFoundError, json.JSONDecodeError):
-        _cron_tasks = []
+        _st.cron_tasks = []
 
 
 def _save_cron_tasks():
     os.makedirs(os.path.dirname(_CRON_TASKS_PATH), exist_ok=True)
     with open(_CRON_TASKS_PATH, "w") as f:
-        json.dump(_cron_tasks, f, indent=2)
+        json.dump(_st.cron_tasks, f, indent=2)
 
 
 def _parse_cron_expr(expr):
@@ -1168,13 +1169,13 @@ def _cron_next_run(expr, after_dt=None):
 
 def _cron_tick():
     """Called from the background loop worker. Runs any due cron tasks."""
-    if not _cron_tasks:
+    if not _st.cron_tasks:
         return
     now = datetime.datetime.now(datetime.timezone.utc)
     now_iso = now.isoformat()
     ran = []
     with _cron_lock:
-        for task in _cron_tasks:
+        for task in _st.cron_tasks:
             if not task.get("enabled", True):
                 continue
             parsed, err = _parse_cron_expr(task.get("schedule", ""))
@@ -1203,12 +1204,12 @@ def _cron_tick():
 
 def _cron_execute_task(task_id, prompt, label):
     """Execute a cron task by sending its prompt through ACP."""
-    if not acp_client or not acp_client.alive:
+    if not _st.acp_client or not _st.acp_client.alive:
         print(f"[Cron] ACP not available for task {label}")
         return
     messages = [{"role": "user", "content": f"[Scheduled task: {label}] {prompt}"}]
     try:
-        result = acp_client.send_prompt(messages)
+        result = _st.acp_client.send_prompt(messages)
         if result:
             # Push result as a notification
             _push_notification(f"Cron: {label}", str(result)[:500], channel="chat")
@@ -1234,8 +1235,8 @@ def _push_notification(title, body, channel="chat"):
 # ---------------------------------------------------------------------------
 # Subagent parallelism — spawn isolated ACP tasks that run concurrently
 # ---------------------------------------------------------------------------
-_subagent_tasks = {}  # task_id -> {id, label, prompt, status, result, started_at, ended_at, thread}
-_subagent_lock = threading.Lock()
+_subagent_tasks = _st.subagent_tasks
+_subagent_lock = _st.subagent_lock
 _SUBAGENT_MAX = 4
 
 
@@ -1246,10 +1247,10 @@ def _subagent_worker(task_id, prompt, label):
         if not task:
             return
     try:
-        if not acp_client or not acp_client.alive:
+        if not _st.acp_client or not _st.acp_client.alive:
             raise RuntimeError("ACP not available")
         messages = [{"role": "user", "content": f"[Subagent task: {label}] {prompt}"}]
-        result = acp_client.send_prompt(messages)
+        result = _st.acp_client.send_prompt(messages)
         with _subagent_lock:
             task["status"] = "done"
             task["result"] = str(result or "")[:4000]
@@ -1264,7 +1265,7 @@ def _subagent_worker(task_id, prompt, label):
 
 
 def _is_loopback_bind():
-    bind = (_bridge_bind_address or "").strip().lower()
+    bind = (_st.bridge_bind_address or "").strip().lower()
     return bind in ("127.0.0.1", "localhost", "::1")
 
 
@@ -1335,23 +1336,23 @@ def _validate_lmstudio_base_url(raw):
 def _get_locked_kusto_database():
     if not _kusto_database_locked:
         return ""
-    return (_active_kusto_db or os.environ.get("KUSTO_DATABASE", "")).strip()
+    return (_st.active_kusto_db or os.environ.get("KUSTO_DATABASE", "")).strip()
 
 
 def _capture_active_kusto_env(mcp_config):
     """Track the Kusto config currently posted to the bridge."""
-    global _active_kusto_db, _active_kusto_cluster
+    # global statement removed — writes go to _st.*
     kusto_cfg = (mcp_config or {}).get("kusto-mcp-server", {})
     env = kusto_cfg.get("env", {}) if isinstance(kusto_cfg, dict) else {}
-    _active_kusto_db = str(env.get("KUSTO_DATABASE", "") or os.environ.get("KUSTO_DATABASE", "")).strip()
-    _active_kusto_cluster = str(env.get("KUSTO_CLUSTER_URL", "") or os.environ.get("KUSTO_CLUSTER_URL", "")).strip()
+    _st.active_kusto_db = str(env.get("KUSTO_DATABASE", "") or os.environ.get("KUSTO_DATABASE", "")).strip()
+    _st.active_kusto_cluster = str(env.get("KUSTO_CLUSTER_URL", "") or os.environ.get("KUSTO_CLUSTER_URL", "")).strip()
     # Persist / restore cluster URL from local cache file
-    if _active_kusto_cluster:
-        _persist_kusto_cluster(_active_kusto_cluster)
+    if _st.active_kusto_cluster:
+        _persist_kusto_cluster(_st.active_kusto_cluster)
     else:
         cached = _load_cached_kusto_cluster()
         if cached:
-            _active_kusto_cluster = cached
+            _st.active_kusto_cluster = cached
             print(f"[Bridge] Kusto cluster restored from cache: {cached}")
 
 
@@ -1480,8 +1481,8 @@ _TELEMETRY_PATH = _cfg.TELEMETRY_PATH
 _TELEMETRY_MAX_BYTES = _cfg.TELEMETRY_MAX_BYTES
 _TELEMETRY_RING_MAX = _cfg.TELEMETRY_RING_MAX
 _TELEMETRY_ENABLED = os.environ.get("EVA_TELEMETRY", "1") not in ("0", "false", "no")
-_telemetry_lock = threading.Lock()
-_telemetry_ring = []  # list of recent event dicts (most recent last)
+_telemetry_lock = _st.telemetry_lock
+_telemetry_ring = _st.telemetry_ring
 
 
 # ── Log ring — recent stdout lines, for the voice-mode background feed ───────
@@ -1492,9 +1493,9 @@ _telemetry_ring = []  # list of recent event dicts (most recent last)
 # capped defensively.
 _LOG_RING_MAX = _cfg.LOG_RING_MAX
 _LOG_LINE_CAP = _cfg.LOG_LINE_CAP
-_log_lock = threading.Lock()
-_log_ring = []   # list of (seq, text)
-_log_seq = 0
+_log_lock = _st.log_lock
+_log_ring = _st.log_ring
+# _log_seq -> _st.log_seq
 
 
 class _StdoutTee:
@@ -1529,15 +1530,15 @@ class _StdoutTee:
 
 
 def _log_ring_add(line):
-    global _log_seq
+    # global statement removed — writes go to _st.*
     line = (line or "").rstrip()
     if not line:
         return
     if len(line) > _LOG_LINE_CAP:
         line = line[:_LOG_LINE_CAP] + "…"
     with _log_lock:
-        _log_seq += 1
-        _log_ring.append((_log_seq, line))
+        _st.log_seq += 1
+        _log_ring.append((_st.log_seq, line))
         if len(_log_ring) > _LOG_RING_MAX:
             del _log_ring[:-_LOG_RING_MAX]
 
@@ -1664,9 +1665,9 @@ _ALERT_CHANNELS = _cfg.ALERT_CHANNELS
 _NOTIFY_RING_MAX = _cfg.NOTIFY_RING_MAX
 _NOTIFY_MAX_BYTES = _cfg.NOTIFY_MAX_BYTES
 _NOTIFY_CRITICAL_SALIENCE = _cfg.NOTIFY_CRITICAL_SALIENCE
-_alerts_lock = threading.RLock()
-_notify_lock = threading.Lock()
-_notify_ring = []  # recent notification dicts (most recent last)
+_alerts_lock = _st.alerts_lock
+_notify_lock = _st.notify_lock
+_notify_ring = _st.notify_ring
 
 _DEFAULT_ALERT_SETTINGS = _cfg.DEFAULT_ALERT_SETTINGS
 
@@ -2252,11 +2253,11 @@ def _normalize_skill_draft(obj):
 def _evarise_skill(raw_text):
     """Run the normalization ('Eva'rise') step through the ACP agent. Returns
     (draft_dict, error). The agent call is internal (treats source as data)."""
-    if acp_client is None or not getattr(acp_client, "alive", False):
+    if _st.acp_client is None or not getattr(_st.acp_client, "alive", False):
         return None, "agent unavailable (ACP not connected)"
     prompt = _SKILL_EVARISE_PROMPT + raw_text[:_SKILL_SOURCE_MAX_BYTES]
     try:
-        result = acp_client.prompt(prompt, timeout=120)
+        result = _st.acp_client.prompt(prompt, timeout=120)
     except Exception as exc:
         return None, "agent error: " + str(exc)[:160]
     if not isinstance(result, dict):
@@ -2307,13 +2308,13 @@ class _MSALSilentCredential:
 
 def _kusto_query_direct(cluster_url, database, query, is_mgmt=False):
     """Execute a Kusto query directly (bypasses MCP). Returns text result or None on error."""
-    global _kusto_token_cache
-    if not _kusto_token_cache:
+    # global statement removed — writes go to _st.*
+    if not _st.kusto_token_cache:
         return None
     import requests as _requests_mod
     endpoint = "mgmt" if is_mgmt else "query"
     url = f"{cluster_url}/v1/rest/{endpoint}"
-    headers = {"Authorization": f"Bearer {_kusto_token_cache}", "Content-Type": "application/json"}
+    headers = {"Authorization": f"Bearer {_st.kusto_token_cache}", "Content-Type": "application/json"}
     payload = {"csl": query, "db": database}
 
     # Retry up to 3 times with fresh sessions for transient SSL errors
@@ -2333,7 +2334,7 @@ def _kusto_query_direct(cluster_url, database, query, is_mgmt=False):
                 return []
             elif resp.status_code == 401 and attempt == 0 and _refresh_kusto_token():
                 print("[Cognition] Kusto query got 401, retrying with refreshed token")
-                headers["Authorization"] = f"Bearer {_kusto_token_cache}"
+                headers["Authorization"] = f"Bearer {_st.kusto_token_cache}"
                 continue
             elif resp.status_code == 401:
                 print("[Cognition] Kusto query still unauthorized after refresh; verify tenant/account RBAC for cluster/database")
@@ -2365,13 +2366,13 @@ def _short_kusto_error(value):
 
 def _kusto_query_with_error(cluster_url, database, query, is_mgmt=False):
     """Execute a Kusto query and return (rows, error_text) for seed diagnostics."""
-    global _kusto_token_cache
-    if not _kusto_token_cache:
+    # global statement removed — writes go to _st.*
+    if not _st.kusto_token_cache:
         return None, "Kusto token is not available"
     import requests as _requests_mod
     endpoint = "mgmt" if is_mgmt else "query"
     url = f"{cluster_url}/v1/rest/{endpoint}"
-    headers = {"Authorization": f"Bearer {_kusto_token_cache}", "Content-Type": "application/json"}
+    headers = {"Authorization": f"Bearer {_st.kusto_token_cache}", "Content-Type": "application/json"}
     payload = {"csl": query, "db": database}
 
     for attempt in range(3):
@@ -2398,7 +2399,7 @@ def _kusto_query_with_error(cluster_url, database, query, is_mgmt=False):
                         return [dict(zip(cols, row)) for row in rows], ""
                 return [], ""
             if resp.status_code == 401 and attempt == 0 and _refresh_kusto_token():
-                headers["Authorization"] = f"Bearer {_kusto_token_cache}"
+                headers["Authorization"] = f"Bearer {_st.kusto_token_cache}"
                 continue
             error_text = resp.text[:300] if resp.text else "empty response"
             return None, f"Kusto API error {resp.status_code}: {error_text}"
@@ -2416,7 +2417,7 @@ def _get_table_columns(cluster_url, database, table):
     Returns list of column names, or None if the table does not exist.
     Negative results (table not found) are cached to avoid repeated queries."""
     key = (cluster_url, database, table)
-    cached = _kusto_table_columns_cache.get(key)
+    cached = _st.kusto_table_columns_cache.get(key)
     if cached is not None:
         # Empty list means table confirmed non-existent
         return cached if cached else None
@@ -2429,7 +2430,7 @@ def _get_table_columns(cluster_url, database, table):
     )
     if not schema_rows:
         # Cache negative result so we don't re-query on every call
-        _kusto_table_columns_cache[key] = []
+        _st.kusto_table_columns_cache[key] = []
         return None
 
     # .show table X cslschema returns a single row with a Schema column containing
@@ -2441,16 +2442,16 @@ def _get_table_columns(cluster_url, database, table):
     else:
         cols = [pair.split(":")[0].strip() for pair in schema_str.split(",") if ":" in pair]
     if not cols:
-        _kusto_table_columns_cache[key] = []
+        _st.kusto_table_columns_cache[key] = []
         return None
 
-    _kusto_table_columns_cache[key] = cols
+    _st.kusto_table_columns_cache[key] = cols
     return cols
 
 def _kusto_ingest_direct(cluster_url, database, table, columns, rows_data):
     """Ingest data directly into Kusto via .ingest inline."""
-    global _kusto_token_cache
-    if not _kusto_token_cache:
+    # global statement removed — writes go to _st.*
+    if not _st.kusto_token_cache:
         return False
 
     table_columns = _get_table_columns(cluster_url, database, table)
@@ -2495,7 +2496,7 @@ def _kusto_ingest_direct(cluster_url, database, table, columns, rows_data):
     if rows_csv:
         print(f"[Cognition] Ingest {table}: {len(rows_csv)} rows ({len(resolved_columns)} cols)")
     url = f"{cluster_url}/v1/rest/mgmt"
-    headers = {"Authorization": f"Bearer {_kusto_token_cache}", "Content-Type": "application/json"}
+    headers = {"Authorization": f"Bearer {_st.kusto_token_cache}", "Content-Type": "application/json"}
 
     for attempt in range(3):
         try:
@@ -2520,7 +2521,7 @@ def _kusto_ingest_direct(cluster_url, database, table, columns, rows_data):
                 return True
             elif resp.status_code == 401 and attempt == 0 and _refresh_kusto_token():
                 print("[Cognition] Kusto ingest got 401, retrying with refreshed token")
-                headers["Authorization"] = f"Bearer {_kusto_token_cache}"
+                headers["Authorization"] = f"Bearer {_st.kusto_token_cache}"
                 continue
             elif resp.status_code == 401:
                 print("[Cognition] Kusto ingest still unauthorized after refresh; verify tenant/account RBAC for cluster/database")
@@ -2605,19 +2606,19 @@ def _memory_available():
         return True  # SQLite is always available (file is created on demand)
     else:
         cluster, db = _get_kusto_config()
-        return bool(cluster and db and _kusto_token_cache)
+        return bool(cluster and db and _st.kusto_token_cache)
 
 def _get_kusto_config():
     """Get Kusto cluster URL and database from the running MCP config."""
-    if not acp_client or not acp_client.mcp_config:
+    if not _st.acp_client or not _st.acp_client.mcp_config:
         return None, None
-    kusto_cfg = acp_client.mcp_config.get("kusto-mcp-server", {})
+    kusto_cfg = _st.acp_client.mcp_config.get("kusto-mcp-server", {})
     env = kusto_cfg.get("env", {})
-    cluster = env.get("KUSTO_CLUSTER_URL", "") or _active_kusto_cluster
+    cluster = env.get("KUSTO_CLUSTER_URL", "") or _st.active_kusto_cluster
     if _kusto_database_locked:
         db = _get_locked_kusto_database()
     else:
-        db = env.get("KUSTO_DATABASE", "") or _active_kusto_db
+        db = env.get("KUSTO_DATABASE", "") or _st.active_kusto_db
     if not db and not _kusto_database_locked:
         db = "Eva"
     return cluster, db
@@ -2625,16 +2626,16 @@ def _get_kusto_config():
 
 def _enable_cognition(mcp_servers, model=None, port=None):
     """Enable cognition hooks and advertise active bridge capabilities."""
-    global _cognition_enabled, _cognition_launch_iso, _cognition_launch_id, _kusto_table_columns_cache
+    # global statement removed — writes go to _st.*
     import datetime
     os.makedirs(_ARTIFACTS_DIR, exist_ok=True)
-    _kusto_table_columns_cache = {}
-    _cognition_launch_iso = datetime.datetime.now(datetime.timezone.utc).isoformat().replace("+00:00", "Z")
-    _cognition_launch_id = f"eva-{datetime.datetime.now(datetime.timezone.utc).strftime('%Y%m%d%H%M%S')}"
-    _cognition_enabled = True
+    _st.kusto_table_columns_cache = {}
+    _st.cognition_launch_iso = datetime.datetime.now(datetime.timezone.utc).isoformat().replace("+00:00", "Z")
+    _st.cognition_launch_id = f"eva-{datetime.datetime.now(datetime.timezone.utc).strftime('%Y%m%d%H%M%S')}"
+    _st.cognition_enabled = True
     backend = _resolve_memory_backend()
     print(f"[Bridge] Cognition layer ENABLED (memory backend: {backend})")
-    print(f"[Bridge] Cognition launch scope: {_cognition_launch_id} (since {_cognition_launch_iso})")
+    print(f"[Bridge] Cognition launch scope: {_st.cognition_launch_id} (since {_st.cognition_launch_iso})")
 
     # Write SelfState capabilities via the active memory backend
     now = datetime.datetime.now(datetime.timezone.utc).isoformat().replace("+00:00", "Z")
@@ -2648,7 +2649,7 @@ def _enable_cognition(mcp_servers, model=None, port=None):
         details_mem = {"cluster": cluster or "", "database": startup_db or ""}
         if not cluster or not startup_db:
             print("[Bridge] Kusto not configured; SelfState write skipped")
-            if _bg_loop_enabled:
+            if _st.bg_loop_enabled:
                 _start_bg_loop()
             return
 
@@ -2675,16 +2676,16 @@ def _enable_cognition(mcp_servers, model=None, port=None):
         print(f"[Bridge] SelfState written ({len(capabilities)} capabilities)")
     else:
         print("[Bridge] SelfState write failed (continuing startup)")
-    if _bg_loop_enabled:
+    if _st.bg_loop_enabled:
         _start_bg_loop()
 
 
 def _with_launch_filter(query, timestamp_column="Timestamp"):
     """Scope a Kusto query to rows written during the current cognition launch."""
-    if not _cognition_launch_iso:
+    if not _st.cognition_launch_iso:
         return query
 
-    safe_iso = (_cognition_launch_iso or "").replace("'", "")
+    safe_iso = (_st.cognition_launch_iso or "").replace("'", "")
     filter_expr = f"{timestamp_column} >= datetime('{safe_iso}')"
 
     if "| where " in query:
@@ -3062,7 +3063,7 @@ def _extract_entity_candidates(user_message):
 
 def _build_memory_context_sqlite(user_message):
     """SQLite equivalent of _build_memory_context. Same output structure, SQL queries."""
-    global _last_interaction_date
+    # global statement removed — writes go to _st.*
     import datetime
 
     mem = _get_sqlite_mem()
@@ -3144,8 +3145,8 @@ def _build_memory_context_sqlite(user_message):
 
     # Day lifecycle
     today = datetime.date.today().isoformat()
-    if _last_interaction_date != today:
-        _last_interaction_date = today
+    if _st.last_interaction_date != today:
+        _st.last_interaction_date = today
         summaries = mem.query(
             "SELECT Period, Summary FROM MemorySummaries ORDER BY Timestamp DESC LIMIT 3"
         )
@@ -3350,13 +3351,13 @@ def _build_memory_context_sqlite(user_message):
 
 def _post_response_reflection_sqlite(user_message, assistant_response, model_name):
     """SQLite equivalent of _post_response_reflection. Same write pattern, SQL instead of KQL."""
-    global _session_exchange_count, _session_conversation_buffer
+    # global statement removed — writes go to _st.*
     import datetime, uuid
 
     mem = _get_sqlite_mem()
     now = datetime.datetime.now(datetime.timezone.utc).isoformat().replace("+00:00", "Z")
     session_id = str(uuid.uuid4())[:8]
-    source_id = f"{_cognition_launch_id or 'launch'}:{session_id}"
+    source_id = f"{_st.cognition_launch_id or 'launch'}:{session_id}"
 
     # 1. Log conversation
     conv_columns = ["SessionId", "Timestamp", "Role", "Provider", "Model", "Content", "TokenEstimate", "ImageGenerated"]
@@ -3450,10 +3451,10 @@ def _post_response_reflection_sqlite(user_message, assistant_response, model_nam
         print(f"[Cognition/SQLite] Emotion analysis skipped: {e}")
 
     # 6. Auto-reflection (every 5 exchanges or on significant interactions)
-    _session_exchange_count += 1
-    _session_conversation_buffer.append((user_message[:500], assistant_response[:500]))
-    if len(_session_conversation_buffer) > 10:
-        _session_conversation_buffer = _session_conversation_buffer[-10:]
+    _st.session_exchange_count += 1
+    _st.session_conversation_buffer.append((user_message[:500], assistant_response[:500]))
+    if len(_st.session_conversation_buffer) > 10:
+        _st.session_conversation_buffer = _session_conversation_buffer[-10:]
 
     is_significant = (
         len(assistant_response) > 800 or
@@ -3462,9 +3463,9 @@ def _post_response_reflection_sqlite(user_message, assistant_response, model_nam
         "?" in user_message and len(user_message) > 50
     )
 
-    if _session_exchange_count % 5 == 0 or is_significant:
+    if _st.session_exchange_count % 5 == 0 or is_significant:
         try:
-            recent = _session_conversation_buffer[-3:]
+            recent = _st.session_conversation_buffer[-3:]
             topics = set()
             for u, a in recent:
                 for word in re.findall(r'\b[A-Z][a-z]{2,}\b', u):
@@ -3472,7 +3473,7 @@ def _post_response_reflection_sqlite(user_message, assistant_response, model_nam
                         topics.add(word)
             topic_str = ", ".join(list(topics)[:5]) if topics else "general conversation"
             reflection_text = (
-                f"Exchange #{_session_exchange_count}: Discussed {topic_str}. "
+                f"Exchange #{_st.session_exchange_count}: Discussed {topic_str}. "
                 f"Emotional tone — Joy:{joy:.2f}, Concern:{concern:.2f}. "
                 f"{'Significant exchange — ' if is_significant else ''}"
                 f"User asked about: {user_message[:80]}."
@@ -3485,14 +3486,14 @@ def _post_response_reflection_sqlite(user_message, assistant_response, model_nam
                 "ActionTaken": "",
                 "Effectiveness": 0.0,
             }])
-            print(f"[Cognition/SQLite] Auto-reflection #{_session_exchange_count}: {reflection_text[:100]}")
+            print(f"[Cognition/SQLite] Auto-reflection #{_st.session_exchange_count}: {reflection_text[:100]}")
         except Exception as e:
             print(f"[Cognition/SQLite] Reflection error: {e}")
 
     # 7. Auto-summary (every 10 exchanges)
-    if _session_exchange_count % 10 == 0 and len(_session_conversation_buffer) >= 5:
+    if _st.session_exchange_count % 10 == 0 and len(_st.session_conversation_buffer) >= 5:
         try:
-            summary_exchanges = _session_conversation_buffer[-10:]
+            summary_exchanges = _st.session_conversation_buffer[-10:]
             all_topics = set()
             user_intents = []
             for u, a in summary_exchanges:
@@ -3503,7 +3504,7 @@ def _post_response_reflection_sqlite(user_message, assistant_response, model_nam
             topic_str = ", ".join(list(all_topics)[:8]) if all_topics else "various topics"
             period = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%d %H:%M")
             summary_text = (
-                f"Session block ({_session_exchange_count - 9}–{_session_exchange_count}): "
+                f"Session block ({_st.session_exchange_count - 9}–{_st.session_exchange_count}): "
                 f"Topics: {topic_str}. "
                 f"User intents: {'; '.join(user_intents[:5])}. "
                 f"{len(summary_exchanges)} exchanges total."
@@ -3515,7 +3516,7 @@ def _post_response_reflection_sqlite(user_message, assistant_response, model_nam
                 "Timestamp": now,
             }])
             print(f"[Cognition/SQLite] Auto-summary: {summary_text[:100]}")
-            _session_conversation_buffer = _session_conversation_buffer[-10:]
+            _st.session_conversation_buffer = _session_conversation_buffer[-10:]
         except Exception as e:
             print(f"[Cognition/SQLite] Summary error: {e}")
 
@@ -3531,8 +3532,8 @@ def _build_memory_context(user_message):
       5. Relevant knowledge (on-demand) — message-specific recall
       6. Proactive data retrieval (on-demand) — live data for detected intents
     """
-    global _last_interaction_date
-    if not _cognition_enabled:
+    # global statement removed — writes go to _st.*
+    if not _st.cognition_enabled:
         return ""
 
     # Route to SQLite-specific implementation when that backend is active
@@ -3633,8 +3634,8 @@ def _build_memory_context(user_message):
 
     # ── 2. Day lifecycle (first message of the day) ────────────────────
     today = datetime.date.today().isoformat()
-    if _last_interaction_date != today:
-        _last_interaction_date = today
+    if _st.last_interaction_date != today:
+        _st.last_interaction_date = today
         summaries_query = _with_launch_filter("MemorySummaries | order by Timestamp desc | take 3")
         summaries = _kusto_query_direct(cluster, db, summaries_query)
         if summaries:
@@ -3887,8 +3888,8 @@ def _build_memory_context(user_message):
 
 def _post_response_reflection(user_message, assistant_response, model_name):
     """Background: log conversation and trigger reflection after response."""
-    global _cognition_enabled
-    if not _cognition_enabled:
+    # global statement removed — writes go to _st.*
+    if not _st.cognition_enabled:
         return
 
     # Route to SQLite-specific implementation when that backend is active
@@ -3902,7 +3903,7 @@ def _post_response_reflection(user_message, assistant_response, model_name):
     import datetime, uuid
     now = datetime.datetime.now(datetime.timezone.utc).isoformat().replace("+00:00", "Z")
     session_id = str(uuid.uuid4())[:8]
-    source_id = f"{_cognition_launch_id or 'launch'}:{session_id}"
+    source_id = f"{_st.cognition_launch_id or 'launch'}:{session_id}"
 
     # 1. Log conversation
     conv_columns = ["SessionId", "Timestamp", "Role", "Provider", "Model", "Content", "TokenEstimate", "ImageGenerated"]
@@ -4008,9 +4009,9 @@ def _post_response_reflection(user_message, assistant_response, model_name):
     print(f"[Cognition] Updated emotion state: Joy={joy:.2f} Curiosity={curiosity:.2f} Concern={concern:.2f}")
 
     # 5. Auto-reflection — write a Reflection every 5 exchanges or on significant interactions
-    global _session_exchange_count, _session_conversation_buffer
-    _session_exchange_count += 1
-    _session_conversation_buffer.append((user_message[:200], assistant_response[:200]))
+    # global statement removed — writes go to _st.*
+    _st.session_exchange_count += 1
+    _st.session_conversation_buffer.append((user_message[:200], assistant_response[:200]))
 
     is_significant = (
         len(assistant_response) > 800 or  # Long/detailed response
@@ -4019,9 +4020,9 @@ def _post_response_reflection(user_message, assistant_response, model_name):
         "?" in user_message and len(user_message) > 50  # Deep question
     )
 
-    if _session_exchange_count % 5 == 0 or is_significant:
+    if _st.session_exchange_count % 5 == 0 or is_significant:
         # Build a compact reflection from recent exchanges
-        recent = _session_conversation_buffer[-3:]  # Last 3 exchanges
+        recent = _st.session_conversation_buffer[-3:]  # Last 3 exchanges
         topics = set()
         for u, a in recent:
             for word in re.findall(r'\b[A-Z][a-z]{2,}\b', u):
@@ -4030,7 +4031,7 @@ def _post_response_reflection(user_message, assistant_response, model_name):
 
         topic_str = ", ".join(list(topics)[:5]) if topics else "general conversation"
         reflection_text = (
-            f"Exchange #{_session_exchange_count}: Discussed {topic_str}. "
+            f"Exchange #{_st.session_exchange_count}: Discussed {topic_str}. "
             f"Emotional tone — Joy:{joy:.2f}, Concern:{concern:.2f}. "
             f"{'Significant exchange — ' if is_significant else ''}"
             f"User asked about: {user_message[:80]}."
@@ -4039,12 +4040,12 @@ def _post_response_reflection(user_message, assistant_response, model_name):
         ref_columns = ["Timestamp", "Trigger", "Observation", "ActionTaken", "Effectiveness"]
         ref_rows = [{"Timestamp": now, "Trigger": user_message[:100], "Observation": reflection_text, "ActionTaken": "", "Effectiveness": 0.0}]
         _kusto_ingest_direct(cluster, db, "Reflections", ref_columns, ref_rows)
-        print(f"[Cognition] Auto-reflection #{_session_exchange_count}: {reflection_text[:100]}")
+        print(f"[Cognition] Auto-reflection #{_st.session_exchange_count}: {reflection_text[:100]}")
 
     # 6. Auto-summarize — write a MemorySummary every 10 exchanges
-    if _session_exchange_count % 10 == 0 and len(_session_conversation_buffer) >= 5:
+    if _st.session_exchange_count % 10 == 0 and len(_st.session_conversation_buffer) >= 5:
         # Summarize the last 10 exchanges
-        summary_exchanges = _session_conversation_buffer[-10:]
+        summary_exchanges = _st.session_conversation_buffer[-10:]
         all_topics = set()
         user_intents = []
         for u, a in summary_exchanges:
@@ -4057,7 +4058,7 @@ def _post_response_reflection(user_message, assistant_response, model_name):
         topic_str = ", ".join(list(all_topics)[:8]) if all_topics else "various topics"
         period = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%d %H:%M")
         summary_text = (
-            f"Session block ({_session_exchange_count - 9}–{_session_exchange_count}): "
+            f"Session block ({_st.session_exchange_count - 9}–{_st.session_exchange_count}): "
             f"Topics: {topic_str}. "
             f"User intents: {'; '.join(user_intents[:5])}. "
             f"{len(summary_exchanges)} exchanges total."
@@ -4069,7 +4070,7 @@ def _post_response_reflection(user_message, assistant_response, model_name):
         print(f"[Cognition] Auto-summary: {summary_text[:100]}")
 
         # Trim buffer to prevent unbounded growth
-        _session_conversation_buffer = _session_conversation_buffer[-10:]
+        _st.session_conversation_buffer = _session_conversation_buffer[-10:]
 
 
 def _utc_now():
@@ -4119,18 +4120,18 @@ def _safe_kusto_string(value):
 
 
 def _mark_user_activity():
-    global _last_user_activity_ts
-    _last_user_activity_ts = time.time()
+    # global statement removed — writes go to _st.*
+    _st.last_user_activity_ts = time.time()
 
 
 def _background_status_dict():
-    running = bool(_bg_loop_thread and _bg_loop_thread.is_alive())
+    running = bool(_st.bg_loop_thread and _st.bg_loop_thread.is_alive())
     return {
-        "enabled": _bg_loop_enabled,
-        "intervalSeconds": _bg_loop_interval_seconds,
-        "lastTick": _bg_last_tick_iso,
-        "lastError": _bg_last_error,
-        "lastActivity": _bg_last_activity,
+        "enabled": _st.bg_loop_enabled,
+        "intervalSeconds": _st.bg_loop_interval_seconds,
+        "lastTick": _st.bg_last_tick_iso,
+        "lastError": _st.bg_last_error,
+        "lastActivity": _st.bg_last_activity,
         "running": running,
         "jobs": {job_type: bool(_BG_JOBS_ENABLED.get(job_type, True)) for job_type, _ in _BG_JOBS},
     }
@@ -4151,11 +4152,11 @@ def _background_kusto_context():
 
 
 def _set_background_activity(row, error_text=""):
-    global _bg_last_activity, _bg_last_tick_iso, _bg_last_error
-    _bg_last_activity = dict(row or {})
+    # global statement removed — writes go to _st.*
+    _st.bg_last_activity = dict(row or {})
     if row and row.get("StartedAt"):
-        _bg_last_tick_iso = row.get("StartedAt")
-    _bg_last_error = error_text or ""
+        _st.bg_last_tick_iso = row.get("StartedAt")
+    _st.bg_last_error = error_text or ""
 
 
 def _record_background_activity(cluster, database, tick_id, started_at, ended_at, status, proposal_count, token_estimate, notes, job_type=_BG_JOB_TYPE):
@@ -4174,7 +4175,7 @@ def _record_background_activity(cluster, database, tick_id, started_at, ended_at
     if backend == "sqlite":
         mem = _get_sqlite_mem()
         wrote = mem.ingest("BackgroundActivity", _BG_ACTIVITY_COLUMNS, [row])
-    elif cluster and database and _kusto_token_cache:
+    elif cluster and database and _st.kusto_token_cache:
         wrote = _kusto_ingest_direct(cluster, database, "BackgroundActivity", _BG_ACTIVITY_COLUMNS, [row])
     error_text = row["Notes"] if status == "failed" else ""
     if status == "failed" and not wrote:
@@ -4199,7 +4200,7 @@ def _background_source_window(cluster, database, window_end):
 
 def _background_conversations_query(window_start, window_end):
     active_start = window_start
-    launch_start = _parse_kusto_datetime(_cognition_launch_iso)
+    launch_start = _parse_kusto_datetime(_st.cognition_launch_iso)
     if launch_start and launch_start > active_start:
         active_start = launch_start
     start_iso = _to_utc_iso(active_start)
@@ -4587,12 +4588,12 @@ def _bg_agent_prompt(prompt_text, ctx, timeout=120):
     ticks already pause on recent activity, but agent jobs run later in the
     tick, so this re-checks just before the (slow) model call.
     """
-    if ctx.get("trigger") != "manual" and time.time() - _last_user_activity_ts < 120:
+    if ctx.get("trigger") != "manual" and time.time() - _st.last_user_activity_ts < 120:
         return None, "user active"
-    if acp_client is None or not getattr(acp_client, "alive", False):
+    if _st.acp_client is None or not getattr(_st.acp_client, "alive", False):
         return None, "agent unavailable"
     try:
-        result = acp_client.prompt(prompt_text, timeout=timeout)
+        result = _st.acp_client.prompt(prompt_text, timeout=timeout)
     except Exception as agent_error:
         return None, "agent error: " + str(agent_error)[:200]
     if isinstance(result, dict):
@@ -5069,7 +5070,7 @@ def _job_alert_watch(ctx):
         if not _alert_cooldown_elapsed(rule, now):
             continue
         # Re-check user presence before each (slow) agent call.
-        if ctx.get("trigger") != "manual" and time.time() - _last_user_activity_ts < 120:
+        if ctx.get("trigger") != "manual" and time.time() - _st.last_user_activity_ts < 120:
             notes.append("paused: user active")
             break
         prompt = _alert_build_prompt(rule)
@@ -5175,7 +5176,7 @@ def _run_background_tick(trigger="scheduled"):
                 _record_background_activity(cluster, database, tick_id, started_at, _utc_now(), "failed", 0, 0, f"{trigger} background tick: " + context_error)
                 return
 
-        if trigger != "manual" and time.time() - _last_user_activity_ts < 120:
+        if trigger != "manual" and time.time() - _st.last_user_activity_ts < 120:
             _record_background_activity(cluster, database, tick_id, started_at, _utc_now(), "paused", 0, 0, f"{trigger} background tick: recent user activity")
             return
 
@@ -5280,7 +5281,7 @@ def _run_background_tick(trigger="scheduled"):
 
 def _bg_loop_worker():
     _load_cron_tasks()
-    next_due = time.time() + max(1, int(_bg_loop_interval_seconds or 7200))
+    next_due = time.time() + max(1, int(_st.bg_loop_interval_seconds or 7200))
     _cron_last_minute = -1
     while not _bg_loop_stop.is_set():
         # Cron: check every ~30s regardless of background loop enabled state
@@ -5292,47 +5293,47 @@ def _bg_loop_worker():
             except Exception as e:
                 print(f"[Cron] tick error: {e}")
 
-        if not _bg_loop_enabled:
-            next_due = time.time() + max(1, int(_bg_loop_interval_seconds or 7200))
+        if not _st.bg_loop_enabled:
+            next_due = time.time() + max(1, int(_st.bg_loop_interval_seconds or 7200))
             _bg_loop_stop.wait(5)
             continue
 
         now_ts = time.time()
         if now_ts >= next_due:
             _run_background_tick("scheduled")
-            next_due = time.time() + max(1, int(_bg_loop_interval_seconds or 7200))
+            next_due = time.time() + max(1, int(_st.bg_loop_interval_seconds or 7200))
 
         wait_seconds = min(5, max(0.1, next_due - time.time()))
         _bg_loop_stop.wait(wait_seconds)
 
 
 def _start_bg_loop():
-    global _bg_loop_thread
-    if not _cognition_enabled:
+    # global statement removed — writes go to _st.*
+    if not _st.cognition_enabled:
         return False
     backend = _resolve_memory_backend()
     if backend == "sqlite":
         pass  # SQLite needs no cluster/token
     else:
         cluster, database = _get_kusto_config()
-        if not cluster or not database or not _kusto_token_cache:
+        if not cluster or not database or not _st.kusto_token_cache:
             return False
-    if _bg_loop_thread and _bg_loop_thread.is_alive():
+    if _st.bg_loop_thread and _st.bg_loop_thread.is_alive():
         return True
     _bg_loop_stop.clear()
-    _bg_loop_thread = threading.Thread(target=_bg_loop_worker, name="eva-background-loop", daemon=True)
-    _bg_loop_thread.start()
-    print(f"[Bridge] Background loop started ({_bg_loop_interval_seconds}s interval)")
+    _st.bg_loop_thread = threading.Thread(target=_bg_loop_worker, name="eva-background-loop", daemon=True)
+    _st.bg_loop_thread.start()
+    print(f"[Bridge] Background loop started ({_st.bg_loop_interval_seconds}s interval)")
     return True
 
 
 def _stop_bg_loop():
-    global _bg_loop_thread
+    # global statement removed — writes go to _st.*
     _bg_loop_stop.set()
-    active_thread = _bg_loop_thread
+    active_thread = _st.bg_loop_thread
     if active_thread and active_thread.is_alive():
         active_thread.join(timeout=3)
-    _bg_loop_thread = None
+    _st.bg_loop_thread = None
 
 
 def _trigger_background_run_once():
@@ -5389,14 +5390,14 @@ def _acp_pool_register(client):
 
 def _acp_pool_evict_if_needed(protect_key):
     """Evict least-recently-used warm clients past the cap. Never evicts the
-    protected key or the client currently referenced by the acp_client pointer.
+    protected key or the client currently referenced by the _st.acp_client pointer.
     Caller holds the lock."""
     while len(_acp_pool) > _ACP_POOL_MAX:
         victim_key = None
         for k in list(_acp_pool_order):
             if k == protect_key:
                 continue
-            if acp_client is not None and _acp_pool.get(k) is acp_client:
+            if _st.acp_client is not None and _acp_pool.get(k) is _st.acp_client:
                 continue
             victim_key = k
             break
@@ -5434,19 +5435,19 @@ def _reset_acp_pool(keep_client):
 
 
 def _ensure_acp_model(requested_model):
-    """Ensure a warm ACP client for requested_model is selected as acp_client.
+    """Ensure a warm ACP client for requested_model is selected as _st.acp_client.
 
     Uses a warm pool so switching between the cognition draft model and the
     reviewer model reuses a live Copilot CLI instead of respawning it every turn.
     Returns (ok, model_or_error)."""
-    global acp_client
+    # global statement removed — writes go to _st.*
 
     with _acp_pool_lock:
         # Seed the pool with the startup singleton on first use.
-        if acp_client and _acp_model_key(acp_client.model) not in _acp_pool:
-            _acp_pool_register(acp_client)
+        if _st.acp_client and _acp_model_key(_st.acp_client.model) not in _acp_pool:
+            _acp_pool_register(_st.acp_client)
 
-        if not acp_client and not _acp_pool:
+        if not _st.acp_client and not _acp_pool:
             return False, "ACP bridge not connected to Copilot"
 
         key = _acp_model_key(requested_model)
@@ -5454,13 +5455,13 @@ def _ensure_acp_model(requested_model):
         # Fast path: a live warm client already exists for this model.
         existing = _acp_pool.get(key)
         if existing and existing.alive:
-            acp_client = existing
+            _st.acp_client = existing
             _acp_pool_touch(key)
             _telemetry_emit("acp_pool", result="hit", model=key, pool_size=len(_acp_pool))
             return True, existing.model or "default"
 
         # Need to warm a new client. Use any live client as the cwd/path/MCP template.
-        template = acp_client
+        template = _st.acp_client
         if template is None or not template.alive:
             for c in _acp_pool.values():
                 if c and c.alive:
@@ -5468,7 +5469,7 @@ def _ensure_acp_model(requested_model):
                     break
         if template is None:
             # Nothing alive to template from; fall back to the existing pointer.
-            template = acp_client
+            template = _st.acp_client
         if template is None:
             return False, "ACP bridge not connected to Copilot"
 
@@ -5505,7 +5506,7 @@ def _ensure_acp_model(requested_model):
 
         _acp_pool[key] = new_client
         _acp_pool_touch(key)
-        acp_client = new_client
+        _st.acp_client = new_client
         _acp_pool_evict_if_needed(key)
         _telemetry_emit("acp_pool", result="warm", model=key, pool_size=len(_acp_pool),
                         warm_ms=round((time.perf_counter() - _warm_t0) * 1000.0, 1))
@@ -5950,7 +5951,7 @@ class BridgeHandler(BaseHTTPRequestHandler):
             self._json_response(200, {"activity": rows})
 
     def _background_control(self):
-        global _bg_loop_enabled, _bg_loop_interval_seconds, _bg_last_error
+        # global statement removed — writes go to _st.*
         if not _is_loopback_bind():
             self._json_response(403, {"error": {"message": "background mutations are restricted to loopback bind"}})
             return
@@ -5984,14 +5985,14 @@ class BridgeHandler(BaseHTTPRequestHandler):
                     return
             requested_jobs = jobs_value
 
-        requested_enabled = _bg_loop_enabled
+        requested_enabled = _st.bg_loop_enabled
         if "enabled" in data:
             if not isinstance(data.get("enabled"), bool):
                 self._json_response(400, {"error": {"message": "enabled must be a boolean"}})
                 return
             requested_enabled = bool(data.get("enabled"))
 
-        requested_interval = _bg_loop_interval_seconds
+        requested_interval = _st.bg_loop_interval_seconds
         if "intervalSeconds" in data:
             if isinstance(data.get("intervalSeconds"), bool):
                 self._json_response(400, {"error": {"message": "intervalSeconds must be an integer"}})
@@ -6013,26 +6014,26 @@ class BridgeHandler(BaseHTTPRequestHandler):
             run_now = data["runNow"]
         needs_kusto = requested_enabled or run_now
         if needs_kusto:
-            if not _cognition_enabled:
+            if not _st.cognition_enabled:
                 self._json_response(503, {"error": {"message": "Cognition is not enabled"}})
                 return
             cluster, db, context_ok = self._kusto_context()
             if not context_ok:
                 return
 
-        _bg_loop_enabled = requested_enabled
-        _bg_loop_interval_seconds = requested_interval
+        _st.bg_loop_enabled = requested_enabled
+        _st.bg_loop_interval_seconds = requested_interval
         if requested_jobs is not None:
             for job_type, enabled in requested_jobs.items():
                 _BG_JOBS_ENABLED[job_type] = bool(enabled)
-        if _bg_loop_enabled:
+        if _st.bg_loop_enabled:
             if not _start_bg_loop():
-                _bg_last_error = "background loop could not start"
-                self._json_response(503, {"error": {"message": _bg_last_error}})
+                _st.bg_last_error = "background loop could not start"
+                self._json_response(503, {"error": {"message": _st.bg_last_error}})
                 return
         else:
             _stop_bg_loop()
-            _bg_last_error = ""
+            _st.bg_last_error = ""
         if run_now:
             _trigger_background_run_once()
 
@@ -6488,19 +6489,19 @@ class BridgeHandler(BaseHTTPRequestHandler):
     def _health(self):
         backend = _resolve_memory_backend()
         status = {
-            "status": "ok" if (acp_client and acp_client.alive) else "error",
-            "session_id": acp_client.session_id if acp_client else None,
-            "agent": acp_client.agent_info if acp_client else None,
-            "model": acp_client.model if acp_client else None,
-            "mcp_servers": list(acp_client.mcp_config.keys()) if acp_client and acp_client.mcp_config else [],
-            "cognition_enabled": _cognition_enabled,
-            "cognition_launch_id": _cognition_launch_id,
-            "cognition_launch_iso": _cognition_launch_iso,
+            "status": "ok" if (_st.acp_client and _st.acp_client.alive) else "error",
+            "session_id": _st.acp_client.session_id if _st.acp_client else None,
+            "agent": _st.acp_client.agent_info if _st.acp_client else None,
+            "model": _st.acp_client.model if _st.acp_client else None,
+            "mcp_servers": list(_st.acp_client.mcp_config.keys()) if _st.acp_client and _st.acp_client.mcp_config else [],
+            "cognition_enabled": _st.cognition_enabled,
+            "cognition_launch_id": _st.cognition_launch_id,
+            "cognition_launch_iso": _st.cognition_launch_iso,
             "memory_backend": backend,
             "memory_available": _memory_available(),
         }
-        if backend == "sqlite" and _sqlite_mem:
-            status["memory_db_path"] = _sqlite_mem.db_path
+        if backend == "sqlite" and _st.sqlite_mem:
+            status["memory_db_path"] = _st.sqlite_mem.db_path
         self._json_response(200, status)
 
     # ------------------------------------------------------------------
@@ -6510,17 +6511,17 @@ class BridgeHandler(BaseHTTPRequestHandler):
         report = {"timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat(), "subsystems": {}, "readiness": {}, "blockers": []}
 
         # ACP / Copilot CLI
-        acp_ok = bool(acp_client and acp_client.alive)
+        acp_ok = bool(_st.acp_client and _st.acp_client.alive)
         report["subsystems"]["acp"] = {
             "ok": acp_ok,
-            "session_id": acp_client.session_id if acp_client else None,
-            "model": acp_client.model if acp_client else None,
+            "session_id": _st.acp_client.session_id if _st.acp_client else None,
+            "model": _st.acp_client.model if _st.acp_client else None,
         }
         if not acp_ok:
             report["blockers"].append("ACP client not connected. Run: copilot auth login")
 
         # MCP servers
-        mcp_names = list(acp_client.mcp_config.keys()) if acp_client and acp_client.mcp_config else []
+        mcp_names = list(_st.acp_client.mcp_config.keys()) if _st.acp_client and _st.acp_client.mcp_config else []
         report["subsystems"]["mcp"] = {"configured": mcp_names, "count": len(mcp_names)}
 
         # Browser agent
@@ -6580,7 +6581,7 @@ class BridgeHandler(BaseHTTPRequestHandler):
         # Kusto / memory
         cluster, database = _get_kusto_config()
         kusto_configured = bool(cluster and database)
-        kusto_token = bool(_kusto_token_cache)
+        kusto_token = bool(_st.kusto_token_cache)
         report["subsystems"]["kusto"] = {
             "configured": kusto_configured,
             "cluster": cluster[:30] + "..." if cluster and len(cluster) > 30 else cluster,
@@ -6593,18 +6594,18 @@ class BridgeHandler(BaseHTTPRequestHandler):
             report["blockers"].append("Kusto token expired or unavailable. Re-authenticate.")
 
         # Background loop
-        bg_running = bool(_bg_loop_thread and _bg_loop_thread.is_alive())
+        bg_running = bool(_st.bg_loop_thread and _st.bg_loop_thread.is_alive())
         report["subsystems"]["background"] = {
-            "enabled": _bg_loop_enabled,
+            "enabled": _st.bg_loop_enabled,
             "running": bg_running,
-            "interval_seconds": _bg_loop_interval_seconds,
-            "last_tick": _bg_last_tick_iso,
+            "interval_seconds": _st.bg_loop_interval_seconds,
+            "last_tick": _st.bg_last_tick_iso,
         }
 
         # Cron
         with _cron_lock:
-            cron_count = len(_cron_tasks)
-            cron_enabled = sum(1 for t in _cron_tasks if t.get("enabled", True))
+            cron_count = len(_st.cron_tasks)
+            cron_enabled = sum(1 for t in _st.cron_tasks if t.get("enabled", True))
         report["subsystems"]["cron"] = {
             "total_tasks": cron_count,
             "enabled_tasks": cron_enabled,
@@ -6612,8 +6613,8 @@ class BridgeHandler(BaseHTTPRequestHandler):
 
         # Cognition
         report["subsystems"]["cognition"] = {
-            "enabled": _cognition_enabled,
-            "launch_id": _cognition_launch_id,
+            "enabled": _st.cognition_enabled,
+            "launch_id": _st.cognition_launch_id,
         }
 
         # System
@@ -6647,7 +6648,7 @@ class BridgeHandler(BaseHTTPRequestHandler):
     # ------------------------------------------------------------------
     def _cron_list(self):
         with _cron_lock:
-            tasks = list(_cron_tasks)
+            tasks = list(_st.cron_tasks)
         self._json_response(200, {"tasks": tasks, "count": len(tasks)})
 
     def _cron_create(self):
@@ -6680,7 +6681,7 @@ class BridgeHandler(BaseHTTPRequestHandler):
             "created_at": now_iso,
         }
         with _cron_lock:
-            _cron_tasks.append(task)
+            _st.cron_tasks.append(task)
             _save_cron_tasks()
         self._json_response(201, {"task": task})
 
@@ -6693,7 +6694,7 @@ class BridgeHandler(BaseHTTPRequestHandler):
             self._json_response(400, {"error": {"message": err}})
             return
         with _cron_lock:
-            task = next((t for t in _cron_tasks if t.get("id") == task_id), None)
+            task = next((t for t in _st.cron_tasks if t.get("id") == task_id), None)
             if not task:
                 self._json_response(404, {"error": {"message": "cron task not found"}})
                 return
@@ -6719,9 +6720,9 @@ class BridgeHandler(BaseHTTPRequestHandler):
             self._json_response(403, {"error": {"message": "cron mutations restricted to loopback"}})
             return
         with _cron_lock:
-            before = len(_cron_tasks)
-            _cron_tasks[:] = [t for t in _cron_tasks if t.get("id") != task_id]
-            if len(_cron_tasks) == before:
+            before = len(_st.cron_tasks)
+            _st.cron_tasks[:] = [t for t in _st.cron_tasks if t.get("id") != task_id]
+            if len(_st.cron_tasks) == before:
                 self._json_response(404, {"error": {"message": "cron task not found"}})
                 return
             _save_cron_tasks()
@@ -6769,12 +6770,12 @@ class BridgeHandler(BaseHTTPRequestHandler):
         )
 
         # Use ACP to generate the skill
-        if not acp_client or not acp_client.alive:
+        if not _st.acp_client or not _st.acp_client.alive:
             self._json_response(503, {"error": {"message": "ACP not available for skill extraction"}})
             return
 
         try:
-            result = acp_client.send_prompt([
+            result = _st.acp_client.send_prompt([
                 {"role": "system", "content": "You extract reusable skills from successful interactions. Output only valid JSON."},
                 {"role": "user", "content": extract_prompt}
             ])
@@ -6908,7 +6909,7 @@ class BridgeHandler(BaseHTTPRequestHandler):
         limit = max(1, min(limit, _LOG_RING_MAX))
         with _log_lock:
             rows = [{"n": n, "text": t} for (n, t) in _log_ring if n > since]
-            last = _log_seq
+            last = _st.log_seq
         rows = rows[-limit:]
         self._json_response(200, {"lines": rows, "last": last})
 
@@ -7041,7 +7042,7 @@ class BridgeHandler(BaseHTTPRequestHandler):
 
     def _mcp_status(self):
         """Return current MCP server configuration status."""
-        config = acp_client.mcp_config if acp_client else {}
+        config = _st.acp_client.mcp_config if _st.acp_client else {}
         # Redact sensitive env vars (tokens, keys, secrets) before sending to browser
         safe_config = {}
         for srv_name, srv_cfg in config.items():
@@ -7121,7 +7122,7 @@ class BridgeHandler(BaseHTTPRequestHandler):
         if internal:
             # Cognition draft/revise stages opt in to recall via recall_query so
             # the cognitive layer (default ON) does not bypass persistent memory.
-            if inject_memory and recall_query and _cognition_enabled:
+            if inject_memory and recall_query and _st.cognition_enabled:
                 memory_context = _build_memory_context(recall_query)
                 if memory_context:
                     print(f"[AIG] Internal call: injected {len(memory_context)} chars of memory context (recall)")
@@ -7131,7 +7132,7 @@ class BridgeHandler(BaseHTTPRequestHandler):
                 memory_context = ""
                 print("[AIG] Internal call: skipping memory injection")
         else:
-            memory_context = _build_memory_context(user_message) if _cognition_enabled else ""
+            memory_context = _build_memory_context(user_message) if _st.cognition_enabled else ""
             if memory_context:
                 print(f"[AIG] Injected {len(memory_context)} chars of memory context")
 
@@ -7152,7 +7153,7 @@ class BridgeHandler(BaseHTTPRequestHandler):
         elif model_for_response == "lmstudio":
             skip_acp = True
             _acp_route = "lmstudio-no-tools"
-        elif not acp_client:
+        elif not _st.acp_client:
             skip_acp = True
             _acp_route = "acp-unavailable"
         elif len(msg_words) <= 4 and _re.match(
@@ -7197,8 +7198,8 @@ class BridgeHandler(BaseHTTPRequestHandler):
             print(f"[AIG] Step 2: Using ACP ({_request_type})...")
             # Ensure ACP is alive before attempting tool calls.
             # The CLI may have died between requests (idle timeout, crash).
-            if not acp_client.alive:
-                ok, _ = _ensure_acp_model(acp_client.model or "")
+            if not _st.acp_client.alive:
+                ok, _ = _ensure_acp_model(_st.acp_client.model or "")
                 if not ok:
                     needs_acp_tools = False
                     print("[AIG] ACP restart failed, skipping data retrieval")
@@ -7237,10 +7238,10 @@ class BridgeHandler(BaseHTTPRequestHandler):
             # Skipped in raw mode so strict query output is not polluted.
             if not raw_output_requested:
                 acp_prompt += _MEMORY_CAPTURE_DIRECTIVE
-            acp_result = acp_client.prompt(acp_prompt, timeout=90)
+            acp_result = _st.acp_client.prompt(acp_prompt, timeout=90)
             if acp_result and "text" in acp_result and acp_result["text"]:
                 acp_data = acp_result["text"]
-                acp_model_used = acp_client.model or "copilot-acp"
+                acp_model_used = _st.acp_client.model or "copilot-acp"
                 print(f"[AIG] ACP returned {len(acp_data)} chars of data")
 
         # Step 3: Build the final prompt for Eva's persona model (PAT)
@@ -7376,7 +7377,7 @@ class BridgeHandler(BaseHTTPRequestHandler):
 
             print(f"[AIG] LM Studio response: {len(response_text)} chars from {lms_model}")
 
-            if response_text and _cognition_enabled and not internal:
+            if response_text and _st.cognition_enabled and not internal:
                 threading.Thread(target=_post_response_reflection,
                                  args=(user_message, response_text, model_used),
                                  daemon=True).start()
@@ -7451,13 +7452,13 @@ class BridgeHandler(BaseHTTPRequestHandler):
         model_used = "aig"
 
         if raw_output_requested and acp_data:
-            active_raw_model = acp_model_used or (acp_client.model if acp_client else "copilot-acp")
+            active_raw_model = acp_model_used or (_st.acp_client.model if _st.acp_client else "copilot-acp")
             response_text = acp_data
             model_used = f"aig:{active_raw_model}+raw-acp"
             github_pat = ""
             print("[AIG] Raw-output mode: returning ACP tool output directly")
         elif row_recall_requested and acp_data:
-            active_data_model = acp_model_used or (acp_client.model if acp_client else "copilot-acp")
+            active_data_model = acp_model_used or (_st.acp_client.model if _st.acp_client else "copilot-acp")
             response_text = acp_data
             model_used = f"aig:{active_data_model}+acp-data"
             github_pat = ""
@@ -7474,10 +7475,10 @@ class BridgeHandler(BaseHTTPRequestHandler):
 
         # When cognition is active, ACP is the primary path (not a fallback).
         # This avoids PAT round-trips and keeps model routing through Copilot CLI.
-        # Note: _cognition_enabled is only set at startup when Kusto MCP + token
+        # Note: _st.cognition_enabled is only set at startup when Kusto MCP + token
         # are confirmed, so ACP availability is guaranteed at that point.
         # The alive check is deferred to the actual ACP prompt call.
-        if _cognition_enabled and acp_client:
+        if _st.cognition_enabled and _st.acp_client:
             if model_for_response not in ("lmstudio",):
                 github_pat = ""
                 acp_response_model = model_for_response if model_for_response != "acp" else ""
@@ -7495,7 +7496,7 @@ class BridgeHandler(BaseHTTPRequestHandler):
             _runtime_model = model_for_response
         else:
             _route_label = "Copilot CLI ACP bridge"
-            _runtime_model = acp_response_model or (acp_client.model if acp_client else "") or "default"
+            _runtime_model = acp_response_model or (_st.acp_client.model if _st.acp_client else "") or "default"
         eva_system += (
             f"\n[Runtime - AUTHORITATIVE GROUND TRUTH]\n"
             f"This block is injected by tools/acp_bridge.py. It overrides any model self-knowledge.\n"
@@ -7559,7 +7560,7 @@ class BridgeHandler(BaseHTTPRequestHandler):
                             "no explicit",
                         ]
                         if any(m in pat_lower for m in deferral_markers):
-                            active_data_model = acp_model_used or (acp_client.model if acp_client else "copilot-acp")
+                            active_data_model = acp_model_used or (_st.acp_client.model if _st.acp_client else "copilot-acp")
                             response_text = acp_data
                             model_used = f"aig:{active_data_model}+acp-data"
                             print("[AIG] PAT response deferred despite ACP data; returning ACP data directly")
@@ -7578,7 +7579,7 @@ class BridgeHandler(BaseHTTPRequestHandler):
             # ACP response generation — primary path when cognition is active,
             # fallback path when PAT is unavailable or failed.
             print(f"[AIG] Using ACP for response generation...")
-            if acp_client:
+            if _st.acp_client:
                 switched, switch_info = _ensure_acp_model(acp_response_model)
                 if not switched:
                     response_text = f"ACP model switch failed: {switch_info}"
@@ -7598,9 +7599,9 @@ class BridgeHandler(BaseHTTPRequestHandler):
                             full_prompt += "\n\nUser: " + user_message
                     else:
                         full_prompt = eva_system + "\n\nUser: " + user_message
-                    acp_result = acp_client.prompt(full_prompt, timeout=120)
+                    acp_result = _st.acp_client.prompt(full_prompt, timeout=120)
                     response_text = acp_result.get("text", "I'm having trouble processing that right now.")
-                    active_model = acp_client.model or "acp-default"
+                    active_model = _st.acp_client.model or "acp-default"
                     model_used = f"aig:{active_model}"
                     if acp_model_used and acp_model_used != active_model:
                         model_used += f"+{acp_model_used}"
@@ -7609,7 +7610,7 @@ class BridgeHandler(BaseHTTPRequestHandler):
                 model_used = "aig:unavailable"
 
         # Step 5: Post-response reflection (background)
-        if response_text and _cognition_enabled and not internal:
+        if response_text and _st.cognition_enabled and not internal:
             threading.Thread(target=_post_response_reflection,
                            args=(user_message, response_text, model_used),
                            daemon=True).start()
@@ -7681,7 +7682,7 @@ class BridgeHandler(BaseHTTPRequestHandler):
             # Initialize immediately so the response includes DB info
             mem = _get_sqlite_mem()
             # Enable cognition if not already active
-            if not _cognition_enabled:
+            if not _st.cognition_enabled:
                 _enable_cognition({}, model=None, port=None)
             self._json_response(200, {"backend": backend, "db_path": mem.db_path, "status": "ok"})
         elif ok:
@@ -7691,7 +7692,7 @@ class BridgeHandler(BaseHTTPRequestHandler):
 
     def _memory_context(self):
         """Return Eva's memory context as text for injection into any model's system prompt."""
-        if not _cognition_enabled:
+        if not _st.cognition_enabled:
             self._json_response(200, {"context": "", "cognition_enabled": False})
             return
 
@@ -7711,7 +7712,7 @@ class BridgeHandler(BaseHTTPRequestHandler):
 
     def _memory_reflect(self):
         """Trigger post-response reflection for non-ACP models (browser calls this after getting a response)."""
-        if not _cognition_enabled:
+        if not _st.cognition_enabled:
             self._json_response(200, {"status": "cognition_disabled"})
             return
 
@@ -7779,7 +7780,7 @@ class BridgeHandler(BaseHTTPRequestHandler):
             if database.lower() != locked_database.lower():
                 self._json_response(400, {"error": {"message": "database does not match locked KUSTO_DATABASE"}})
                 return
-            if _active_kusto_cluster and not _same_kusto_cluster(cluster_url, _active_kusto_cluster):
+            if _st.active_kusto_cluster and not _same_kusto_cluster(cluster_url, _st.active_kusto_cluster):
                 self._json_response(400, {"error": {"message": "cluster_url does not match active Kusto MCP configuration"}})
                 return
             database = locked_database
@@ -7820,17 +7821,17 @@ class BridgeHandler(BaseHTTPRequestHandler):
                 applied += 1
 
         warning = "Schema-only seed: existing tables are unchanged and no rows were ingested." if schema_only else "Re-running this seed will duplicate inline rows."
-        mcp_config = getattr(acp_client, "mcp_config", {}) if acp_client is not None else {}
+        mcp_config = getattr(_st.acp_client, "mcp_config", {}) if _st.acp_client is not None else {}
         if (
             failed == 0
-            and not _cognition_enabled
-            and _kusto_token_cache
-            and acp_client is not None
-            and getattr(acp_client, "alive", False)
+            and not _st.cognition_enabled
+            and _st.kusto_token_cache
+            and _st.acp_client is not None
+            and getattr(_st.acp_client, "alive", False)
             and "kusto-mcp-server" in mcp_config
         ):
             bridge_port = getattr(self.server, "server_port", None)
-            _enable_cognition(mcp_config, model=acp_client.model, port=bridge_port)
+            _enable_cognition(mcp_config, model=_st.acp_client.model, port=bridge_port)
         self._json_response(200, {
             "ok": failed == 0,
             "applied": applied,
@@ -7841,7 +7842,7 @@ class BridgeHandler(BaseHTTPRequestHandler):
 
     def _mcp_configure(self):
         """Configure MCP servers and restart the ACP client."""
-        global acp_client, _cognition_enabled, _cognition_launch_iso, _cognition_launch_id, _kusto_table_columns_cache
+        # global statement removed — writes go to _st.*
 
         content_length = int(self.headers.get("Content-Length", 0))
         if content_length == 0:
@@ -7888,30 +7889,30 @@ class BridgeHandler(BaseHTTPRequestHandler):
 
         # Inject cached Kusto token if kusto-mcp-server is being configured
         # If no token is cached yet, attempt MSAL silent refresh (same as --enable-kusto-mcp startup)
-        if "kusto-mcp-server" in mcp_servers and not _kusto_token_cache:
+        if "kusto-mcp-server" in mcp_servers and not _st.kusto_token_cache:
             _try_kusto_silent_auth()
         mcp_servers = _inject_kusto_token(mcp_servers)
         _capture_active_kusto_env(mcp_servers)
 
         # Restart ACP client with new MCP config
-        old_path = acp_client.copilot_path if acp_client else "copilot"
-        old_cwd = acp_client.cwd if acp_client else os.getcwd()
-        old_model = acp_client.model if acp_client else None
-        if acp_client:
-            acp_client.stop()
+        old_path = _st.acp_client.copilot_path if _st.acp_client else "copilot"
+        old_cwd = _st.acp_client.cwd if _st.acp_client else os.getcwd()
+        old_model = _st.acp_client.model if _st.acp_client else None
+        if _st.acp_client:
+            _st.acp_client.stop()
 
-        acp_client = ACPClient(copilot_path=old_path, cwd=old_cwd, model=old_model, mcp_config=mcp_servers)
+        _st.acp_client = ACPClient(copilot_path=old_path, cwd=old_cwd, model=old_model, mcp_config=mcp_servers)
         try:
-            acp_client.start()
+            _st.acp_client.start()
             # MCP config changed: drop stale warm clients so the pool only holds
             # clients built with the new server set.
-            _reset_acp_pool(acp_client)
-            if not _cognition_enabled:
+            _reset_acp_pool(_st.acp_client)
+            if not _st.cognition_enabled:
                 _reload_backend = _resolve_memory_backend()
                 if _reload_backend == "sqlite":
                     bridge_port = getattr(self.server, "server_port", None) or getattr(self.server, "server_address", (None, None))[1]
                     _enable_cognition(mcp_servers, model=old_model, port=bridge_port)
-                elif "kusto-mcp-server" in mcp_servers and _kusto_token_cache:
+                elif "kusto-mcp-server" in mcp_servers and _st.kusto_token_cache:
                     bridge_port = getattr(self.server, "server_port", None) or getattr(self.server, "server_address", (None, None))[1]
                     _enable_cognition(mcp_servers, model=old_model, port=bridge_port)
             self._json_response(200, {
@@ -7923,8 +7924,8 @@ class BridgeHandler(BaseHTTPRequestHandler):
             self._json_response(503, {"error": {"message": str(e)}})
 
     def _chat_completions(self):
-        global acp_client
-        if not acp_client or not acp_client.alive:
+        # global statement removed — writes go to _st.*
+        if not _st.acp_client or not _st.acp_client.alive:
             self._json_response(503, {"error": {"message": "ACP bridge not connected to Copilot"}})
             return
 
@@ -7989,7 +7990,7 @@ class BridgeHandler(BaseHTTPRequestHandler):
             print(f"[Cognition] Injected {len(memory_context)} chars of memory context")
 
         # Send to ACP
-        result = acp_client.prompt(prompt_text, timeout=180)
+        result = _st.acp_client.prompt(prompt_text, timeout=180)
 
         if "error" in result:
             error_detail = result["error"]
@@ -8037,7 +8038,7 @@ class BridgeHandler(BaseHTTPRequestHandler):
     def _make_director(self):
         """Wire Claude Opus 4.8 (via ACP) as the text-only director. Returns a
         callback(goal, state) -> subgoal string, or None when ACP is unavailable."""
-        client = acp_client
+        client = _st.acp_client
         if not client:
             return None
 
@@ -8148,7 +8149,7 @@ class BridgeHandler(BaseHTTPRequestHandler):
     # ── Desktop agent (computer use) ──────────────────────────────────
     def _make_desktop_director(self):
         """Wire Claude (via ACP) as the text-only director for the desktop agent."""
-        client = acp_client
+        client = _st.acp_client
         if not client:
             return None
 
@@ -8338,7 +8339,7 @@ class BridgeHandler(BaseHTTPRequestHandler):
         if not ok:
             self._json_response(503, {"error": {"message": "ACP model unavailable: " + str(detail)}})
             return
-        client = acp_client
+        client = _st.acp_client
         if client is None or not getattr(client, "alive", False):
             self._json_response(503, {"error": {"message": "ACP client not connected"}})
             return
@@ -8397,7 +8398,7 @@ class BridgeHandler(BaseHTTPRequestHandler):
 # ---------------------------------------------------------------------------
 
 def main():
-    global _bridge_bind_address
+    # global statement removed — writes go to _st.*
     _install_log_tee()
     default_port = 8888
     env_port = os.environ.get("EVA_ACP_PORT", "").strip()
@@ -8421,7 +8422,7 @@ def main():
     parser.add_argument("--kusto-cluster", default="", help="Kusto cluster URL")
     parser.add_argument("--kusto-database", default="", help="Default Kusto database name")
     args = parser.parse_args()
-    _bridge_bind_address = args.bind
+    _st.bridge_bind_address = args.bind
 
     # Build MCP config
     mcp_config = {}
@@ -8465,7 +8466,7 @@ def main():
         print("[Bridge] GitHub MCP Server enabled")
 
     if args.enable_kusto_mcp:
-        global _kusto_token_cache, _kusto_credential
+        # global statement removed — writes go to _st.*
         script_dir = os.path.dirname(os.path.abspath(__file__))
         kusto_mcp_path = os.path.join(script_dir, "kusto_mcp.py")
         kusto_env = {}
@@ -8529,8 +8530,8 @@ def main():
                 token = cred.get_token("https://kusto.kusto.windows.net/.default")
             kusto_env["KUSTO_ACCESS_TOKEN"] = token.token
             # Cache globally for model switches
-            _kusto_token_cache = token.token
-            _kusto_credential = cred
+            _st.kusto_token_cache = token.token
+            _st.kusto_credential = cred
             print(f"[Bridge] Kusto token obtained and cached (length: {len(token.token)})")
 
             # Auto-discover cluster URL from local cache if not explicitly provided
@@ -8565,7 +8566,7 @@ def main():
         kusto_env["KUSTO_DATABASE_LOCKED"] = "1"
     _capture_active_kusto_env(mcp_config)
 
-    global acp_client
+    # global statement removed — writes go to _st.*
     print(f"[Bridge] Starting ACP bridge on port {args.port}...")
     print(f"[Bridge] Copilot CLI: {args.copilot_path}")
     print(f"[Bridge] Working directory: {args.cwd}")
@@ -8573,19 +8574,19 @@ def main():
         print(f"[Bridge] MCP Servers: {', '.join(mcp_config.keys())}")
 
     # Start ACP client
-    acp_client = ACPClient(copilot_path=args.copilot_path, cwd=args.cwd, model=args.model, mcp_config=mcp_config)
+    _st.acp_client = ACPClient(copilot_path=args.copilot_path, cwd=args.cwd, model=args.model, mcp_config=mcp_config)
     try:
-        acp_client.start()
+        _st.acp_client.start()
     except RuntimeError as e:
         print(f"[Bridge] ERROR: {e}")
         sys.exit(1)
 
     # Enable cognition layer if memory backend is available
-    global _cognition_enabled, _cognition_launch_iso, _cognition_launch_id, _kusto_table_columns_cache
+    # global statement removed — writes go to _st.*
     _startup_backend = _resolve_memory_backend()
     if _startup_backend == "sqlite":
         _enable_cognition(mcp_config, model=args.model, port=args.port)
-    elif "kusto-mcp-server" in mcp_config and _kusto_token_cache:
+    elif "kusto-mcp-server" in mcp_config and _st.kusto_token_cache:
         _enable_cognition(mcp_config, model=args.model, port=args.port)
     else:
         print(f"[Bridge] Cognition layer disabled (no Kusto MCP or token, and backend is not sqlite)")
@@ -8633,8 +8634,8 @@ def main():
         print("\n[Bridge] Shutting down...")
     finally:
         _stop_bg_loop()
-        if acp_client:
-            acp_client.stop()
+        if _st.acp_client:
+            _st.acp_client.stop()
         server.server_close()
 
 

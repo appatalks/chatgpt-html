@@ -3,6 +3,11 @@
 For backward compatibility, ``import bridge`` or loading via
 ``importlib.util.spec_from_file_location("acp_bridge", "tools/acp_bridge.py")``
 exposes the same public symbols that the monolith did.
+
+Package structure:
+  config.py  - Immutable constants (paths, schemas, thresholds)
+  state.py   - Mutable runtime state (globals accessed via bridge.state)
+  core.py    - All bridge logic (functions + BridgeHandler + main)
 """
 
 # Re-export everything from the core module so existing tests and imports
