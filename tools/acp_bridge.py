@@ -2992,17 +2992,25 @@ def _load_candidate_history(entity):
     if cached and now - cached[0] < _CANDIDATE_HISTORY_TTL_SECONDS:
         return cached[1], cached[2]
 
-    cluster, db = _get_kusto_config()
-    if not cluster or not db:
-        return 0, 0.0
-
-    safe_entity = (entity or "").strip().replace("'", "''")
-    query = (
-        "Knowledge\n"
-        f"| where Entity =~ '{safe_entity}'\n"
-        "| summarize Mentions = count(), MaxConfidence = max(Confidence)"
-    )
-    rows = _kusto_query_direct(cluster, db, query)
+    backend = _resolve_memory_backend()
+    if backend == "sqlite":
+        mem = _get_sqlite_mem()
+        safe_entity = (entity or "").strip().replace("'", "''")
+        rows = mem.query(
+            f"SELECT COUNT(*) AS Mentions, MAX(Confidence) AS MaxConfidence "
+            f"FROM Knowledge WHERE Entity = '{safe_entity}' COLLATE NOCASE"
+        )
+    else:
+        cluster, db = _get_kusto_config()
+        if not cluster or not db:
+            return 0, 0.0
+        safe_entity = (entity or "").strip().replace("'", "''")
+        query = (
+            "Knowledge\n"
+            f"| where Entity =~ '{safe_entity}'\n"
+            "| summarize Mentions = count(), MaxConfidence = max(Confidence)"
+        )
+        rows = _kusto_query_direct(cluster, db, query)
     if rows is None:
         return 0, 0.0
 
@@ -3174,13 +3182,7 @@ def _build_memory_context_sqlite(user_message):
         "3. Split distinct facts into separate rows. Do NOT save ephemeral chit-chat.\n"
         "4. After saving, briefly confirm what you stored.\n"
         "5. Recall works only for Entity=\"User\" facts at Confidence >= 0.5 or other entities at "
-        "Confidence >= 0.6.\n"
-        "\n"
-        "[Important: Your memory tools are internal.]\n"
-        "Memory reads and writes happen automatically through your cognition layer. "
-        "Do NOT attempt to call kusto_query or kusto_ingest_inline — those are Kusto-specific "
-        "tools and are not available in local mode. Instead, rely on the [Memory] context below "
-        "and the automatic reflection system to read and write facts."
+        "Confidence >= 0.6."
     )
 
     # Day lifecycle
@@ -3330,6 +3332,62 @@ def _build_memory_context_sqlite(user_message):
                  for k in relevant_hits]
         context_parts.append("[Memory — Relevant to This Message]\n" + "\n".join(extra))
 
+    # 6. Proactive data retrieval (on-demand)
+    msg_lower = user_message.lower()
+    import re as _re
+
+    if _re.search(r'\b(database|databases|memory|sqlite|data)\b', msg_lower):
+        context_parts.append(f"[Live Data] Database: SQLite ({mem.db_path})")
+
+    if _re.search(r'\b(tables?|schema|columns?)\b', msg_lower):
+        tables = mem.query("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'fts_%' ORDER BY name")
+        if tables:
+            tbl_names = [t.get("name", "?") for t in tables]
+            context_parts.append(f"[Live Data] Tables: {', '.join(tbl_names)}")
+
+    if _re.search(r'\b(conversation|history|recent|chat|talked|said)\b', msg_lower):
+        convos = mem.query(
+            "SELECT Timestamp, Role, Content FROM Conversations ORDER BY Timestamp DESC LIMIT 5"
+        )
+        if convos:
+            conv_text = "\n".join(f"  [{c.get('Role','?')}] {str(c.get('Content',''))[:100]}" for c in convos[:5])
+            context_parts.append(f"[Live Data] Recent conversations:\n{conv_text}")
+
+    if _re.search(r'\b(emotion|feeling|mood|how.*feel)\b', msg_lower):
+        emotions = mem.query(
+            "SELECT Timestamp, Joy, Curiosity, Concern, Trigger FROM EmotionState ORDER BY Timestamp DESC LIMIT 5"
+        )
+        if emotions:
+            emo_text = "\n".join(
+                f"  Joy:{e.get('Joy',0):.2f} Curiosity:{e.get('Curiosity',0):.2f} "
+                f"Concern:{e.get('Concern',0):.2f} Trigger:{str(e.get('Trigger',''))[:60]}"
+                for e in emotions[:5])
+            context_parts.append(f"[Live Data] Emotion history:\n{emo_text}")
+
+    known_tables = list(_MEMORY_TABLES)
+    known_table_time_columns = {
+        'Conversations': 'Timestamp',
+        'MemorySummaries': 'Timestamp',
+        'HeuristicsIndex': 'LastSeen',
+        'SelfState': 'Timestamp',
+        'Reflections': 'Timestamp',
+        'Goals': 'UpdatedAt',
+        'EmotionState': 'Timestamp',
+        'BackgroundProposals': 'CreatedAt',
+        'BackgroundActivity': 'StartedAt',
+    }
+    for tbl in known_tables:
+        if tbl.lower() in msg_lower and not any('Tables' in p for p in context_parts):
+            if tbl == 'Knowledge':
+                sample = mem.query(f"SELECT * FROM Knowledge ORDER BY Confidence DESC LIMIT 5")
+            else:
+                time_col = known_table_time_columns.get(tbl, "rowid")
+                sample = mem.query(f"SELECT * FROM {tbl} ORDER BY {time_col} DESC LIMIT 5")
+            if sample:
+                sample_text = "\n".join(f"  {str(row)[:150]}" for row in sample[:5])
+                context_parts.append(f"[Live Data] {tbl} (latest 5):\n{sample_text}")
+            break
+
     return "\n\n".join(context_parts)
 
 
@@ -3382,13 +3440,18 @@ def _post_response_reflection_sqlite(user_message, assistant_response, model_nam
             promotion = None
             if relation == "candidate_mentioned":
                 promotion = _maybe_promote_candidate(entity)
-            if promotion:
-                relation, confidence, value = promotion
+                if promotion:
+                    relation = promotion["relation"]
+                    confidence = promotion["confidence"]
+                    value = promotion["value"]
             know_rows.append({
                 "Timestamp": now, "Entity": entity, "Relation": relation,
                 "Value": value[:200], "Confidence": confidence,
                 "Source": source_id, "Decay": 0.02,
             })
+            _track_candidate_observation(entity)
+            if promotion:
+                print(f"[Cognition/SQLite] Promoted candidate: {entity} ({promotion['reason']})")
         if know_rows:
             mem.ingest("Knowledge", know_columns, know_rows)
             print(f"[Cognition/SQLite] Candidates: {len(know_rows)}")
@@ -3396,9 +3459,12 @@ def _post_response_reflection_sqlite(user_message, assistant_response, model_nam
     # 4. Heuristics tracking
     if candidate_entities:
         heur_columns = ["Entity", "Category", "LastSeen", "Frequency", "Sentiment", "Tags", "Context"]
-        heur_rows = [{"Entity": e, "Category": "conversation", "LastSeen": now,
+        heur_rows = []
+        for entity in candidate_entities[:3]:
+            rel, _, val = _classify_entity_candidate(entity, user_message)
+            heur_rows.append({"Entity": entity, "Category": rel, "LastSeen": now,
                        "Frequency": 1, "Sentiment": 0.0, "Tags": "[]",
-                       "Context": user_message[:100]} for e in candidate_entities[:3]]
+                       "Context": val})
         mem.ingest("HeuristicsIndex", heur_columns, heur_rows)
 
     # 5. Emotion state (inline sentiment, matching Kusto path)
@@ -3426,39 +3492,73 @@ def _post_response_reflection_sqlite(user_message, assistant_response, model_nam
     except Exception as e:
         print(f"[Cognition/SQLite] Emotion analysis skipped: {e}")
 
-    # 6. Auto-reflection (every 5 exchanges)
+    # 6. Auto-reflection (every 5 exchanges or on significant interactions)
     _session_exchange_count += 1
     _session_conversation_buffer.append((user_message[:500], assistant_response[:500]))
     if len(_session_conversation_buffer) > 10:
         _session_conversation_buffer = _session_conversation_buffer[-10:]
 
-    if _session_exchange_count % 5 == 0:
+    is_significant = (
+        len(assistant_response) > 800 or
+        len(candidate_entities) >= 2 or
+        abs(joy - 0.5) > 0.2 or concern > 0.5 or
+        "?" in user_message and len(user_message) > 50
+    )
+
+    if _session_exchange_count % 5 == 0 or is_significant:
         try:
-            recent_text = "\n".join(f"User: {u[:200]}\nEva: {a[:200]}" for u, a in _session_conversation_buffer[-5:])
+            recent = _session_conversation_buffer[-3:]
+            topics = set()
+            for u, a in recent:
+                for word in re.findall(r'\b[A-Z][a-z]{2,}\b', u):
+                    if word.lower() not in _ENTITY_IGNORE_WORDS:
+                        topics.add(word)
+            topic_str = ", ".join(list(topics)[:5]) if topics else "general conversation"
+            reflection_text = (
+                f"Exchange #{_session_exchange_count}: Discussed {topic_str}. "
+                f"Emotional tone — Joy:{joy:.2f}, Concern:{concern:.2f}. "
+                f"{'Significant exchange — ' if is_significant else ''}"
+                f"User asked about: {user_message[:80]}."
+            )
             refl_columns = ["Timestamp", "Trigger", "Observation", "ActionTaken", "Effectiveness"]
             mem.ingest("Reflections", refl_columns, [{
                 "Timestamp": now,
-                "Trigger": f"auto-reflection after {_session_exchange_count} exchanges",
-                "Observation": f"Last 5 exchanges covered: {recent_text[:300]}",
-                "ActionTaken": "auto-logged",
-                "Effectiveness": "0.0",
+                "Trigger": user_message[:100],
+                "Observation": reflection_text,
+                "ActionTaken": "",
+                "Effectiveness": 0.0,
             }])
-            print(f"[Cognition/SQLite] Auto-reflection at exchange {_session_exchange_count}")
+            print(f"[Cognition/SQLite] Auto-reflection #{_session_exchange_count}: {reflection_text[:100]}")
         except Exception as e:
             print(f"[Cognition/SQLite] Reflection error: {e}")
 
     # 7. Auto-summary (every 10 exchanges)
-    if _session_exchange_count % 10 == 0:
+    if _session_exchange_count % 10 == 0 and len(_session_conversation_buffer) >= 5:
         try:
-            summary_text = "; ".join(u[:80] for u, _ in _session_conversation_buffer[-10:])
+            summary_exchanges = _session_conversation_buffer[-10:]
+            all_topics = set()
+            user_intents = []
+            for u, a in summary_exchanges:
+                for word in re.findall(r'\b[A-Z][a-z]{2,}\b', u):
+                    if word.lower() not in _ENTITY_IGNORE_WORDS:
+                        all_topics.add(word)
+                user_intents.append(u[:40].strip())
+            topic_str = ", ".join(list(all_topics)[:8]) if all_topics else "various topics"
+            period = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%d %H:%M")
+            summary_text = (
+                f"Session block ({_session_exchange_count - 9}–{_session_exchange_count}): "
+                f"Topics: {topic_str}. "
+                f"User intents: {'; '.join(user_intents[:5])}. "
+                f"{len(summary_exchanges)} exchanges total."
+            )
             summ_columns = ["Period", "Summary", "Timestamp"]
-            period = datetime.date.today().isoformat() + f"-exchange-{_session_exchange_count}"
             mem.ingest("MemorySummaries", summ_columns, [{
                 "Period": period,
-                "Summary": f"Session summary ({_session_exchange_count} exchanges): {summary_text[:500]}",
+                "Summary": summary_text[:500],
                 "Timestamp": now,
             }])
-            print(f"[Cognition/SQLite] Auto-summary at exchange {_session_exchange_count}")
+            print(f"[Cognition/SQLite] Auto-summary: {summary_text[:100]}")
+            _session_conversation_buffer = _session_conversation_buffer[-10:]
         except Exception as e:
             print(f"[Cognition/SQLite] Summary error: {e}")
 
@@ -4113,7 +4213,11 @@ def _record_background_activity(cluster, database, tick_id, started_at, ended_at
         "Notes": str(notes or "")[:500],
     }
     wrote = False
-    if cluster and database and _kusto_token_cache:
+    backend = _resolve_memory_backend()
+    if backend == "sqlite":
+        mem = _get_sqlite_mem()
+        wrote = mem.ingest("BackgroundActivity", _BG_ACTIVITY_COLUMNS, [row])
+    elif cluster and database and _kusto_token_cache:
         wrote = _kusto_ingest_direct(cluster, database, "BackgroundActivity", _BG_ACTIVITY_COLUMNS, [row])
     error_text = row["Notes"] if status == "failed" else ""
     if status == "failed" and not wrote:
@@ -4153,6 +4257,16 @@ def _background_conversations_query(window_start, window_end):
 
 
 def _query_background_conversations(cluster, database, window_start, window_end):
+    backend = _resolve_memory_backend()
+    if backend == "sqlite":
+        mem = _get_sqlite_mem()
+        start_iso = _to_utc_iso(window_start)
+        end_iso = _to_utc_iso(window_end)
+        return mem.query(
+            f"SELECT SessionId, Timestamp, Role, Content, TokenEstimate FROM Conversations "
+            f"WHERE Timestamp >= '{start_iso}' AND Timestamp <= '{end_iso}' "
+            f"ORDER BY Timestamp ASC LIMIT 500"
+        )
     return _kusto_query_direct(cluster, database, _background_conversations_query(window_start, window_end))
 
 
@@ -4190,6 +4304,10 @@ def _build_background_summary(conversation_rows):
 
 
 def _write_background_proposal(cluster, database, proposal_row):
+    backend = _resolve_memory_backend()
+    if backend == "sqlite":
+        mem = _get_sqlite_mem()
+        return mem.ingest("BackgroundProposals", _BG_PROPOSAL_COLUMNS, [proposal_row])
     return _kusto_ingest_direct(cluster, database, "BackgroundProposals", _BG_PROPOSAL_COLUMNS, [proposal_row])
 
 
@@ -4198,6 +4316,18 @@ def _background_memory_summary_exists(cluster, database, summary_row):
     if not timestamp:
         return False, "Proposal payload Timestamp must be a valid datetime"
     timestamp_iso = _to_utc_iso(timestamp)
+    backend = _resolve_memory_backend()
+    if backend == "sqlite":
+        mem = _get_sqlite_mem()
+        safe_period = _safe_kusto_string(summary_row.get("Period"))
+        safe_summary = _safe_kusto_string(summary_row.get("Summary"))
+        rows = mem.query(
+            f"SELECT 1 FROM MemorySummaries WHERE Period = '{safe_period}' "
+            f"AND Timestamp = '{timestamp_iso}' AND Summary = '{safe_summary}' LIMIT 1"
+        )
+        if rows is None:
+            return False, "MemorySummaries lookup failed"
+        return bool(rows), ""
     query = (
         "MemorySummaries\n"
         f"| where Period == '{_safe_kusto_string(summary_row.get('Period'))}'\n"
@@ -4219,6 +4349,7 @@ def _apply_proposal_payload(cluster, database, target_table, payload):
     """
     if not isinstance(payload, dict):
         return False, "proposal payload missing or not an object", ""
+    backend = _resolve_memory_backend()
     if target_table == "MemorySummaries":
         summary_row = {
             "Period": str(payload.get("Period", "") or ""),
@@ -4234,8 +4365,14 @@ def _apply_proposal_payload(cluster, database, target_table, payload):
         summary_exists, error = _background_memory_summary_exists(cluster, database, summary_row)
         if error:
             return False, error, ""
-        if not summary_exists and not _kusto_ingest_direct(cluster, database, "MemorySummaries", ["Period", "Summary", "Timestamp"], [summary_row]):
-            return False, "MemorySummaries write failed", ""
+        if not summary_exists:
+            if backend == "sqlite":
+                mem = _get_sqlite_mem()
+                if not mem.ingest("MemorySummaries", ["Period", "Summary", "Timestamp"], [summary_row]):
+                    return False, "MemorySummaries write failed", ""
+            else:
+                if not _kusto_ingest_direct(cluster, database, "MemorySummaries", ["Period", "Summary", "Timestamp"], [summary_row]):
+                    return False, "MemorySummaries write failed", ""
         return True, "", "applied to MemorySummaries"
     if target_table == "Reflections":
         observation = str(payload.get("Observation", "") or "").strip()
@@ -4253,8 +4390,13 @@ def _apply_proposal_payload(cluster, database, target_table, payload):
             "ActionTaken": str(payload.get("ActionTaken", "") or "")[:500],
             "Effectiveness": effectiveness,
         }
-        if not _kusto_ingest_direct(cluster, database, "Reflections", ["Timestamp", "Trigger", "Observation", "ActionTaken", "Effectiveness"], [reflection_row]):
-            return False, "Reflections write failed", ""
+        if backend == "sqlite":
+            mem = _get_sqlite_mem()
+            if not mem.ingest("Reflections", ["Timestamp", "Trigger", "Observation", "ActionTaken", "Effectiveness"], [reflection_row]):
+                return False, "Reflections write failed", ""
+        else:
+            if not _kusto_ingest_direct(cluster, database, "Reflections", ["Timestamp", "Trigger", "Observation", "ActionTaken", "Effectiveness"], [reflection_row]):
+                return False, "Reflections write failed", ""
         return True, "", "applied to Reflections"
     return False, "Unsupported proposal target table", ""
 
@@ -4278,8 +4420,17 @@ def _create_background_proposal_row(job_type, target_table, payload, window_star
 
 def _existing_goal_checkin_ids(cluster, database):
     """GoalIds that already have a pending goal check-in proposal (dedup)."""
-    query = _BG_PROPOSALS_LATEST_QUERY + f" | where Status == 'pending' | where JobType == '{_BG_JOB_GOAL_CHECKIN}' | take 100"
-    rows = _kusto_query_direct(cluster, database, query) or []
+    backend = _resolve_memory_backend()
+    if backend == "sqlite":
+        mem = _get_sqlite_mem()
+        safe_jt = _BG_JOB_GOAL_CHECKIN.replace("'", "''")
+        rows = mem.query(
+            f"SELECT Payload FROM BackgroundProposals WHERE Status = 'pending' "
+            f"AND JobType = '{safe_jt}' LIMIT 100"
+        ) or []
+    else:
+        query = _BG_PROPOSALS_LATEST_QUERY + f" | where Status == 'pending' | where JobType == '{_BG_JOB_GOAL_CHECKIN}' | take 100"
+        rows = _kusto_query_direct(cluster, database, query) or []
     ids = set()
     for row in rows:
         payload, _ = _background_proposal_payload(row)
@@ -4309,6 +4460,26 @@ def _build_daily_digest(conversation_rows, goal_rows, period):
     return digest[:800]
 
 
+def _bg_period_exists(ctx, period):
+    """Check whether a MemorySummaries row with this Period already exists."""
+    backend = ctx.get("backend", "kusto")
+    safe = _safe_kusto_string(period)
+    if backend == "sqlite":
+        mem = _get_sqlite_mem()
+        return bool(mem.query(f"SELECT 1 FROM MemorySummaries WHERE Period = '{safe}' LIMIT 1"))
+    return bool(_kusto_query_direct(ctx["cluster"], ctx["database"],
+                                    f"MemorySummaries | where Period == '{safe}' | take 1"))
+
+
+def _bg_goals_query(ctx):
+    """Fetch goals rows, backend-aware."""
+    backend = ctx.get("backend", "kusto")
+    if backend == "sqlite":
+        mem = _get_sqlite_mem()
+        return mem.query("SELECT * FROM Goals ORDER BY Priority DESC, UpdatedAt DESC")
+    return _kusto_query_direct(ctx["cluster"], ctx["database"], _GOALS_LATEST_QUERY)
+
+
 def _job_memory_consolidation(ctx):
     conversation_rows = _query_background_conversations(ctx["cluster"], ctx["database"], ctx["window_start"], ctx["window_end"])
     if conversation_rows is None:
@@ -4330,7 +4501,15 @@ def _job_memory_consolidation(ctx):
 
 
 def _job_goal_checkin(ctx):
-    goal_rows = _kusto_query_direct(ctx["cluster"], ctx["database"], _GOALS_LATEST_QUERY)
+    backend = ctx.get("backend", "kusto")
+    if backend == "sqlite":
+        mem = _get_sqlite_mem()
+        goal_rows = mem.query(
+            "SELECT * FROM Goals WHERE Status = 'active' OR Status = 'paused' "
+            "ORDER BY Priority DESC, UpdatedAt DESC"
+        )
+    else:
+        goal_rows = _kusto_query_direct(ctx["cluster"], ctx["database"], _GOALS_LATEST_QUERY)
     if goal_rows is None:
         return None, "Goals query failed"
     active_goals = [g for g in goal_rows if str(g.get("Status", "")).lower() == "active"]
@@ -4378,11 +4557,16 @@ def _job_goal_checkin(ctx):
 
 def _job_daily_digest(ctx):
     cluster, database = ctx["cluster"], ctx["database"]
+    backend = ctx.get("backend", "kusto")
     now = _utc_now()
     day_start = (now - datetime.timedelta(days=1)).replace(hour=0, minute=0, second=0, microsecond=0)
     day_end = now.replace(hour=0, minute=0, second=0, microsecond=0)
     period = "digest-" + _to_utc_iso(day_start)[:10]
-    existing = _kusto_query_direct(cluster, database, f"MemorySummaries | where Period == '{_safe_kusto_string(period)}' | take 1")
+    if backend == "sqlite":
+        mem = _get_sqlite_mem()
+        existing = mem.query(f"SELECT 1 FROM MemorySummaries WHERE Period = '{_safe_kusto_string(period)}' LIMIT 1")
+    else:
+        existing = _kusto_query_direct(cluster, database, f"MemorySummaries | where Period == '{_safe_kusto_string(period)}' | take 1")
     if existing:
         return [], "digest already exists for " + period
     conversation_rows = _query_background_conversations(cluster, database, day_start, day_end)
@@ -4390,7 +4574,10 @@ def _job_daily_digest(ctx):
         return None, "Conversations query failed"
     if not conversation_rows:
         return [], "no conversations for " + period
-    goal_rows = _kusto_query_direct(cluster, database, _GOALS_LATEST_QUERY) or []
+    if backend == "sqlite":
+        goal_rows = mem.query("SELECT * FROM Goals ORDER BY Priority DESC, UpdatedAt DESC") or []
+    else:
+        goal_rows = _kusto_query_direct(cluster, database, _GOALS_LATEST_QUERY) or []
     digest_text = _build_daily_digest(conversation_rows, goal_rows, period)
     payload = {
         "Period": period,
@@ -4421,6 +4608,15 @@ def _bg_to_int(value, default=0):
 
 def _pending_proposal_exists(cluster, database, job_type):
     """True when a pending proposal already exists for job_type (dedup guard)."""
+    backend = _resolve_memory_backend()
+    if backend == "sqlite":
+        mem = _get_sqlite_mem()
+        safe_jt = job_type.replace("'", "''")
+        rows = mem.query(
+            f"SELECT 1 FROM BackgroundProposals WHERE Status = 'pending' "
+            f"AND JobType = '{safe_jt}' LIMIT 1"
+        )
+        return bool(rows)
     query = _BG_PROPOSALS_LATEST_QUERY + f" | where Status == 'pending' | where JobType == '{job_type}' | take 1"
     rows = _kusto_query_direct(cluster, database, query)
     return bool(rows)
@@ -4480,11 +4676,20 @@ def _bg_watched_tickers(goal_rows):
 
 def _job_knowledge_hygiene(ctx):
     cluster, database = ctx["cluster"], ctx["database"]
-    if not _get_table_columns(cluster, database, "Knowledge"):
-        return [], "no Knowledge table"
+    backend = ctx.get("backend", "kusto")
+    if backend == "sqlite":
+        mem = _get_sqlite_mem()
+        if not mem.table_exists("Knowledge"):
+            return [], "no Knowledge table"
+    else:
+        if not _get_table_columns(cluster, database, "Knowledge"):
+            return [], "no Knowledge table"
     if _pending_proposal_exists(cluster, database, _BG_JOB_KNOWLEDGE_HYGIENE):
         return [], "hygiene proposal already pending"
-    rows = _kusto_query_direct(cluster, database, "Knowledge | project Entity, Relation, Value, Confidence | take 2000")
+    if backend == "sqlite":
+        rows = mem.query("SELECT Entity, Relation, Value, Confidence FROM Knowledge LIMIT 2000")
+    else:
+        rows = _kusto_query_direct(cluster, database, "Knowledge | project Entity, Relation, Value, Confidence | take 2000")
     if rows is None:
         return None, "Knowledge query failed"
     if not rows:
@@ -4530,16 +4735,27 @@ def _job_knowledge_hygiene(ctx):
 
 def _job_reflection_synthesis(ctx):
     cluster, database = ctx["cluster"], ctx["database"]
-    if not _get_table_columns(cluster, database, "Reflections"):
-        return [], "no Reflections table"
+    backend = ctx.get("backend", "kusto")
     start_iso = _to_utc_iso(ctx["window_start"])
-    query = (
-        "Reflections "
-        f"| where Timestamp >= datetime('{start_iso}') "
-        "| where Trigger != 'reflection_synthesis' "
-        "| order by Timestamp asc | take 100 | project Timestamp, Trigger, Observation"
-    )
-    rows = _kusto_query_direct(cluster, database, query)
+    if backend == "sqlite":
+        mem = _get_sqlite_mem()
+        if not mem.table_exists("Reflections"):
+            return [], "no Reflections table"
+        rows = mem.query(
+            f"SELECT Timestamp, Trigger, Observation FROM Reflections "
+            f"WHERE Timestamp >= '{start_iso}' AND Trigger != 'reflection_synthesis' "
+            f"ORDER BY Timestamp ASC LIMIT 100"
+        )
+    else:
+        if not _get_table_columns(cluster, database, "Reflections"):
+            return [], "no Reflections table"
+        query = (
+            "Reflections "
+            f"| where Timestamp >= datetime('{start_iso}') "
+            "| where Trigger != 'reflection_synthesis' "
+            "| order by Timestamp asc | take 100 | project Timestamp, Trigger, Observation"
+        )
+        rows = _kusto_query_direct(cluster, database, query)
     if rows is None:
         return None, "Reflections query failed"
     if len(rows) < _REFLECTION_SYNTH_MIN:
@@ -4571,22 +4787,32 @@ def _job_reflection_synthesis(ctx):
 
 def _job_emotion_drift(ctx):
     cluster, database = ctx["cluster"], ctx["database"]
-    if not _get_table_columns(cluster, database, "EmotionState"):
-        return [], "no EmotionState table"
-    if _pending_proposal_exists(cluster, database, _BG_JOB_EMOTION_DRIFT):
-        return [], "drift proposal already pending"
+    backend = ctx.get("backend", "kusto")
     dims = ["Joy", "Curiosity", "Concern", "Excitement", "Calm", "Empathy"]
-    agg = (
-        "EmotionState | where Timestamp >= ago(7d) | summarize "
-        + ", ".join(f"avg{d}=avg({d})" for d in dims)
-        + ", N=count()"
-    )
-    rows = _kusto_query_direct(cluster, database, agg)
-    if rows is None:
-        return None, "EmotionState query failed"
-    if not rows or _bg_to_int(rows[0].get("N")) < 5:
-        return [], "not enough emotion samples"
-    base_rows = _kusto_query_direct(cluster, database, "EmotionBaseline | project Dimension, Value") or []
+    if backend == "sqlite":
+        mem = _get_sqlite_mem()
+        if not mem.table_exists("EmotionState"):
+            return [], "no EmotionState table"
+        if _pending_proposal_exists(cluster, database, _BG_JOB_EMOTION_DRIFT):
+            return [], "drift proposal already pending"
+        agg_cols = ", ".join(f"AVG({d}) AS avg{d}" for d in dims)
+        rows = mem.query(
+            f"SELECT {agg_cols}, COUNT(*) AS N FROM EmotionState "
+            f"WHERE Timestamp >= datetime('now', '-7 days')"
+        )
+        base_rows = mem.query("SELECT Dimension, Value FROM EmotionBaseline") or []
+    else:
+        if not _get_table_columns(cluster, database, "EmotionState"):
+            return [], "no EmotionState table"
+        if _pending_proposal_exists(cluster, database, _BG_JOB_EMOTION_DRIFT):
+            return [], "drift proposal already pending"
+        agg = (
+            "EmotionState | where Timestamp >= ago(7d) | summarize "
+            + ", ".join(f"avg{d}=avg({d})" for d in dims)
+            + ", N=count()"
+        )
+        rows = _kusto_query_direct(cluster, database, agg)
+        base_rows = _kusto_query_direct(cluster, database, "EmotionBaseline | project Dimension, Value") or []
     baseline = {str(b.get("Dimension")): _bg_to_float(b.get("Value")) for b in base_rows}
     drifts = []
     for d in dims:
@@ -4621,16 +4847,29 @@ def _job_emotion_drift(ctx):
 
 def _job_token_telemetry(ctx):
     cluster, database = ctx["cluster"], ctx["database"]
+    backend = ctx.get("backend", "kusto")
     period = "telemetry-" + ctx["now_iso"][:10]
-    existing = _kusto_query_direct(cluster, database, f"MemorySummaries | where Period == '{_safe_kusto_string(period)}' | take 1")
-    if existing:
-        return [], "telemetry already logged for " + period
-    query = (
-        "Conversations | where Timestamp >= ago(1d) | summarize "
-        "Total=sum(TokenEstimate), N=count(), "
-        "Users=countif(Role=='user'), Assistants=countif(Role=='assistant')"
-    )
-    rows = _kusto_query_direct(cluster, database, query)
+    if backend == "sqlite":
+        mem = _get_sqlite_mem()
+        existing = mem.query(f"SELECT 1 FROM MemorySummaries WHERE Period = '{_safe_kusto_string(period)}' LIMIT 1")
+        if existing:
+            return [], "telemetry already logged for " + period
+        rows = mem.query(
+            "SELECT SUM(TokenEstimate) AS Total, COUNT(*) AS N, "
+            "SUM(CASE WHEN Role='user' THEN 1 ELSE 0 END) AS Users, "
+            "SUM(CASE WHEN Role='assistant' THEN 1 ELSE 0 END) AS Assistants "
+            "FROM Conversations WHERE Timestamp >= datetime('now', '-1 day')"
+        )
+    else:
+        existing = _kusto_query_direct(cluster, database, f"MemorySummaries | where Period == '{_safe_kusto_string(period)}' | take 1")
+        if existing:
+            return [], "telemetry already logged for " + period
+        query = (
+            "Conversations | where Timestamp >= ago(1d) | summarize "
+            "Total=sum(TokenEstimate), N=count(), "
+            "Users=countif(Role=='user'), Assistants=countif(Role=='assistant')"
+        )
+        rows = _kusto_query_direct(cluster, database, query)
     if rows is None:
         return None, "Conversations query failed"
     row = rows[0] if rows else {}
@@ -4653,18 +4892,33 @@ def _job_token_telemetry(ctx):
 
 def _job_proactive_briefing(ctx):
     cluster, database = ctx["cluster"], ctx["database"]
+    backend = ctx.get("backend", "kusto")
     period = "briefing-" + ctx["now_iso"][:10]
-    existing = _kusto_query_direct(cluster, database, f"MemorySummaries | where Period == '{_safe_kusto_string(period)}' | take 1")
-    if existing:
-        return [], "briefing already exists for " + period
-    recent = _kusto_query_direct(
-        cluster, database,
-        "MemorySummaries | where Timestamp >= ago(3d) | where Period !startswith 'briefing-' "
-        "| order by Timestamp desc | take 8 | project Period, Summary"
-    ) or []
-    goal_rows = _kusto_query_direct(cluster, database, _GOALS_LATEST_QUERY) or []
-    active = [g for g in goal_rows if str(g.get("Status", "")).lower() == "active"]
-    convo = _kusto_query_direct(cluster, database, "Conversations | summarize Last=max(Timestamp)") or []
+    if backend == "sqlite":
+        mem = _get_sqlite_mem()
+        existing = mem.query(f"SELECT 1 FROM MemorySummaries WHERE Period = '{_safe_kusto_string(period)}' LIMIT 1")
+        if existing:
+            return [], "briefing already exists for " + period
+        recent = mem.query(
+            "SELECT Period, Summary FROM MemorySummaries "
+            "WHERE Timestamp >= datetime('now', '-3 days') AND Period NOT LIKE 'briefing-%' "
+            "ORDER BY Timestamp DESC LIMIT 8"
+        ) or []
+        goal_rows = mem.query("SELECT * FROM Goals ORDER BY Priority DESC, UpdatedAt DESC") or []
+        active = [g for g in goal_rows if str(g.get("Status", "")).lower() == "active"]
+        convo = mem.query("SELECT MAX(Timestamp) AS Last FROM Conversations") or []
+    else:
+        existing = _kusto_query_direct(cluster, database, f"MemorySummaries | where Period == '{_safe_kusto_string(period)}' | take 1")
+        if existing:
+            return [], "briefing already exists for " + period
+        recent = _kusto_query_direct(
+            cluster, database,
+            "MemorySummaries | where Timestamp >= ago(3d) | where Period !startswith 'briefing-' "
+            "| order by Timestamp desc | take 8 | project Period, Summary"
+        ) or []
+        goal_rows = _kusto_query_direct(cluster, database, _GOALS_LATEST_QUERY) or []
+        active = [g for g in goal_rows if str(g.get("Status", "")).lower() == "active"]
+        convo = _kusto_query_direct(cluster, database, "Conversations | summarize Last=max(Timestamp)") or []
     last_seen = _parse_kusto_datetime(convo[0].get("Last")) if convo else None
     lines = []
     if last_seen:
@@ -4691,10 +4945,9 @@ def _job_proactive_briefing(ctx):
 def _job_market_snapshot(ctx):
     cluster, database = ctx["cluster"], ctx["database"]
     period = "market-" + ctx["now_iso"][:10]
-    existing = _kusto_query_direct(cluster, database, f"MemorySummaries | where Period == '{_safe_kusto_string(period)}' | take 1")
-    if existing:
+    if _bg_period_exists(ctx, period):
         return [], "market snapshot already exists for " + period
-    goal_rows = _kusto_query_direct(cluster, database, _GOALS_LATEST_QUERY) or []
+    goal_rows = _bg_goals_query(ctx) or []
     tickers = _bg_watched_tickers(goal_rows)
     if not tickers:
         return [], "no watched tickers"
@@ -4751,8 +5004,7 @@ def _job_sec_filing_watch(ctx):
 def _job_space_weather_alert(ctx):
     cluster, database = ctx["cluster"], ctx["database"]
     period = "spaceweather-" + ctx["now_iso"][:10]
-    existing = _kusto_query_direct(cluster, database, f"MemorySummaries | where Period == '{_safe_kusto_string(period)}' | take 1")
-    if existing:
+    if _bg_period_exists(ctx, period):
         return [], "space weather already logged for " + period
     prompt = (
         "Background task (no user is present). Report current space weather using NOAA SWPC: the latest planetary Kp "
@@ -4777,17 +5029,25 @@ def _job_space_weather_alert(ctx):
 
 def _job_research_deepdive(ctx):
     cluster, database = ctx["cluster"], ctx["database"]
-    goal_rows = _kusto_query_direct(cluster, database, _GOALS_LATEST_QUERY)
+    backend = ctx.get("backend", "kusto")
+    goal_rows = _bg_goals_query(ctx)
     if goal_rows is None:
         return None, "Goals query failed"
     active = [g for g in goal_rows if str(g.get("Status", "")).lower() == "active"]
     if not active:
         return [], "no active goals"
     active.sort(key=lambda g: (0 if str(g.get("Category", "")) == "knowledge_curation" else 1, -_bg_to_int(g.get("Priority"))))
-    recent = _kusto_query_direct(
-        cluster, database,
-        "Reflections | where Timestamp >= ago(3d) | where Trigger startswith 'research_deepdive' | project Trigger"
-    ) or []
+    if backend == "sqlite":
+        mem = _get_sqlite_mem()
+        recent = mem.query(
+            "SELECT Trigger FROM Reflections "
+            "WHERE Timestamp >= datetime('now', '-3 days') AND Trigger LIKE 'research_deepdive%'"
+        ) or []
+    else:
+        recent = _kusto_query_direct(
+            cluster, database,
+            "Reflections | where Timestamp >= ago(3d) | where Trigger startswith 'research_deepdive' | project Trigger"
+        ) or []
     done_ids = set()
     for r in recent:
         label = str(r.get("Trigger", ""))
@@ -4939,7 +5199,7 @@ def _run_background_tick(trigger="scheduled"):
     tick_id = "bg-" + str(uuid.uuid4())
     started_at = _utc_now()
     if not acquired:
-        cluster, database, _ = _background_kusto_context()
+        cluster, database = _get_kusto_config() if _resolve_memory_backend() != "sqlite" else (None, None)
         _record_background_activity(
             cluster, database, tick_id, started_at, _utc_now(), "skipped", 0, 0,
             f"{trigger} background tick already running"
@@ -4949,20 +5209,40 @@ def _run_background_tick(trigger="scheduled"):
     cluster = None
     database = None
     try:
-        cluster, database, context_error = _background_kusto_context()
-        if context_error:
-            _record_background_activity(cluster, database, tick_id, started_at, _utc_now(), "failed", 0, 0, f"{trigger} background tick: " + context_error)
-            return
+        backend = _resolve_memory_backend()
+        if backend == "sqlite":
+            cluster, database = None, None
+        else:
+            cluster, database, context_error = _background_kusto_context()
+            if context_error:
+                _record_background_activity(cluster, database, tick_id, started_at, _utc_now(), "failed", 0, 0, f"{trigger} background tick: " + context_error)
+                return
 
         if trigger != "manual" and time.time() - _last_user_activity_ts < 120:
             _record_background_activity(cluster, database, tick_id, started_at, _utc_now(), "paused", 0, 0, f"{trigger} background tick: recent user activity")
             return
 
         window_end = _utc_now()
-        window_start, window_end = _background_source_window(cluster, database, window_end)
+        if backend == "sqlite":
+            mem = _get_sqlite_mem()
+            # Derive window start from last summary or 2-hour fallback
+            fallback_start = window_end - datetime.timedelta(seconds=7200)
+            rows = mem.query("SELECT MAX(Timestamp) AS LastTimestamp FROM MemorySummaries")
+            latest_summary = None
+            if rows and rows[0].get("LastTimestamp"):
+                latest_summary = _parse_kusto_datetime(rows[0]["LastTimestamp"])
+            window_start = fallback_start
+            if latest_summary and latest_summary > window_start:
+                window_start = latest_summary
+            if window_start > window_end:
+                window_start = window_end
+        else:
+            window_start, window_end = _background_source_window(cluster, database, window_end)
+
         ctx = {
             "cluster": cluster,
             "database": database,
+            "backend": backend,
             "window_start": window_start,
             "window_end": window_end,
             "now_iso": _to_utc_iso(_utc_now()),
@@ -5073,9 +5353,13 @@ def _start_bg_loop():
     global _bg_loop_thread
     if not _cognition_enabled:
         return False
-    cluster, database = _get_kusto_config()
-    if not cluster or not database or not _kusto_token_cache:
-        return False
+    backend = _resolve_memory_backend()
+    if backend == "sqlite":
+        pass  # SQLite needs no cluster/token
+    else:
+        cluster, database = _get_kusto_config()
+        if not cluster or not database or not _kusto_token_cache:
+            return False
     if _bg_loop_thread and _bg_loop_thread.is_alive():
         return True
     _bg_loop_stop.clear()
@@ -5474,6 +5758,35 @@ class BridgeHandler(BaseHTTPRequestHandler):
             return None, None, False
         return cluster, db, True
 
+    def _memory_context_required(self):
+        """Backend-agnostic memory gate for HTTP endpoints.
+
+        Returns (backend, handle, ok) where:
+          - backend="sqlite", handle=SqliteMemory instance
+          - backend="kusto",  handle=(cluster, db) tuple
+          - ok=False means an error response was already sent
+        """
+        backend = _resolve_memory_backend()
+        if backend == "sqlite":
+            mem = _get_sqlite_mem()
+            return "sqlite", mem, True
+        # Kusto path
+        cluster, db = _get_kusto_config()
+        if not cluster or not db:
+            self._json_response(503, {"error": {"message": "Kusto cluster or database not configured for the bridge"}})
+            return None, None, False
+        token_ok, token_error = _ensure_kusto_token()
+        if not token_ok:
+            message = "Kusto token unavailable"
+            if token_error:
+                clean = " ".join(str(token_error).split())[:160]
+                if clean:
+                    message += ": " + clean
+                print(f"[Bridge] Kusto token error (full): {token_error}", file=sys.stderr)
+            self._json_response(503, {"error": {"message": message}})
+            return None, None, False
+        return "kusto", (cluster, db), True
+
     def _goals_kusto_context(self):
         return self._kusto_context()
 
@@ -5563,8 +5876,16 @@ class BridgeHandler(BaseHTTPRequestHandler):
 
     def _goal_latest_by_id(self, cluster, db, goal_id):
         safe_goal_id = goal_id.replace("'", "''")
-        query = _GOALS_LATEST_QUERY + f" | where GoalId == '{safe_goal_id}' | take 1"
-        rows = _kusto_query_direct(cluster, db, query)
+        backend = _resolve_memory_backend()
+        if backend == "sqlite":
+            mem = _get_sqlite_mem()
+            rows = mem.query(
+                f"SELECT * FROM Goals WHERE GoalId = '{safe_goal_id}' "
+                f"ORDER BY UpdatedAt DESC LIMIT 1"
+            )
+        else:
+            query = _GOALS_LATEST_QUERY + f" | where GoalId == '{safe_goal_id}' | take 1"
+            rows = _kusto_query_direct(cluster, db, query)
         if rows is None:
             return None, "Goals query failed"
         if not rows:
@@ -5585,6 +5906,10 @@ class BridgeHandler(BaseHTTPRequestHandler):
         return row
 
     def _write_goal_row(self, cluster, db, row):
+        backend = _resolve_memory_backend()
+        if backend == "sqlite":
+            mem = _get_sqlite_mem()
+            return mem.ingest("Goals", _GOAL_COLUMNS, [row])
         return _kusto_ingest_direct(cluster, db, "Goals", _GOAL_COLUMNS, [row])
 
     def _background_status(self):
@@ -5592,8 +5917,16 @@ class BridgeHandler(BaseHTTPRequestHandler):
 
     def _background_latest_proposal_by_id(self, cluster, db, proposal_id):
         safe_id = _safe_kusto_string(proposal_id)
-        query = _BG_PROPOSALS_LATEST_QUERY + f" | where ProposalId == '{safe_id}' | take 1"
-        rows = _kusto_query_direct(cluster, db, query)
+        backend = _resolve_memory_backend()
+        if backend == "sqlite":
+            mem = _get_sqlite_mem()
+            rows = mem.query(
+                f"SELECT * FROM BackgroundProposals WHERE ProposalId = '{safe_id}' "
+                f"ORDER BY CreatedAt DESC LIMIT 1"
+            )
+        else:
+            query = _BG_PROPOSALS_LATEST_QUERY + f" | where ProposalId == '{safe_id}' | take 1"
+            rows = _kusto_query_direct(cluster, db, query)
         if rows is None:
             return None, "BackgroundProposals query failed"
         if not rows:
@@ -5604,38 +5937,60 @@ class BridgeHandler(BaseHTTPRequestHandler):
         if not _is_loopback_bind():
             self._json_response(403, {"error": {"message": "background proposal reads are restricted to loopback bind"}})
             return
-        cluster, db, ok = self._kusto_context()
+        backend, handle, ok = self._memory_context_required()
         if not ok:
             return
-        parsed = urllib.parse.urlparse(self.path)
-        params = urllib.parse.parse_qs(parsed.query)
-        status = str(params.get("status", ["pending"])[0] or "pending").strip().lower()
-        if status not in _BG_PROPOSAL_STATUSES and status != "all":
-            self._json_response(400, {"error": {"message": "status must be pending, approved, rejected, applying, applied, failed, or all"}})
-            return
-        query = _BG_PROPOSALS_LATEST_QUERY
-        if status != "all":
-            query += f" | where Status == '{_safe_kusto_string(status)}'"
-        query += " | order by CreatedAt desc | take 50"
-        rows = _kusto_query_direct(cluster, db, query)
-        if rows is None:
-            self._json_response(200, {"proposals": [], "warning": "BackgroundProposals table may not exist yet; run /v1/kusto/seed to create it"})
-            return
-        self._json_response(200, {"proposals": rows})
+        if backend == "sqlite":
+            mem = handle
+            parsed = urllib.parse.urlparse(self.path)
+            params = urllib.parse.parse_qs(parsed.query)
+            status = str(params.get("status", ["pending"])[0] or "pending").strip().lower()
+            if status not in _BG_PROPOSAL_STATUSES and status != "all":
+                self._json_response(400, {"error": {"message": "status must be pending, approved, rejected, applying, applied, failed, or all"}})
+                return
+            sql = "SELECT * FROM BackgroundProposals"
+            if status != "all":
+                sql += f" WHERE Status = '{_safe_kusto_string(status)}'"
+            sql += " ORDER BY CreatedAt DESC LIMIT 50"
+            rows = mem.query(sql)
+            self._json_response(200, {"proposals": rows or []})
+        else:
+            cluster, db = handle
+            parsed = urllib.parse.urlparse(self.path)
+            params = urllib.parse.parse_qs(parsed.query)
+            status = str(params.get("status", ["pending"])[0] or "pending").strip().lower()
+            if status not in _BG_PROPOSAL_STATUSES and status != "all":
+                self._json_response(400, {"error": {"message": "status must be pending, approved, rejected, applying, applied, failed, or all"}})
+                return
+            query = _BG_PROPOSALS_LATEST_QUERY
+            if status != "all":
+                query += f" | where Status == '{_safe_kusto_string(status)}'"
+            query += " | order by CreatedAt desc | take 50"
+            rows = _kusto_query_direct(cluster, db, query)
+            if rows is None:
+                self._json_response(200, {"proposals": [], "warning": "BackgroundProposals table may not exist yet; run /v1/kusto/seed to create it"})
+                return
+            self._json_response(200, {"proposals": rows})
 
     def _background_activity(self):
         if not _is_loopback_bind():
             self._json_response(403, {"error": {"message": "background activity reads are restricted to loopback bind"}})
             return
-        cluster, db, ok = self._kusto_context()
+        backend, handle, ok = self._memory_context_required()
         if not ok:
             return
-        query = "BackgroundActivity | order by StartedAt desc | take 50"
-        rows = _kusto_query_direct(cluster, db, query)
-        if rows is None:
-            self._json_response(200, {"activity": [], "warning": "BackgroundActivity table may not exist yet; run /v1/kusto/seed to create it"})
-            return
-        self._json_response(200, {"activity": rows})
+        if backend == "sqlite":
+            mem = handle
+            rows = mem.query("SELECT * FROM BackgroundActivity ORDER BY StartedAt DESC LIMIT 50")
+            self._json_response(200, {"activity": rows or []})
+        else:
+            cluster, db = handle
+            query = "BackgroundActivity | order by StartedAt desc | take 50"
+            rows = _kusto_query_direct(cluster, db, query)
+            if rows is None:
+                self._json_response(200, {"activity": [], "warning": "BackgroundActivity table may not exist yet; run /v1/kusto/seed to create it"})
+                return
+            self._json_response(200, {"activity": rows})
 
     def _background_control(self):
         global _bg_loop_enabled, _bg_loop_interval_seconds, _bg_last_error
@@ -5792,11 +6147,19 @@ class BridgeHandler(BaseHTTPRequestHandler):
         self._json_response(200, {"proposal": reviewed_row})
 
     def _goals_list(self):
-        cluster, db, ok = self._goals_kusto_context()
+        backend, handle, ok = self._memory_context_required()
         if not ok:
             return
-        query = _GOALS_LATEST_QUERY + " | order by Priority desc, UpdatedAt desc"
-        goals = _kusto_query_direct(cluster, db, query)
+        if backend == "sqlite":
+            mem = handle
+            goals = mem.query(
+                "SELECT * FROM Goals WHERE Status != 'dropped' "
+                "ORDER BY Priority DESC, UpdatedAt DESC"
+            )
+        else:
+            cluster, db = handle
+            query = _GOALS_LATEST_QUERY + " | order by Priority desc, UpdatedAt desc"
+            goals = _kusto_query_direct(cluster, db, query)
         if goals is None:
             self._json_response(200, {"goals": [], "warning": "Goals table may not exist yet; run /v1/kusto/seed to create it"})
             return
@@ -5807,9 +6170,10 @@ class BridgeHandler(BaseHTTPRequestHandler):
             self._json_response(403, {"error": {"message": "goals mutations are restricted to loopback bind"}})
             return
 
-        cluster, db, ok = self._goals_kusto_context()
+        backend, handle, ok = self._memory_context_required()
         if not ok:
             return
+        cluster, db = handle if backend == "kusto" else (None, None)
         data, error = self._read_json_body()
         if error:
             self._json_response(400, {"error": {"message": error}})
@@ -5841,9 +6205,10 @@ class BridgeHandler(BaseHTTPRequestHandler):
             self._json_response(403, {"error": {"message": "goals mutations are restricted to loopback bind"}})
             return
 
-        cluster, db, ok = self._goals_kusto_context()
+        backend, handle, ok = self._memory_context_required()
         if not ok:
             return
+        cluster, db = handle if backend == "kusto" else (None, None)
         goal_id, error = self._validate_goal_id(raw_goal_id)
         if error:
             self._json_response(400, {"error": {"message": error}})
@@ -5878,9 +6243,10 @@ class BridgeHandler(BaseHTTPRequestHandler):
             self._json_response(403, {"error": {"message": "goals mutations are restricted to loopback bind"}})
             return
 
-        cluster, db, ok = self._goals_kusto_context()
+        backend, handle, ok = self._memory_context_required()
         if not ok:
             return
+        cluster, db = handle if backend == "kusto" else (None, None)
         goal_id, error = self._validate_goal_id(raw_goal_id)
         if error:
             self._json_response(400, {"error": {"message": error}})
@@ -5905,7 +6271,15 @@ class BridgeHandler(BaseHTTPRequestHandler):
     # ── Skills ────────────────────────────────────────────────────────
     def _skill_latest_by_id(self, cluster, db, skill_id):
         safe = skill_id.replace("'", "''")
-        rows = _kusto_query_direct(cluster, db, _SKILLS_LATEST_QUERY + f" | where SkillId == '{safe}' | take 1")
+        backend = _resolve_memory_backend()
+        if backend == "sqlite":
+            mem = _get_sqlite_mem()
+            rows = mem.query(
+                f"SELECT * FROM Skills WHERE SkillId = '{safe}' "
+                f"ORDER BY UpdatedAt DESC LIMIT 1"
+            )
+        else:
+            rows = _kusto_query_direct(cluster, db, _SKILLS_LATEST_QUERY + f" | where SkillId == '{safe}' | take 1")
         if rows is None:
             return None, "Skills query failed"
         if not rows:
@@ -5913,6 +6287,10 @@ class BridgeHandler(BaseHTTPRequestHandler):
         return rows[0], ""
 
     def _write_skill_row(self, cluster, db, row):
+        backend = _resolve_memory_backend()
+        if backend == "sqlite":
+            mem = _get_sqlite_mem()
+            return mem.ingest("Skills", _SKILL_COLUMNS, [row])
         return _kusto_ingest_direct(cluster, db, "Skills", _SKILL_COLUMNS, [row])
 
     def _validate_skill_id(self, skill_id):
@@ -7345,6 +7723,9 @@ class BridgeHandler(BaseHTTPRequestHandler):
         if ok and backend == "sqlite":
             # Initialize immediately so the response includes DB info
             mem = _get_sqlite_mem()
+            # Enable cognition if not already active
+            if not _cognition_enabled:
+                _enable_cognition({}, model=None, port=None)
             self._json_response(200, {"backend": backend, "db_path": mem.db_path, "status": "ok"})
         elif ok:
             self._json_response(200, {"backend": backend, "status": "ok"})
@@ -7568,9 +7949,14 @@ class BridgeHandler(BaseHTTPRequestHandler):
             # MCP config changed: drop stale warm clients so the pool only holds
             # clients built with the new server set.
             _reset_acp_pool(acp_client)
-            if "kusto-mcp-server" in mcp_servers and _kusto_token_cache and not _cognition_enabled:
-                bridge_port = getattr(self.server, "server_port", None) or getattr(self.server, "server_address", (None, None))[1]
-                _enable_cognition(mcp_servers, model=old_model, port=bridge_port)
+            if not _cognition_enabled:
+                _reload_backend = _resolve_memory_backend()
+                if _reload_backend == "sqlite":
+                    bridge_port = getattr(self.server, "server_port", None) or getattr(self.server, "server_address", (None, None))[1]
+                    _enable_cognition(mcp_servers, model=old_model, port=bridge_port)
+                elif "kusto-mcp-server" in mcp_servers and _kusto_token_cache:
+                    bridge_port = getattr(self.server, "server_port", None) or getattr(self.server, "server_address", (None, None))[1]
+                    _enable_cognition(mcp_servers, model=old_model, port=bridge_port)
             self._json_response(200, {
                 "status": "ok",
                 "message": f"MCP servers configured: {list(mcp_servers.keys())}",
@@ -8237,12 +8623,15 @@ def main():
         print(f"[Bridge] ERROR: {e}")
         sys.exit(1)
 
-    # Enable cognition layer if Kusto MCP is configured
+    # Enable cognition layer if memory backend is available
     global _cognition_enabled, _cognition_launch_iso, _cognition_launch_id, _kusto_table_columns_cache
-    if "kusto-mcp-server" in mcp_config and _kusto_token_cache:
+    _startup_backend = _resolve_memory_backend()
+    if _startup_backend == "sqlite":
+        _enable_cognition(mcp_config, model=args.model, port=args.port)
+    elif "kusto-mcp-server" in mcp_config and _kusto_token_cache:
         _enable_cognition(mcp_config, model=args.model, port=args.port)
     else:
-        print(f"[Bridge] Cognition layer disabled (no Kusto MCP or token)")
+        print(f"[Bridge] Cognition layer disabled (no Kusto MCP or token, and backend is not sqlite)")
 
     # Start HTTP server. Threaded so a long-running browser agent run does not
     # block status/cancel/confirm polling on other connections.
