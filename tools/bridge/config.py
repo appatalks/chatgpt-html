@@ -9,6 +9,12 @@ a future phase extracts it into ``state.py``.
 import os
 import re
 
+
+def env_truthy(name):
+    """Return True when an environment flag uses the shared truthy form."""
+    return os.environ.get(name, "").strip().lower() in ("1", "true", "yes")
+
+
 # ── Filesystem paths ────────────────────────────────────────────────
 EVA_CONFIG_DIR = os.path.expanduser("~/.config/eva-standalone")
 ARTIFACTS_DIR = os.path.join(EVA_CONFIG_DIR, "artifacts")

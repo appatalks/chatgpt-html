@@ -1,0 +1,198 @@
+"""Bridge domain: telemetry."""
+
+import datetime
+import json
+import os
+import sys
+import threading
+import time
+from bridge import config as _cfg
+from bridge import state as _st
+
+_LOG_LINE_CAP = _cfg.LOG_LINE_CAP
+_LOG_RING_MAX = _cfg.LOG_RING_MAX
+_TELEMETRY_ENABLED = os.environ.get("EVA_TELEMETRY", "1") not in ("0", "false", "no")
+_TELEMETRY_MAX_BYTES = _cfg.TELEMETRY_MAX_BYTES
+_TELEMETRY_PATH = _cfg.TELEMETRY_PATH
+_TELEMETRY_RING_MAX = _cfg.TELEMETRY_RING_MAX
+
+class _StdoutTee:
+    """Wrap a stream so writes go to the original AND into the log ring.
+    Buffers partial writes until a newline so ring entries are whole lines."""
+
+    def __init__(self, original):
+        self._orig = original
+        self._buf = ""
+
+    def write(self, s):
+        try:
+            self._orig.write(s)
+        except Exception:
+            pass
+        try:
+            self._buf += s
+            while "\n" in self._buf:
+                line, self._buf = self._buf.split("\n", 1)
+                _log_ring_add(line)
+        except Exception:
+            pass
+
+    def flush(self):
+        try:
+            self._orig.flush()
+        except Exception:
+            pass
+
+    def __getattr__(self, name):
+        return getattr(self._orig, name)
+
+
+
+def _log_ring_add(line):
+    # global statement removed — writes go to _st.*
+    line = (line or "").rstrip()
+    if not line:
+        return
+    if len(line) > _LOG_LINE_CAP:
+        line = line[:_LOG_LINE_CAP] + "…"
+    with _st.log_lock:
+        _st.log_seq += 1
+        _st.log_ring.append((_st.log_seq, line))
+        if len(_st.log_ring) > _LOG_RING_MAX:
+            del _st.log_ring[:-_LOG_RING_MAX]
+
+
+
+def _install_log_tee():
+    """Route stdout through the tee once (idempotent)."""
+    if not isinstance(sys.stdout, _StdoutTee):
+        sys.stdout = _StdoutTee(sys.stdout)
+
+
+
+def _telemetry_clip(value, limit=120):
+    """Clip a label/string field so telemetry never stores large or sensitive blobs."""
+    if value is None:
+        return None
+    s = str(value)
+    return s if len(s) <= limit else s[:limit] + "…"
+
+
+
+def _telemetry_emit(event, **fields):
+    """Record a telemetry event. Safe to call from any thread; never raises."""
+    if not _TELEMETRY_ENABLED:
+        return
+    try:
+        record = {"ts": _to_utc_iso(_utc_now()), "event": str(event)[:48]}
+        for k, v in fields.items():
+            if isinstance(v, bool) or isinstance(v, (int, float)) or v is None:
+                record[k] = v
+            else:
+                record[k] = _telemetry_clip(v)
+        with _st.telemetry_lock:
+            _st.telemetry_ring.append(record)
+            if len(_st.telemetry_ring) > _TELEMETRY_RING_MAX:
+                del _st.telemetry_ring[:-_TELEMETRY_RING_MAX]
+            try:
+                os.makedirs(os.path.dirname(_TELEMETRY_PATH), exist_ok=True)
+                if (os.path.isfile(_TELEMETRY_PATH)
+                        and os.path.getsize(_TELEMETRY_PATH) >= _TELEMETRY_MAX_BYTES):
+                    try:
+                        os.replace(_TELEMETRY_PATH, _TELEMETRY_PATH + ".1")
+                    except OSError:
+                        pass
+                with open(_TELEMETRY_PATH, "a", encoding="utf-8") as f:
+                    f.write(json.dumps(record) + "\n")
+            except OSError:
+                pass
+        # Compact stdout mirror for live tailing.
+        kv = " ".join(f"{k}={record[k]}" for k in record if k not in ("ts", "event"))
+        print(f"[Telemetry] {record['event']} {kv}".rstrip())
+    except Exception:
+        # Telemetry must never break the request path.
+        pass
+
+
+
+def _percentile(sorted_vals, pct):
+    if not sorted_vals:
+        return None
+    if len(sorted_vals) == 1:
+        return sorted_vals[0]
+    k = (len(sorted_vals) - 1) * (pct / 100.0)
+    lo = int(k)
+    hi = min(lo + 1, len(sorted_vals) - 1)
+    frac = k - lo
+    return round(sorted_vals[lo] + (sorted_vals[hi] - sorted_vals[lo]) * frac, 1)
+
+
+
+def _telemetry_summarize(events):
+    """Build lightweight aggregates from a list of event dicts."""
+    counts = {}
+    pool = {"hit": 0, "warm": 0, "evict": 0, "miss": 0}
+    prompt_ms = []
+    turn_ms = []
+    for ev in events:
+        name = ev.get("event", "?")
+        counts[name] = counts.get(name, 0) + 1
+        if name == "acp_pool":
+            r = ev.get("result")
+            if r in pool:
+                pool[r] += 1
+        elif name == "acp_prompt" and isinstance(ev.get("ms"), (int, float)):
+            prompt_ms.append(ev["ms"])
+        elif name == "aig_turn" and isinstance(ev.get("total_ms"), (int, float)):
+            turn_ms.append(ev["total_ms"])
+    pool_selects = pool["hit"] + pool["warm"]
+    summary = {
+        "event_counts": counts,
+        "pool": dict(pool, hit_rate=(round(pool["hit"] / pool_selects, 3) if pool_selects else None)),
+    }
+
+    def _stats(vals):
+        if not vals:
+            return None
+        sv = sorted(vals)
+        return {
+            "n": len(sv),
+            "avg": round(sum(sv) / len(sv), 1),
+            "p50": _percentile(sv, 50),
+            "p95": _percentile(sv, 95),
+            "max": sv[-1],
+        }
+
+    summary["acp_prompt_ms"] = _stats(prompt_ms)
+    summary["aig_turn_ms"] = _stats(turn_ms)
+    return summary
+
+
+# ---------------------------------------------------------------------------
+# Proactive alerts + notifications
+# ---------------------------------------------------------------------------
+# Two co-operating pieces:
+#   1. A user-defined alert rules store (alerts.json). Each rule names something
+#      the user wants watched (a topic, a company's filings, weather, a standing
+#      research question). The background tick evaluates active rules through the
+#      ACP agent and fires a notification when a rule trips, with per-rule
+#      cooldown and content-hash dedup so the same finding is not repeated.
+#   2. A notification queue (in-memory ring + JSONL) that the front end polls.
+#      New notifications are surfaced as an Eva-authored chat message and, when
+#      the rule asks for it, spoken aloud.
+# Privacy: the rules file holds only labels and watch parameters the user typed;
+# the notification log holds the finding text Eva produced (no keys/tokens). The
+# telemetry mirror records only labels, counts, and decisions.
+
+_ALERT_TYPES = _cfg.ALERT_TYPES
+_ALERT_CHANNELS = _cfg.ALERT_CHANNELS
+_NOTIFY_RING_MAX = _cfg.NOTIFY_RING_MAX
+_NOTIFY_MAX_BYTES = _cfg.NOTIFY_MAX_BYTES
+_NOTIFY_CRITICAL_SALIENCE = _cfg.NOTIFY_CRITICAL_SALIENCE
+_st.alerts_lock = _st.alerts_lock
+_st.notify_lock = _st.notify_lock
+_st.notify_ring = _st.notify_ring
+
+_DEFAULT_ALERT_SETTINGS = _cfg.DEFAULT_ALERT_SETTINGS
+
+

@@ -13,6 +13,7 @@ import threading
 
 from bridge.config import (
     DEFAULT_ALERT_SETTINGS,
+    env_truthy,
 )
 
 # ── ACP client pool ────────────────────────────────────────────────
@@ -25,8 +26,7 @@ acp_pool_lock = threading.RLock()
 kusto_token_cache = None    # Cached Kusto access token
 kusto_credential = None     # Cached credential object for token refresh
 kusto_table_columns_cache = {}  # (cluster, db, table) -> [columns]
-kusto_database_locked = os.environ.get("KUSTO_DATABASE_LOCKED", "").strip().lower() in ("1", "true", "yes") or \
-                         os.environ.get("EVA_KUSTO_LOCKED", "").strip().lower() in ("1", "true", "yes")
+kusto_database_locked = env_truthy("KUSTO_DATABASE_LOCKED") or env_truthy("EVA_KUSTO_LOCKED")
 active_kusto_db = os.environ.get("KUSTO_DATABASE", "").strip()
 active_kusto_cluster = os.environ.get("KUSTO_CLUSTER_URL", "").strip()
 
