@@ -372,16 +372,19 @@ def test_background_static_contract():
     """Background proposal schema and bridge routes are wired."""
     seed_path = "tools/eva_seed.kql"
     bridge_path = "tools/acp_bridge.py"
+    bridge_core_path = "tools/bridge/core.py"
     if not os.path.isfile(seed_path):
         report("background_seed_file", None, "tools/eva_seed.kql not found")
         return
-    if not os.path.isfile(bridge_path):
+    if not os.path.isfile(bridge_path) and not os.path.isfile(bridge_core_path):
         report("background_bridge_file", None, "tools/acp_bridge.py not found")
         return
 
     with open(seed_path) as f:
         seed = f.read()
-    with open(bridge_path) as f:
+    # Read from the core module if the bridge has been modularized
+    active_bridge = bridge_core_path if os.path.isfile(bridge_core_path) else bridge_path
+    with open(active_bridge) as f:
         bridge = f.read()
 
     for table_name in ("BackgroundProposals", "BackgroundActivity"):
