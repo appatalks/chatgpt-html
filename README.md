@@ -2,42 +2,56 @@
 
 ![screenshot](core/img/Eva-splash.png)
 
-A no-build web UI for chatting with multiple AI providers, with persistent memory, emotion tracking, and multi-agent orchestration. Pure HTML, CSS, and JavaScript.
+[Website](https://appatalks.github.io/eva-agent/) | [Documentation](README-2.md) | [Issues](https://github.com/appatalks/eva-agent/issues) | License: MIT
 
-> Recommended: select **Eva (AIG)** in the model dropdown for the full experience.
+A voice-first AI assistant that sees through your camera, controls your browser and desktop, remembers everything, learns from experience, and runs tasks on a schedule. No build step. No framework. Open source.
 
-## Get Started
-
-Run the installer first. It detects and installs every dependency Eva needs on
-your machine (Linux or macOS), self-updates the checkout, and can rebuild the
-AppImage:
+## Quick install
 
 ```bash
-./install.sh            # check dependencies, install missing (asks first)
-./install.sh --check    # report only, install nothing
-./install.sh --yes      # install everything missing, no prompts
+curl -fsSL https://appatalks.github.io/eva-agent/get-eva.sh | bash
 ```
 
-Then download or build the standalone Linux AppImage and run it. The bridge
-starts automatically on a private localhost port.
+Or clone and run locally:
 
 ```bash
-cd standalone
-npm install
-npm run dist
+git clone https://github.com/appatalks/eva-agent.git
+cd eva-agent
+./install.sh            # install dependencies
+cd standalone && npm install && npm run dist
 ./dist/'Eva Standalone-5.2.3.AppImage'
 ```
 
-Prereqs on the host: Node.js 24+, Python 3.12+, GitHub Copilot CLI authenticated (`copilot auth login`). See [standalone/README.md](standalone/README.md).
+Prereqs: Node.js 24+, Python 3.12+, GitHub Copilot CLI (`copilot auth login`).
 
-> **Tip:** For the full Eva experience (persistent memory, emotion tracking, knowledge graph), point Settings > MCP at an Azure Data Explorer cluster you can sign in to. The bridge uses `azure-identity` device code or interactive login on first use, so no keys are stored. Browser-only setup and the manual ACP bridge launch are documented in [README-2.md](README-2.md).
->
-> **Semantic recall:** When an OpenAI API key is set in Settings > Auth, Eva ranks stored facts by meaning (OpenAI `text-embedding-3-small`, cached on disk) so relevant memories surface even when worded differently. Without a key, recall falls back to synonym-expanded keyword matching.
+## Features
 
-> **Skills:** Import a skill from pasted text, a URL, a GitHub repo/SKILL.md, or a file in Settings > Models > Skills. Eva normalizes ("Eva'rises") it into her own format, stores it in ADX, and applies the matching skill automatically when a request fits.
+| | |
+|---|---|
+| **Camera vision** | Webcam presence sensing, face-detection auto-wake, on-demand "look" with gpt-4o |
+| **Browser agent** | Playwright-based DOM control, persistent Chrome login, hybrid vision fallback |
+| **Desktop agent** | PyAutoGUI mouse/keyboard control, optional AT-SPI via computer-use-linux MCP |
+| **Voice interface** | Full-screen voice orb, wake/barge-in, TTS (OpenAI, Polly, Bark, browser) |
+| **Persistent memory** | Kusto/ADX-backed conversations, emotion tracking, semantic recall |
+| **Self-improving skills** | Auto-extracts reusable skills from successful tasks, stored as drafts |
+| **Cron scheduler** | Standard cron expressions, recurring prompts, morning briefings, alerts |
+| **Subagent parallelism** | Spawn up to 4 concurrent ACP tasks, results via notifications |
+| **Multi-provider** | OpenAI, Google Gemini, GitHub Copilot, lm-studio (local) |
+| **Doctor diagnostics** | Structured readiness probe for every subsystem with actionable fixes |
+| **MCP ecosystem** | Azure, GitHub, Kusto, computer-use-linux desktop control |
+| **Cognitive layer** | Eva + Reviewer dual-agent pipeline with configurable models |
+
+## Get started
+
+Select **Eva (AIG)** in the model dropdown for the full experience.
+
+For persistent memory, point Settings > MCP at an Azure Data Explorer cluster. The bridge uses `azure-identity` device code login, no keys stored. For semantic recall, add an OpenAI key in Settings > Auth (falls back to keyword matching without one).
+
+Import skills from text, URLs, GitHub repos, or files in Settings. Eva normalizes them into her format, stores in ADX, and applies matching skills automatically.
 
 ## Documentation
 
 - [README-2.md](README-2.md): architecture, MCP, ACP, browser-only setup, roadmap
 - [standalone/README.md](standalone/README.md): AppImage build and runtime
+- [Website](https://appatalks.github.io/eva-agent/): features, comparison, install guide
 

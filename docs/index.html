@@ -1,0 +1,522 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Eva AI Assistant</title>
+  <meta name="description" content="Eva is a voice-first AI assistant that sees, browses, controls your desktop, learns from experience, and runs scheduled tasks. Open source, local-first, no cloud lock-in.">
+  <meta name="theme-color" content="#0a0a12">
+  <link rel="icon" href="favicon.svg" type="image/svg+xml">
+  <style>
+    :root {
+      --bg: #0a0a12;
+      --bg2: #12121e;
+      --fg: #e0dfe8;
+      --fg2: #8a89a0;
+      --accent: #7c6aef;
+      --accent2: #a78bfa;
+      --glow: rgba(124, 106, 239, 0.15);
+      --border: rgba(138, 137, 160, 0.12);
+      --card: #161625;
+      --radius: 12px;
+      --max: 960px;
+    }
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    html { scroll-behavior: smooth; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', sans-serif;
+      background: var(--bg);
+      color: var(--fg);
+      line-height: 1.6;
+      -webkit-font-smoothing: antialiased;
+    }
+    a { color: var(--accent2); text-decoration: none; }
+    a:hover { text-decoration: underline; }
+    code {
+      font-family: 'SF Mono', 'Fira Code', 'Cascadia Code', monospace;
+      background: var(--bg2);
+      padding: 2px 6px;
+      border-radius: 4px;
+      font-size: 0.9em;
+    }
+
+    /* ── Header ─────────────────────────────────────────────── */
+    header {
+      position: fixed; top: 0; left: 0; right: 0; z-index: 100;
+      background: rgba(10, 10, 18, 0.85);
+      backdrop-filter: blur(12px);
+      border-bottom: 1px solid var(--border);
+    }
+    .header-inner {
+      max-width: var(--max); margin: 0 auto;
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 12px 24px;
+    }
+    .logo {
+      font-size: 1.2rem; font-weight: 700; color: var(--fg);
+      display: flex; align-items: center; gap: 8px;
+    }
+    .logo-dot {
+      width: 10px; height: 10px; border-radius: 50%;
+      background: var(--accent); box-shadow: 0 0 8px var(--accent);
+    }
+    nav { display: flex; gap: 20px; align-items: center; }
+    nav a { color: var(--fg2); font-size: 0.9rem; transition: color 0.2s; }
+    nav a:hover { color: var(--fg); text-decoration: none; }
+    .btn {
+      display: inline-flex; align-items: center; gap: 6px;
+      padding: 8px 18px; border-radius: 8px; font-weight: 500;
+      font-size: 0.9rem; transition: all 0.2s; border: none; cursor: pointer;
+    }
+    .btn-primary {
+      background: var(--accent); color: #fff;
+      box-shadow: 0 2px 12px rgba(124, 106, 239, 0.3);
+    }
+    .btn-primary:hover { background: var(--accent2); text-decoration: none; }
+    .btn-ghost {
+      background: transparent; color: var(--fg2);
+      border: 1px solid var(--border);
+    }
+    .btn-ghost:hover { color: var(--fg); border-color: var(--fg2); text-decoration: none; }
+
+    /* ── Hero ────────────────────────────────────────────────── */
+    .hero {
+      max-width: var(--max); margin: 0 auto;
+      padding: 140px 24px 80px;
+      text-align: center;
+    }
+    .hero h1 {
+      font-size: clamp(2.2rem, 5vw, 3.4rem);
+      font-weight: 800; line-height: 1.15;
+      margin-bottom: 16px;
+    }
+    .hero h1 .gradient {
+      background: linear-gradient(135deg, var(--accent), var(--accent2), #c084fc);
+      -webkit-background-clip: text; background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+    .hero p {
+      font-size: 1.15rem; color: var(--fg2);
+      max-width: 600px; margin: 0 auto 32px;
+    }
+    .hero-actions { display: flex; gap: 12px; justify-content: center; flex-wrap: wrap; }
+
+    /* ── Install block ──────────────────────────────────────── */
+    .install-block {
+      max-width: 640px; margin: 48px auto 0;
+      background: var(--bg2); border: 1px solid var(--border);
+      border-radius: var(--radius); overflow: hidden;
+    }
+    .install-bar {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 8px 16px;
+      background: rgba(255,255,255,0.03);
+      border-bottom: 1px solid var(--border);
+    }
+    .install-dots { display: flex; gap: 6px; }
+    .install-dots span {
+      width: 10px; height: 10px; border-radius: 50%;
+      background: rgba(255,255,255,0.08);
+    }
+    .install-copy {
+      background: none; border: 1px solid var(--border); color: var(--fg2);
+      padding: 4px 10px; border-radius: 6px; font-size: 0.75rem; cursor: pointer;
+      transition: all 0.2s;
+    }
+    .install-copy:hover { color: var(--fg); border-color: var(--fg2); }
+    .install-code {
+      padding: 20px 24px; font-family: 'SF Mono', 'Fira Code', monospace;
+      font-size: 0.95rem; color: var(--accent2); user-select: all;
+      overflow-x: auto; white-space: nowrap;
+    }
+    .install-code .comment { color: var(--fg2); }
+
+    /* ── Features ────────────────────────────────────────────── */
+    .features {
+      max-width: var(--max); margin: 0 auto;
+      padding: 80px 24px;
+    }
+    .features h2 {
+      text-align: center; font-size: 1.8rem; margin-bottom: 48px;
+    }
+    .feature-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+      gap: 20px;
+    }
+    .feature-card {
+      background: var(--card); border: 1px solid var(--border);
+      border-radius: var(--radius); padding: 28px;
+      transition: border-color 0.2s, box-shadow 0.2s;
+    }
+    .feature-card:hover {
+      border-color: rgba(124, 106, 239, 0.3);
+      box-shadow: 0 4px 24px var(--glow);
+    }
+    .feature-icon {
+      width: 40px; height: 40px; border-radius: 10px;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 1.3rem; margin-bottom: 14px;
+      background: var(--glow);
+    }
+    .feature-card h3 { font-size: 1.05rem; margin-bottom: 8px; }
+    .feature-card p { color: var(--fg2); font-size: 0.9rem; line-height: 1.55; }
+
+    /* ── Architecture ────────────────────────────────────────── */
+    .arch {
+      max-width: var(--max); margin: 0 auto;
+      padding: 40px 24px 80px;
+    }
+    .arch h2 { text-align: center; font-size: 1.8rem; margin-bottom: 16px; }
+    .arch-sub { text-align: center; color: var(--fg2); margin-bottom: 40px; max-width: 600px; margin-left: auto; margin-right: auto; }
+    .arch-cols {
+      display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 16px;
+    }
+    .arch-col {
+      background: var(--card); border: 1px solid var(--border);
+      border-radius: var(--radius); padding: 24px;
+    }
+    .arch-col h4 { font-size: 0.85rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--accent2); margin-bottom: 10px; }
+    .arch-col ul { list-style: none; }
+    .arch-col li { font-size: 0.85rem; color: var(--fg2); padding: 3px 0; }
+    .arch-col li::before { content: ""; display: inline-block; width: 4px; height: 4px; border-radius: 50%; background: var(--accent); margin-right: 8px; vertical-align: middle; }
+
+    /* ── Comparison ──────────────────────────────────────────── */
+    .compare {
+      max-width: var(--max); margin: 0 auto; padding: 0 24px 80px;
+    }
+    .compare h2 { text-align: center; font-size: 1.8rem; margin-bottom: 40px; }
+    .compare-table {
+      width: 100%; border-collapse: collapse;
+      font-size: 0.85rem;
+    }
+    .compare-table th {
+      text-align: left; padding: 10px 14px;
+      border-bottom: 2px solid var(--border);
+      color: var(--fg2); font-weight: 600; font-size: 0.8rem;
+      text-transform: uppercase; letter-spacing: 0.04em;
+    }
+    .compare-table td {
+      padding: 10px 14px; border-bottom: 1px solid var(--border);
+      color: var(--fg2);
+    }
+    .compare-table td:first-child { color: var(--fg); font-weight: 500; }
+    .compare-table .yes { color: var(--accent2); }
+    .compare-table .no { opacity: 0.4; }
+
+    /* ── CTA ─────────────────────────────────────────────────── */
+    .cta {
+      text-align: center; padding: 80px 24px;
+      background: linear-gradient(180deg, transparent, var(--bg2));
+    }
+    .cta h2 { font-size: 1.8rem; margin-bottom: 12px; }
+    .cta p { color: var(--fg2); margin-bottom: 28px; }
+
+    /* ── Footer ──────────────────────────────────────────────── */
+    footer {
+      text-align: center; padding: 32px 24px;
+      color: var(--fg2); font-size: 0.8rem;
+      border-top: 1px solid var(--border);
+    }
+    footer a { color: var(--fg2); }
+
+    /* ── Responsive ──────────────────────────────────────────── */
+    @media (max-width: 640px) {
+      .header-inner { padding: 10px 16px; }
+      nav a:not(.btn) { display: none; }
+      .hero { padding: 120px 16px 60px; }
+      .feature-grid { grid-template-columns: 1fr; }
+      .arch-cols { grid-template-columns: 1fr 1fr; }
+      .compare-table { font-size: 0.78rem; }
+      .compare-table th, .compare-table td { padding: 8px 10px; }
+    }
+  </style>
+</head>
+<body>
+
+<!-- Header -->
+<header>
+  <div class="header-inner">
+    <div class="logo">
+      <span class="logo-dot"></span> Eva
+    </div>
+    <nav>
+      <a href="#features">Features</a>
+      <a href="#architecture">Architecture</a>
+      <a href="#compare">Compare</a>
+      <a href="https://github.com/appatalks/eva-agent" class="btn btn-ghost">GitHub</a>
+      <a href="#install" class="btn btn-primary">Install</a>
+    </nav>
+  </div>
+</header>
+
+<!-- Hero -->
+<section class="hero" id="install">
+  <h1>The AI assistant that<br><span class="gradient">lives on your desktop</span></h1>
+  <p>Eva sees through your camera, controls your browser and desktop, remembers everything, learns from experience, and runs tasks on a schedule. Local-first. Open source. No cloud lock-in.</p>
+  <div class="hero-actions">
+    <a href="https://github.com/appatalks/eva-agent" class="btn btn-primary">View on GitHub</a>
+    <a href="https://github.com/appatalks/eva-agent/releases" class="btn btn-ghost">Download AppImage</a>
+  </div>
+
+  <div class="install-block">
+    <div class="install-bar">
+      <div class="install-dots"><span></span><span></span><span></span></div>
+      <button class="install-copy" onclick="navigator.clipboard.writeText('curl -fsSL https://appatalks.github.io/eva-agent/get-eva.sh | bash');this.textContent='Copied!'">Copy</button>
+    </div>
+    <div class="install-code">
+      <span class="comment"># Linux or macOS</span><br>
+      curl -fsSL https://appatalks.github.io/eva-agent/get-eva.sh | bash
+    </div>
+  </div>
+</section>
+
+<!-- Features -->
+<section class="features" id="features">
+  <h2>Everything an assistant should be</h2>
+  <div class="feature-grid">
+
+    <div class="feature-card">
+      <div class="feature-icon">&#x1F441;</div>
+      <h3>Camera vision</h3>
+      <p>Eva sees through your webcam. Face-detection auto-wake, on-demand "look" commands, and ambient presence sensing. All frames stay local unless you ask her to describe what she sees.</p>
+    </div>
+
+    <div class="feature-card">
+      <div class="feature-icon">&#x1F310;</div>
+      <h3>Browser agent</h3>
+      <p>Controls a real Chromium browser through the DOM. Persistent login, precise click-by-element, hybrid vision fallback. Shops, fills forms, navigates, and pauses for confirmation on purchases.</p>
+    </div>
+
+    <div class="feature-card">
+      <div class="feature-icon">&#x1F5A5;</div>
+      <h3>Desktop control</h3>
+      <p>Drives your actual mouse and keyboard to operate any application. Focus windows, open apps, click buttons. Optional AT-SPI semantic control via computer-use-linux MCP for Wayland support.</p>
+    </div>
+
+    <div class="feature-card">
+      <div class="feature-icon">&#x1F3A4;</div>
+      <h3>Voice-first interface</h3>
+      <p>Full-screen voice orb with wake/barge-in, echo management, and spoken progress narration. TTS via OpenAI, AWS Polly, browser, or Bark. Eva speaks her results, not just displays them.</p>
+    </div>
+
+    <div class="feature-card">
+      <div class="feature-icon">&#x1F9E0;</div>
+      <h3>Persistent memory</h3>
+      <p>Kusto/Azure Data Explorer-backed memory with conversation history, emotion tracking, knowledge graph, and semantic recall. She remembers what you talked about last week.</p>
+    </div>
+
+    <div class="feature-card">
+      <div class="feature-icon">&#x1F4DA;</div>
+      <h3>Self-improving skills</h3>
+      <p>Eva auto-extracts reusable skills from successful complex tasks. Skills are stored as drafts for your review and applied automatically to matching future requests.</p>
+    </div>
+
+    <div class="feature-card">
+      <div class="feature-icon">&#x23F0;</div>
+      <h3>Cron scheduler</h3>
+      <p>Schedule recurring tasks with standard cron expressions. Morning briefings, periodic market checks, nightly reports. Eva runs each prompt through ACP at the scheduled time.</p>
+    </div>
+
+    <div class="feature-card">
+      <div class="feature-icon">&#x1F500;</div>
+      <h3>Parallel subagents</h3>
+      <p>Spawn up to 4 isolated subagent tasks that run concurrently. Results delivered via notifications. Break complex work into parallel streams.</p>
+    </div>
+
+    <div class="feature-card">
+      <div class="feature-icon">&#x1F50C;</div>
+      <h3>Multi-provider</h3>
+      <p>OpenAI, Google Gemini, GitHub Copilot, local models via lm-studio. Switch providers from a dropdown. No code changes, no lock-in. Bring any model you want.</p>
+    </div>
+
+    <div class="feature-card">
+      <div class="feature-icon">&#x1F6E1;</div>
+      <h3>Doctor diagnostics</h3>
+      <p>Structured JSON readiness report for every subsystem: ACP, browser, desktop, camera, Kusto, cron, cognition. Tells you exactly what's working and what needs fixing.</p>
+    </div>
+
+    <div class="feature-card">
+      <div class="feature-icon">&#x2699;</div>
+      <h3>MCP ecosystem</h3>
+      <p>Azure, GitHub, Kusto, and computer-use-linux MCP servers configurable from the UI. Extend Eva's capabilities with any MCP-compatible tool server.</p>
+    </div>
+
+    <div class="feature-card">
+      <div class="feature-icon">&#x1F3AF;</div>
+      <h3>Cognitive layer</h3>
+      <p>Eva + Reviewer dual-agent pipeline with configurable models and max review cycles. Every response is drafted, critiqued, and refined before you see it.</p>
+    </div>
+
+  </div>
+</section>
+
+<!-- Architecture -->
+<section class="arch" id="architecture">
+  <h2>How it's built</h2>
+  <p class="arch-sub">No build step. No framework. Pure HTML, CSS, and JavaScript in the browser, backed by a Python bridge that connects to any LLM provider.</p>
+  <div class="arch-cols">
+    <div class="arch-col">
+      <h4>Frontend</h4>
+      <ul>
+        <li>Vanilla JS, no build</li>
+        <li>Electron AppImage</li>
+        <li>Voice orb + chat UI</li>
+        <li>Settings panel</li>
+        <li>LCARS + Eva themes</li>
+      </ul>
+    </div>
+    <div class="arch-col">
+      <h4>Bridge</h4>
+      <ul>
+        <li>Python HTTP server</li>
+        <li>ACP / Copilot CLI</li>
+        <li>MCP server management</li>
+        <li>Background loop</li>
+        <li>Cron scheduler</li>
+      </ul>
+    </div>
+    <div class="arch-col">
+      <h4>Agents</h4>
+      <ul>
+        <li>Browser (Playwright)</li>
+        <li>Desktop (PyAutoGUI)</li>
+        <li>Camera (OpenCV)</li>
+        <li>Subagent spawner</li>
+        <li>Cognition pipeline</li>
+      </ul>
+    </div>
+    <div class="arch-col">
+      <h4>Storage</h4>
+      <ul>
+        <li>Azure Data Explorer</li>
+        <li>Kusto/KQL queries</li>
+        <li>Skills in ADX</li>
+        <li>Local prefs JSON</li>
+        <li>Semantic embeddings</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<!-- Comparison -->
+<section class="compare" id="compare">
+  <h2>Eva vs the field</h2>
+  <table class="compare-table">
+    <thead>
+      <tr>
+        <th></th>
+        <th>Eva</th>
+        <th>Hermes Agent</th>
+        <th>ChatGPT Desktop</th>
+        <th>Claude Desktop</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>Open source</td>
+        <td class="yes">Yes (MIT)</td>
+        <td class="yes">Yes (MIT)</td>
+        <td class="no">No</td>
+        <td class="no">No</td>
+      </tr>
+      <tr>
+        <td>Camera/vision</td>
+        <td class="yes">Built-in</td>
+        <td class="no">No</td>
+        <td class="no">No</td>
+        <td class="no">No</td>
+      </tr>
+      <tr>
+        <td>Browser automation</td>
+        <td class="yes">Built-in (DOM + vision)</td>
+        <td>Via MCP</td>
+        <td class="no">No</td>
+        <td>Via MCP</td>
+      </tr>
+      <tr>
+        <td>Desktop control</td>
+        <td class="yes">Built-in + MCP</td>
+        <td>Via MCP</td>
+        <td class="no">No</td>
+        <td>Via MCP</td>
+      </tr>
+      <tr>
+        <td>Voice interface</td>
+        <td class="yes">Full voice view</td>
+        <td>Transcription only</td>
+        <td class="yes">Yes</td>
+        <td class="no">No</td>
+      </tr>
+      <tr>
+        <td>Self-improving skills</td>
+        <td class="yes">Auto-learn</td>
+        <td class="yes">Yes</td>
+        <td class="no">No</td>
+        <td class="no">No</td>
+      </tr>
+      <tr>
+        <td>Scheduled tasks</td>
+        <td class="yes">Cron</td>
+        <td class="yes">Cron</td>
+        <td class="no">No</td>
+        <td class="no">No</td>
+      </tr>
+      <tr>
+        <td>Persistent memory</td>
+        <td class="yes">Kusto/ADX</td>
+        <td class="yes">FTS5 + files</td>
+        <td>Limited</td>
+        <td>Limited</td>
+      </tr>
+      <tr>
+        <td>Multi-provider</td>
+        <td class="yes">4+ providers</td>
+        <td class="yes">200+ models</td>
+        <td class="no">OpenAI only</td>
+        <td class="no">Anthropic only</td>
+      </tr>
+      <tr>
+        <td>No build step</td>
+        <td class="yes">Yes</td>
+        <td class="no">pip install</td>
+        <td class="no">N/A</td>
+        <td class="no">N/A</td>
+      </tr>
+    </tbody>
+  </table>
+</section>
+
+<!-- CTA -->
+<section class="cta">
+  <h2>Ready to try it?</h2>
+  <p>One command. No API keys required to start (bring your own or use Copilot).</p>
+  <div class="hero-actions">
+    <a href="https://github.com/appatalks/eva-agent" class="btn btn-primary">Get started</a>
+    <a href="https://github.com/appatalks/eva-agent/issues" class="btn btn-ghost">Report an issue</a>
+  </div>
+</section>
+
+<!-- Footer -->
+<footer>
+  <p>Eva AI Assistant &mdash; MIT License &mdash; Built by <a href="https://github.com/appatalks">appatalks</a></p>
+</footer>
+
+<script>
+// Smooth reveal on scroll
+const observer = new IntersectionObserver((entries) => {
+  entries.forEach(e => {
+    if (e.isIntersecting) { e.target.style.opacity = '1'; e.target.style.transform = 'translateY(0)'; }
+  });
+}, { threshold: 0.1 });
+document.querySelectorAll('.feature-card, .arch-col').forEach(el => {
+  el.style.opacity = '0';
+  el.style.transform = 'translateY(20px)';
+  el.style.transition = 'opacity 0.5s, transform 0.5s';
+  observer.observe(el);
+});
+</script>
+
+</body>
+</html>
