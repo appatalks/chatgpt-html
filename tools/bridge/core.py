@@ -1342,7 +1342,7 @@ class BridgeHandler(BaseHTTPRequestHandler):
         }
 
         # Cron
-        with _cron_lock:
+        with _st.cron_lock:
             cron_count = len(_st.cron_tasks)
             cron_enabled = sum(1 for t in _st.cron_tasks if t.get("enabled", True))
         report["subsystems"]["cron"] = {
@@ -1386,7 +1386,7 @@ class BridgeHandler(BaseHTTPRequestHandler):
     # Cron CRUD endpoints
     # ------------------------------------------------------------------
     def _cron_list(self):
-        with _cron_lock:
+        with _st.cron_lock:
             tasks = list(_st.cron_tasks)
         self._json_response(200, {"tasks": tasks, "count": len(tasks)})
 
@@ -1419,7 +1419,7 @@ class BridgeHandler(BaseHTTPRequestHandler):
             "next_run": _cron_next_run(schedule) or "",
             "created_at": now_iso,
         }
-        with _cron_lock:
+        with _st.cron_lock:
             _st.cron_tasks.append(task)
             _save_cron_tasks()
         self._json_response(201, {"task": task})
@@ -1432,7 +1432,7 @@ class BridgeHandler(BaseHTTPRequestHandler):
         if err:
             self._json_response(400, {"error": {"message": err}})
             return
-        with _cron_lock:
+        with _st.cron_lock:
             task = next((t for t in _st.cron_tasks if t.get("id") == task_id), None)
             if not task:
                 self._json_response(404, {"error": {"message": "cron task not found"}})
@@ -1458,7 +1458,7 @@ class BridgeHandler(BaseHTTPRequestHandler):
         if not _is_loopback_bind():
             self._json_response(403, {"error": {"message": "cron mutations restricted to loopback"}})
             return
-        with _cron_lock:
+        with _st.cron_lock:
             before = len(_st.cron_tasks)
             _st.cron_tasks[:] = [t for t in _st.cron_tasks if t.get("id") != task_id]
             if len(_st.cron_tasks) == before:
@@ -1550,8 +1550,8 @@ class BridgeHandler(BaseHTTPRequestHandler):
         if not prompt:
             self._json_response(400, {"error": {"message": "prompt is required"}})
             return
-        with _subagent_lock:
-            running = sum(1 for t in _subagent_tasks.values() if t.get("status") == "running")
+        with _st.subagent_lock:
+            running = sum(1 for t in _st.subagent_tasks.values() if t.get("status") == "running")
             if running >= _SUBAGENT_MAX:
                 self._json_response(429, {"error": {"message": f"max {_SUBAGENT_MAX} concurrent subagents"}})
                 return
@@ -1566,8 +1566,8 @@ class BridgeHandler(BaseHTTPRequestHandler):
             "started_at": now_iso,
             "ended_at": None,
         }
-        with _subagent_lock:
-            _subagent_tasks[task_id] = task
+        with _st.subagent_lock:
+            _st.subagent_tasks[task_id] = task
         thread = threading.Thread(target=_subagent_worker, args=(task_id, prompt, label), name=f"subagent-{task_id}", daemon=True)
         thread.start()
         self._json_response(202, {"task": {k: v for k, v in task.items() if k != "thread"}})
@@ -1576,15 +1576,15 @@ class BridgeHandler(BaseHTTPRequestHandler):
         """Return status of all subagent tasks, or a specific one via ?id=..."""
         params = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
         task_id = (params.get("id", [""])[0] or "").strip()
-        with _subagent_lock:
+        with _st.subagent_lock:
             if task_id:
-                task = _subagent_tasks.get(task_id)
+                task = _st.subagent_tasks.get(task_id)
                 if not task:
                     self._json_response(404, {"error": {"message": "subagent task not found"}})
                     return
                 self._json_response(200, {"task": {k: v for k, v in task.items() if k != "thread"}})
             else:
-                tasks = [{k: v for k, v in t.items() if k != "thread"} for t in _subagent_tasks.values()]
+                tasks = [{k: v for k, v in t.items() if k != "thread"} for t in _st.subagent_tasks.values()]
                 running = sum(1 for t in tasks if t.get("status") == "running")
                 self._json_response(200, {"tasks": tasks[-20:], "running": running, "max": _SUBAGENT_MAX})
 
@@ -1619,15 +1619,15 @@ class BridgeHandler(BaseHTTPRequestHandler):
             limit = 100
         limit = max(1, min(limit, _TELEMETRY_RING_MAX))
         event_filter = (params.get("event", [""])[0] or "").strip()
-        with _telemetry_lock:
-            events = list(_telemetry_ring)
+        with _st.telemetry_lock:
+            events = list(_st.telemetry_ring)
         if event_filter:
             events = [e for e in events if e.get("event") == event_filter]
         recent = events[-limit:]
         self._json_response(200, {
             "enabled": _TELEMETRY_ENABLED,
             "count": len(recent),
-            "total_in_memory": len(_telemetry_ring),
+            "total_in_memory": len(_st.telemetry_ring),
             "summary": _telemetry_summarize(events),
             "events": recent,
         })
@@ -1646,8 +1646,8 @@ class BridgeHandler(BaseHTTPRequestHandler):
         except ValueError:
             limit = 60
         limit = max(1, min(limit, _LOG_RING_MAX))
-        with _log_lock:
-            rows = [{"n": n, "text": t} for (n, t) in _log_ring if n > since]
+        with _st.log_lock:
+            rows = [{"n": n, "text": t} for (n, t) in _st.log_ring if n > since]
             last = _st.log_seq
         rows = rows[-limit:]
         self._json_response(200, {"lines": rows, "last": last})
@@ -1697,8 +1697,8 @@ class BridgeHandler(BaseHTTPRequestHandler):
         except ValueError:
             limit = 20
         limit = max(1, min(limit, _NOTIFY_RING_MAX))
-        with _notify_lock:
-            items = list(_notify_ring)
+        with _st.notify_lock:
+            items = list(_st.notify_ring)
         if since:
             idx = next((i for i, r in enumerate(items) if r.get("id") == since), None)
             if idx is not None:
@@ -1730,7 +1730,7 @@ class BridgeHandler(BaseHTTPRequestHandler):
         if error:
             self._json_response(400, {"error": {"message": error}})
             return
-        with _alerts_lock:
+        with _st.alerts_lock:
             doc = _load_alerts()
             existing = None
             rid_in = _alert_clip(data.get("id"), 64) if isinstance(data, dict) else ""
@@ -1759,7 +1759,7 @@ class BridgeHandler(BaseHTTPRequestHandler):
         if not re.fullmatch(r"[A-Za-z0-9_-]{1,64}", rule_id):
             self._json_response(400, {"error": {"message": "alert id is invalid"}})
             return
-        with _alerts_lock:
+        with _st.alerts_lock:
             doc = _load_alerts()
             before = len(doc["alerts"])
             doc["alerts"] = [r for r in doc["alerts"] if r.get("id") != rule_id]
@@ -1773,7 +1773,7 @@ class BridgeHandler(BaseHTTPRequestHandler):
         if error:
             self._json_response(400, {"error": {"message": error}})
             return
-        with _alerts_lock:
+        with _st.alerts_lock:
             doc = _load_alerts()
             doc["settings"] = _sanitize_alert_settings(data)
             _save_alerts(doc)
@@ -2511,7 +2511,7 @@ class BridgeHandler(BaseHTTPRequestHandler):
             self._json_response(400, {"error": {"message": "cluster_url does not match configured KUSTO_CLUSTER_URL"}})
             return
 
-        if _kusto_database_locked:
+        if _st.kusto_database_locked:
             locked_database = _get_locked_kusto_database()
             if not locked_database:
                 self._json_response(400, {"error": {"message": "KUSTO_DATABASE is required when KUSTO_DATABASE_LOCKED is set"}})
@@ -2619,7 +2619,7 @@ class BridgeHandler(BaseHTTPRequestHandler):
                 resolved_env[k] = str(v) if not isinstance(v, str) else v
             srv_cfg['env'] = resolved_env
 
-        if _kusto_database_locked and "kusto-mcp-server" in mcp_servers:
+        if _st.kusto_database_locked and "kusto-mcp-server" in mcp_servers:
             kusto_env = mcp_servers["kusto-mcp-server"].setdefault("env", {})
             locked_db = kusto_env.get("KUSTO_DATABASE") or _get_locked_kusto_database()
             if locked_db:
@@ -3214,7 +3214,7 @@ def main():
             _persist_kusto_cluster(args.kusto_cluster)
         if args.kusto_database:
             kusto_env["KUSTO_DATABASE"] = args.kusto_database
-        if _kusto_database_locked:
+        if _st.kusto_database_locked:
             kusto_env["KUSTO_DATABASE_LOCKED"] = "1"
 
         # Pre-fetch Kusto token so the MCP subprocess doesn't need interactive auth
@@ -3297,7 +3297,7 @@ def main():
         }
         print(f"[Bridge] Kusto MCP Server enabled (cluster: {args.kusto_cluster or 'from tool params'})")
 
-    if _kusto_database_locked and "kusto-mcp-server" in mcp_config:
+    if _st.kusto_database_locked and "kusto-mcp-server" in mcp_config:
         kusto_env = mcp_config["kusto-mcp-server"].setdefault("env", {})
         locked_db = kusto_env.get("KUSTO_DATABASE") or _get_locked_kusto_database()
         if locked_db:
