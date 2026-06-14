@@ -429,7 +429,16 @@ class SqliteMemory:
                     # Fallback to LIKE search
                     return self._like_search(table, terms, limit)
 
-                safe_terms = terms.replace('"', '""')
+                # Quote each term individually to prevent FTS5 syntax errors
+                # (e.g. bare colons, operators, or column references)
+                safe_parts = []
+                for word in terms.split():
+                    w = word.strip()
+                    if w:
+                        safe_parts.append('"' + w.replace('"', '""') + '"')
+                if not safe_parts:
+                    return []
+                safe_terms = " ".join(safe_parts)
                 sql = (
                     f"SELECT t.* FROM {table} t "
                     f"JOIN {fts_table} f ON t.rowid = f.rowid "

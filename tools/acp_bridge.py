@@ -3393,21 +3393,28 @@ def _post_response_reflection_sqlite(user_message, assistant_response, model_nam
                        "Context": user_message[:100]} for e in candidate_entities[:3]]
         mem.ingest("HeuristicsIndex", heur_columns, heur_rows)
 
-    # 5. Emotion state
+    # 5. Emotion state (inline sentiment, matching Kusto path)
     try:
-        emotion_data = _analyze_response_sentiment(assistant_response, user_message)
-        if emotion_data:
-            emo_columns = ["Timestamp", "Joy", "Curiosity", "Concern", "Excitement", "Calm", "Empathy", "Trigger", "DecayRate"]
-            mem.ingest("EmotionState", emo_columns, [
-                {"Timestamp": now, "Joy": emotion_data.get("Joy", 0.5),
-                 "Curiosity": emotion_data.get("Curiosity", 0.5),
-                 "Concern": emotion_data.get("Concern", 0.1),
-                 "Excitement": emotion_data.get("Excitement", 0.5),
-                 "Calm": emotion_data.get("Calm", 0.8),
-                 "Empathy": emotion_data.get("Empathy", 0.5),
-                 "Trigger": emotion_data.get("Trigger", "")[:200],
-                 "DecayRate": 0.1}
-            ])
+        pos_words = len(re.findall(r'\b(happy|great|excellent|wonderful|love|enjoy|glad|excited|amazing|good|thank)\b',
+                                   assistant_response, re.I))
+        neg_words = len(re.findall(r'\b(sorry|error|fail|wrong|bad|unfortunately|cannot|problem|issue)\b',
+                                   assistant_response, re.I))
+        joy = min(1.0, 0.5 + (pos_words - neg_words) * 0.1)
+        concern = min(1.0, 0.2 + neg_words * 0.15)
+        curiosity = min(1.0, 0.6 + 0.1 * ("?" in user_message))
+        trigger_text = user_message[:100] if len(user_message) > 100 else user_message
+        emo_columns = ["Timestamp", "Joy", "Curiosity", "Concern", "Excitement", "Calm", "Empathy", "Trigger", "DecayRate"]
+        mem.ingest("EmotionState", emo_columns, [
+            {"Timestamp": now, "Joy": round(joy, 3),
+             "Curiosity": round(curiosity, 3),
+             "Concern": round(concern, 3),
+             "Excitement": 0.4,
+             "Calm": 0.9,
+             "Empathy": 0.6,
+             "Trigger": trigger_text,
+             "DecayRate": 0.1}
+        ])
+        print(f"[Cognition/SQLite] Updated emotion state: Joy={joy:.2f} Curiosity={curiosity:.2f} Concern={concern:.2f}")
     except Exception as e:
         print(f"[Cognition/SQLite] Emotion analysis skipped: {e}")
 
