@@ -68,7 +68,7 @@ def _enable_cognition(mcp_servers, model=None, port=None):
         {"Timestamp": now, "Capability": "weather_news", "Status": "active",
          "Details": json.dumps({"feeds": ["weather", "news", "markets", "space_weather"]})},
         {"Timestamp": now, "Capability": "image_skills", "Status": "active",
-         "Details": json.dumps({"skills": ["wikimedia_search", "dalle3_generation"]})},
+         "Details": json.dumps({"skills": ["wikimedia_search", "gpt_image_1_generation"]})},
         {"Timestamp": now, "Capability": "persistent_memory", "Status": "active",
                 "Details": json.dumps({"tables": _MEMORY_TABLES})},
     ]
@@ -524,8 +524,7 @@ def _build_memory_context_sqlite(user_message):
         "• desktop-control: Launch and operate desktop applications (GIMP, file managers, editors). Use [[EVA_DESKTOP]] marker\n"
         "• camera-vision: See through the user's webcam. Use [[EVA_LOOK]] marker\n"
         "• image-search: Find images on Wikimedia Commons for any topic\n"
-        "• image-generation: Generate images via DALL-E 3 (use [Image of <description>] syntax)\n"
-        f"• persistent-memory: Your {db_label} database tracks everything automatically. Tables:\n"
+        "• image-generation: Generate images via gpt-image-1 (use [Image of <description>] syntax)\n"
         "    Knowledge, Conversations, EmotionState, MemorySummaries, Reflections,\n"
         "    Goals, SelfState, HeuristicsIndex, EmotionBaseline\n"
         "\n"
@@ -998,7 +997,7 @@ def _build_memory_context(user_message):
         "• data-retrieval: Fetch live stock quotes, financial data, company info via web tools (MCP)\n"
         "• weather-news: Real-time weather, news headlines, market summaries, space weather via MCP tools\n"
         "• image-search: Find images on Wikimedia Commons for any topic\n"
-        "• image-generation: Generate images via DALL-E 3 (use [Image of <description>] syntax)\n"
+        "• image-generation: Generate images via gpt-image-1 (use [Image of <description>] syntax)\n"
         f"{persistent_memory_capability}"
         "    Knowledge (Entity, Relation, Value, Confidence) — facts about the user and world\n"
         "    Conversations (SessionId, Role, Content) — chat history\n"
