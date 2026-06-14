@@ -693,6 +693,200 @@ function renderBackgroundAll() {
   renderBackgroundActivity();
 }
 
+// ---------------------------------------------------------------------------
+// Doctor diagnostics
+// ---------------------------------------------------------------------------
+async function runDoctor() {
+  var btn = document.getElementById('doctorButton');
+  var report = document.getElementById('doctorReport');
+  if (btn) btn.disabled = true;
+  if (report) { report.style.display = 'block'; report.textContent = 'Running diagnostics...'; }
+  try {
+    var bridgeUrl = await detectACPBridge();
+    var resp = await fetch(bridgeUrl.replace(/\/+$/, '') + '/v1/doctor');
+    var data = await resp.json();
+    if (!resp.ok) { if (report) report.textContent = 'Error: ' + (data.error ? data.error.message : 'unknown'); return; }
+
+    // Format the report
+    var lines = [];
+    var r = data.readiness || {};
+    var b = data.blockers || [];
+    lines.push('=== Eva Diagnostics ===');
+    lines.push('');
+    lines.push('Readiness:');
+    var checks = [
+      ['Chat (ACP)', r.can_chat],
+      ['Browser agent', r.can_browse],
+      ['Desktop agent', r.can_desktop],
+      ['Camera/vision', r.can_see],
+      ['Memory (Kusto)', r.can_remember],
+      ['Background loop', r.can_schedule],
+      ['Cron tasks', r.can_cron],
+    ];
+    for (var i = 0; i < checks.length; i++) {
+      lines.push('  ' + (checks[i][1] ? '\u2705' : '\u274c') + ' ' + checks[i][0]);
+    }
+
+    var ss = data.subsystems || {};
+    if (ss.system) {
+      lines.push('');
+      lines.push('System: Python ' + (ss.system.python || '?') + ', Node ' + (ss.system.node || 'not found'));
+      lines.push('Platform: ' + (ss.system.platform || '?') + ' (' + (ss.system.arch || '?') + ')');
+    }
+    if (ss.mcp) {
+      lines.push('MCP servers: ' + (ss.mcp.configured || []).join(', ') || 'none');
+    }
+    if (ss.desktop_agent) {
+      if (ss.desktop_agent.computer_use_linux_available) lines.push('computer-use-linux: installed');
+      if (ss.desktop_agent.ydotool_available) lines.push('ydotool: available');
+    }
+    if (b.length) {
+      lines.push('');
+      lines.push('Blockers:');
+      for (var j = 0; j < b.length; j++) lines.push('  - ' + b[j]);
+    }
+    if (report) report.textContent = lines.join('\n');
+  } catch (e) {
+    if (report) report.textContent = 'Failed: ' + e.message + ' \u2014 Is the bridge running?';
+  } finally {
+    if (btn) btn.disabled = false;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Cron scheduler UI
+// ---------------------------------------------------------------------------
+async function cronRefresh() {
+  var listEl = document.getElementById('cronList');
+  var statusEl = document.getElementById('cronStatus');
+  try {
+    var bridgeUrl = await detectACPBridge();
+    var resp = await fetch(bridgeUrl.replace(/\/+$/, '') + '/v1/cron');
+    var data = await resp.json();
+    if (!resp.ok) { if (statusEl) statusEl.textContent = 'Error: ' + (data.error ? data.error.message : 'unknown'); return; }
+    if (statusEl) statusEl.textContent = data.count + ' task(s)';
+    if (!listEl) return;
+    var tasks = data.tasks || [];
+    if (!tasks.length) { listEl.innerHTML = '<p class="auth-note">No cron tasks. Add one above.</p>'; return; }
+    var html = '';
+    for (var i = 0; i < tasks.length; i++) {
+      var t = tasks[i];
+      var enabled = t.enabled !== false;
+      html += '<div class="background-item" style="margin-bottom:10px;padding:8px;border:1px solid rgba(127,127,127,0.2);border-radius:6px">';
+      html += '<div style="display:flex;justify-content:space-between;align-items:center">';
+      html += '<strong>' + _escHtml(t.label) + '</strong>';
+      html += '<span style="font-size:11px;opacity:0.7">' + _escHtml(t.schedule) + '</span>';
+      html += '</div>';
+      html += '<p style="margin:4px 0;font-size:12px;opacity:0.8">' + _escHtml(t.prompt).substring(0, 200) + '</p>';
+      html += '<div style="font-size:11px;opacity:0.6">';
+      if (t.next_run) html += 'Next: ' + t.next_run.substring(0, 16).replace('T', ' ') + ' UTC';
+      if (t.last_run) html += ' | Last: ' + t.last_run.substring(0, 16).replace('T', ' ') + ' UTC';
+      html += '</div>';
+      html += '<div style="margin-top:6px;display:flex;gap:6px">';
+      html += '<button class="auth-toggle" style="font-size:11px;padding:2px 8px" onclick="cronToggle(\'' + t.id + '\',' + !enabled + ')">' + (enabled ? 'Disable' : 'Enable') + '</button>';
+      html += '<button class="auth-toggle" style="font-size:11px;padding:2px 8px;color:#c44" onclick="cronDelete(\'' + t.id + '\')">Delete</button>';
+      html += '</div></div>';
+    }
+    listEl.innerHTML = html;
+  } catch (e) {
+    if (statusEl) statusEl.textContent = 'Failed: ' + e.message;
+  }
+}
+
+async function cronAdd() {
+  var label = (document.getElementById('cronLabel') || {}).value || '';
+  var schedule = (document.getElementById('cronSchedule') || {}).value || '';
+  var prompt = (document.getElementById('cronPrompt') || {}).value || '';
+  var statusEl = document.getElementById('cronStatus');
+  if (!label.trim() || !schedule.trim() || !prompt.trim()) {
+    if (statusEl) statusEl.textContent = 'All three fields are required.';
+    return;
+  }
+  try {
+    var bridgeUrl = await detectACPBridge();
+    var resp = await fetch(bridgeUrl.replace(/\/+$/, '') + '/v1/cron', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ label: label.trim(), schedule: schedule.trim(), prompt: prompt.trim() })
+    });
+    var data = await resp.json();
+    if (!resp.ok) { if (statusEl) statusEl.textContent = 'Error: ' + (data.error ? data.error.message : 'unknown'); return; }
+    if (statusEl) statusEl.textContent = 'Created: ' + (data.task ? data.task.label : '');
+    // Clear form
+    if (document.getElementById('cronLabel')) document.getElementById('cronLabel').value = '';
+    if (document.getElementById('cronSchedule')) document.getElementById('cronSchedule').value = '';
+    if (document.getElementById('cronPrompt')) document.getElementById('cronPrompt').value = '';
+    cronRefresh();
+  } catch (e) {
+    if (statusEl) statusEl.textContent = 'Failed: ' + e.message;
+  }
+}
+
+async function cronToggle(taskId, enable) {
+  try {
+    var bridgeUrl = await detectACPBridge();
+    await fetch(bridgeUrl.replace(/\/+$/, '') + '/v1/cron/' + encodeURIComponent(taskId), {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ enabled: enable })
+    });
+    cronRefresh();
+  } catch (e) { /* ignore */ }
+}
+
+async function cronDelete(taskId) {
+  try {
+    var bridgeUrl = await detectACPBridge();
+    await fetch(bridgeUrl.replace(/\/+$/, '') + '/v1/cron/' + encodeURIComponent(taskId), { method: 'DELETE' });
+    cronRefresh();
+  } catch (e) { /* ignore */ }
+}
+
+// ---------------------------------------------------------------------------
+// Skills auto-learn — extract skill from recent interaction
+// ---------------------------------------------------------------------------
+async function autoLearnSkill(messages, taskSummary) {
+  try {
+    var bridgeUrl = await detectACPBridge();
+    var resp = await fetch(bridgeUrl.replace(/\/+$/, '') + '/v1/skills/auto-learn', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ messages: messages || [], task_summary: taskSummary || '' })
+    });
+    var data = await resp.json();
+    if (resp.ok && data.draft) {
+      // Auto-create the skill as a draft
+      var draft = data.draft;
+      var createResp = await fetch(bridgeUrl.replace(/\/+$/, '') + '/v1/skills', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          Name: draft.Name || 'Auto-learned skill',
+          Description: draft.Description || '',
+          Instructions: draft.Instructions || '',
+          Tools: draft.Tools || '',
+          Tags: (draft.Tags || '') + (draft.Tags ? ',auto-learned' : 'auto-learned'),
+          Source: 'auto-learned',
+          Status: 'draft'
+        })
+      });
+      if (createResp.ok) {
+        setStatus('info', 'Skill learned: ' + (draft.Name || 'untitled'));
+      }
+      return data.draft;
+    }
+    return null;
+  } catch (e) {
+    return null;
+  }
+}
+
+function _escHtml(s) {
+  var div = document.createElement('div');
+  div.appendChild(document.createTextNode(s || ''));
+  return div.innerHTML;
+}
+
 async function loadBackgroundData(quiet) {
   if (_backgroundState.loading) return;
   _backgroundState.loading = true;
@@ -893,6 +1087,15 @@ function _evaAgentFeedback(status, endpoint, title) {
   } catch (_) {}
 
   if (typeof lastResponse === 'string') lastResponse = spoken;
+
+  // 4) Auto-learn: when a complex task completes successfully, extract a reusable skill.
+  if (state === 'done' && goal && typeof autoLearnSkill === 'function') {
+    try {
+      var hist = JSON.parse(localStorage.getItem('aigMessages') || '[]');
+      var recent = Array.isArray(hist) ? hist.slice(-10) : [];
+      autoLearnSkill(recent, goal);
+    } catch (_) {}
+  }
 }
 
 // Render + speak the result of an Eva "look" (webcam vision). Mirrors the agent
@@ -2260,7 +2463,7 @@ function _vvStartLogStream() {
   _vv._logSince = 0;
   _vv._logPolling = false;
   _vvPollLogStream();
-  _vv.logInterval = setInterval(_vvPollLogStream, 1500);
+  _vv.logInterval = setInterval(_vvPollLogStream, 15000);
 }
 
 function _vvStopLogStream() {

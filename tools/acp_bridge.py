@@ -27,13 +27,16 @@ The server exposes a single endpoint:
 """
 
 import argparse
+import base64
 import copy
 import datetime
 import hashlib
 import json
 import mimetypes
 import os
+import platform
 import re
+import shutil
 import socket
 import subprocess
 import sys
@@ -1035,6 +1038,198 @@ _bg_last_error = ""
 _bg_last_activity = {}
 _last_user_activity_ts = 0.0
 _bg_tick_lock = threading.Lock()
+
+# ---------------------------------------------------------------------------
+# Cron scheduler — user-defined scheduled tasks
+# ---------------------------------------------------------------------------
+_CRON_TASKS_PATH = os.path.join(
+    os.environ.get("XDG_CONFIG_HOME", os.path.expanduser("~/.config")),
+    "eva-standalone", "cron_tasks.json"
+)
+_cron_tasks = []      # list of {id, label, schedule, prompt, enabled, last_run, next_run, created_at}
+_cron_lock = threading.Lock()
+
+
+def _load_cron_tasks():
+    global _cron_tasks
+    try:
+        with open(_CRON_TASKS_PATH, "r") as f:
+            _cron_tasks = json.load(f)
+    except (FileNotFoundError, json.JSONDecodeError):
+        _cron_tasks = []
+
+
+def _save_cron_tasks():
+    os.makedirs(os.path.dirname(_CRON_TASKS_PATH), exist_ok=True)
+    with open(_CRON_TASKS_PATH, "w") as f:
+        json.dump(_cron_tasks, f, indent=2)
+
+
+def _parse_cron_expr(expr):
+    """Parse a 5-field cron expression into (minute, hour, dom, month, dow) tuples.
+    Each field is a set of valid integers, or None for wildcard (*)."""
+    parts = (expr or "").strip().split()
+    if len(parts) != 5:
+        return None, "expected 5 fields (minute hour dom month dow)"
+    ranges = [(0, 59), (0, 23), (1, 31), (1, 12), (0, 6)]
+    parsed = []
+    for i, (field, (lo, hi)) in enumerate(zip(parts, ranges)):
+        if field == "*":
+            parsed.append(None)
+            continue
+        vals = set()
+        for segment in field.split(","):
+            step_parts = segment.split("/", 1)
+            range_part = step_parts[0]
+            step = int(step_parts[1]) if len(step_parts) > 1 else 1
+            if step < 1:
+                return None, f"invalid step in field {i}"
+            if range_part == "*":
+                vals.update(range(lo, hi + 1, step))
+                continue
+            dash = range_part.split("-", 1)
+            try:
+                a = int(dash[0])
+                b = int(dash[1]) if len(dash) > 1 else a
+            except ValueError:
+                return None, f"invalid value in field {i}"
+            if a < lo or b > hi or a > b:
+                return None, f"out of range in field {i}"
+            vals.update(range(a, b + 1, step))
+        parsed.append(vals)
+    return tuple(parsed), ""
+
+
+def _cron_matches(parsed, dt):
+    """Check if a datetime matches a parsed cron expression."""
+    minute, hour, dom, month, dow = parsed
+    if minute is not None and dt.minute not in minute:
+        return False
+    if hour is not None and dt.hour not in hour:
+        return False
+    if dom is not None and dt.day not in dom:
+        return False
+    if month is not None and dt.month not in month:
+        return False
+    if dow is not None:
+        # Cron: 0=Sunday, Python weekday(): 0=Monday. Convert.
+        cron_dow = (dt.weekday() + 1) % 7
+        if cron_dow not in dow:
+            return False
+    return True
+
+
+def _cron_next_run(expr, after_dt=None):
+    """Compute the next run time for a cron expression (up to 48h ahead)."""
+    parsed, err = _parse_cron_expr(expr)
+    if err or parsed is None:
+        return None
+    if after_dt is None:
+        after_dt = datetime.datetime.now(datetime.timezone.utc)
+    # Scan minute by minute for up to 48 hours
+    candidate = after_dt.replace(second=0, microsecond=0) + datetime.timedelta(minutes=1)
+    for _ in range(48 * 60):
+        if _cron_matches(parsed, candidate):
+            return candidate.isoformat()
+        candidate += datetime.timedelta(minutes=1)
+    return None
+
+
+def _cron_tick():
+    """Called from the background loop worker. Runs any due cron tasks."""
+    if not _cron_tasks:
+        return
+    now = datetime.datetime.now(datetime.timezone.utc)
+    now_iso = now.isoformat()
+    ran = []
+    with _cron_lock:
+        for task in _cron_tasks:
+            if not task.get("enabled", True):
+                continue
+            parsed, err = _parse_cron_expr(task.get("schedule", ""))
+            if err or parsed is None:
+                continue
+            if not _cron_matches(parsed, now):
+                continue
+            # Don't re-run within same minute
+            last = task.get("last_run", "")
+            if last and last[:16] == now_iso[:16]:
+                continue
+            ran.append(task)
+    for task in ran:
+        prompt = task.get("prompt", "")
+        label = task.get("label", "cron task")
+        print(f"[Cron] Running: {label}")
+        try:
+            _cron_execute_task(task["id"], prompt, label)
+        except Exception as e:
+            print(f"[Cron] Error running {label}: {e}")
+        with _cron_lock:
+            task["last_run"] = now_iso
+            task["next_run"] = _cron_next_run(task.get("schedule", ""), now)
+            _save_cron_tasks()
+
+
+def _cron_execute_task(task_id, prompt, label):
+    """Execute a cron task by sending its prompt through ACP."""
+    if not acp_client or not acp_client.alive:
+        print(f"[Cron] ACP not available for task {label}")
+        return
+    messages = [{"role": "user", "content": f"[Scheduled task: {label}] {prompt}"}]
+    try:
+        result = acp_client.send_prompt(messages)
+        if result:
+            # Push result as a notification
+            _push_notification(f"Cron: {label}", str(result)[:500], channel="chat")
+    except Exception as e:
+        print(f"[Cron] Task execution error: {e}")
+
+
+def _push_notification(title, body, channel="chat"):
+    """Push an internal notification into the notification ring."""
+    note = {
+        "id": "n-" + uuid.uuid4().hex[:8],
+        "title": title,
+        "body": body[:500],
+        "channel": channel,
+        "timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+        "seen": False,
+    }
+    with _notify_lock:
+        _notify_ring.append(note)
+        if len(_notify_ring) > _NOTIFY_RING_MAX:
+            del _notify_ring[:-_NOTIFY_RING_MAX]
+
+# ---------------------------------------------------------------------------
+# Subagent parallelism — spawn isolated ACP tasks that run concurrently
+# ---------------------------------------------------------------------------
+_subagent_tasks = {}  # task_id -> {id, label, prompt, status, result, started_at, ended_at, thread}
+_subagent_lock = threading.Lock()
+_SUBAGENT_MAX = 4
+
+
+def _subagent_worker(task_id, prompt, label):
+    """Run a single subagent task in its own thread using the existing ACP pool."""
+    with _subagent_lock:
+        task = _subagent_tasks.get(task_id)
+        if not task:
+            return
+    try:
+        if not acp_client or not acp_client.alive:
+            raise RuntimeError("ACP not available")
+        messages = [{"role": "user", "content": f"[Subagent task: {label}] {prompt}"}]
+        result = acp_client.send_prompt(messages)
+        with _subagent_lock:
+            task["status"] = "done"
+            task["result"] = str(result or "")[:4000]
+            task["ended_at"] = datetime.datetime.now(datetime.timezone.utc).isoformat()
+        _push_notification(f"Subagent done: {label}", str(result or "")[:300], channel="chat")
+    except Exception as e:
+        with _subagent_lock:
+            task["status"] = "error"
+            task["result"] = str(e)[:500]
+            task["ended_at"] = datetime.datetime.now(datetime.timezone.utc).isoformat()
+        _push_notification(f"Subagent failed: {label}", str(e)[:300], channel="chat")
 
 
 def _is_loopback_bind():
@@ -4324,8 +4519,19 @@ def _run_background_tick(trigger="scheduled"):
 
 
 def _bg_loop_worker():
+    _load_cron_tasks()
     next_due = time.time() + max(1, int(_bg_loop_interval_seconds or 7200))
+    _cron_last_minute = -1
     while not _bg_loop_stop.is_set():
+        # Cron: check every ~30s regardless of background loop enabled state
+        now_utc = datetime.datetime.now(datetime.timezone.utc)
+        if now_utc.minute != _cron_last_minute:
+            _cron_last_minute = now_utc.minute
+            try:
+                _cron_tick()
+            except Exception as e:
+                print(f"[Cron] tick error: {e}")
+
         if not _bg_loop_enabled:
             next_due = time.time() + max(1, int(_bg_loop_interval_seconds or 7200))
             _bg_loop_stop.wait(5)
@@ -4568,12 +4774,18 @@ class BridgeHandler(BaseHTTPRequestHandler):
         parsed_path = urllib.parse.urlparse(self.path).path
         if parsed_path == "/health":
             self._health()
+        elif parsed_path == "/v1/doctor":
+            self._doctor()
         elif parsed_path == "/v1/models":
             self._models()
         elif parsed_path == "/v1/mcp":
             self._mcp_status()
         elif parsed_path == "/v1/mcp/config":
             self._mcp_persisted_config()
+        elif parsed_path == "/v1/cron":
+            self._cron_list()
+        elif parsed_path == "/v1/subagent/status":
+            self._subagent_status()
         elif parsed_path == "/v1/telemetry":
             self._telemetry_report()
         elif parsed_path == "/v1/logs":
@@ -4626,6 +4838,12 @@ class BridgeHandler(BaseHTTPRequestHandler):
             self._aig_chat()
         elif parsed_path == "/v1/telemetry":
             self._telemetry_ingest()
+        elif parsed_path == "/v1/cron":
+            self._cron_create()
+        elif parsed_path == "/v1/skills/auto-learn":
+            self._skills_auto_learn()
+        elif parsed_path == "/v1/subagent/spawn":
+            self._subagent_spawn()
         elif parsed_path == "/v1/browser/run":
             self._browser_run()
         elif parsed_path == "/v1/desktop/run":
@@ -4675,6 +4893,8 @@ class BridgeHandler(BaseHTTPRequestHandler):
             self._goals_patch(urllib.parse.unquote(parsed_path.split("/v1/goals/", 1)[1]))
         elif parsed_path.startswith("/v1/skills/"):
             self._skills_patch(urllib.parse.unquote(parsed_path.split("/v1/skills/", 1)[1]))
+        elif parsed_path.startswith("/v1/cron/"):
+            self._cron_update(urllib.parse.unquote(parsed_path.split("/v1/cron/", 1)[1]))
         else:
             self.send_error(404, "Not Found")
 
@@ -4686,6 +4906,8 @@ class BridgeHandler(BaseHTTPRequestHandler):
             self._alerts_delete(urllib.parse.unquote(parsed_path.split("/v1/alerts/", 1)[1]))
         elif parsed_path.startswith("/v1/skills/"):
             self._skills_delete(urllib.parse.unquote(parsed_path.split("/v1/skills/", 1)[1]))
+        elif parsed_path.startswith("/v1/cron/"):
+            self._cron_delete(urllib.parse.unquote(parsed_path.split("/v1/cron/", 1)[1]))
         else:
             self.send_error(404, "Not Found")
 
@@ -5413,6 +5635,351 @@ class BridgeHandler(BaseHTTPRequestHandler):
             "cognition_launch_iso": _cognition_launch_iso,
         }
         self._json_response(200, status)
+
+    # ------------------------------------------------------------------
+    # Doctor — structured readiness report for all Eva subsystems
+    # ------------------------------------------------------------------
+    def _doctor(self):
+        report = {"timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat(), "subsystems": {}, "readiness": {}, "blockers": []}
+
+        # ACP / Copilot CLI
+        acp_ok = bool(acp_client and acp_client.alive)
+        report["subsystems"]["acp"] = {
+            "ok": acp_ok,
+            "session_id": acp_client.session_id if acp_client else None,
+            "model": acp_client.model if acp_client else None,
+        }
+        if not acp_ok:
+            report["blockers"].append("ACP client not connected. Run: copilot auth login")
+
+        # MCP servers
+        mcp_names = list(acp_client.mcp_config.keys()) if acp_client and acp_client.mcp_config else []
+        report["subsystems"]["mcp"] = {"configured": mcp_names, "count": len(mcp_names)}
+
+        # Browser agent
+        ba_module = _BROWSER_AGENT is not None
+        ba_playwright = False
+        if ba_module:
+            try:
+                import importlib
+                importlib.import_module("playwright")
+                ba_playwright = True
+            except ImportError:
+                pass
+        report["subsystems"]["browser_agent"] = {
+            "module_loaded": ba_module,
+            "playwright_available": ba_playwright,
+        }
+        if ba_module and not ba_playwright:
+            report["blockers"].append("Playwright not installed. Run: pip install playwright && playwright install chromium")
+
+        # Desktop agent
+        da_module = _DESKTOP_AGENT is not None
+        da_pyautogui = False
+        da_display = bool(os.environ.get("DISPLAY") or os.environ.get("WAYLAND_DISPLAY"))
+        if da_module:
+            try:
+                import importlib
+                importlib.import_module("pyautogui")
+                da_pyautogui = True
+            except ImportError:
+                pass
+        da_ydotool = shutil.which("ydotool") is not None
+        da_computer_use = shutil.which("computer-use-linux") is not None
+        report["subsystems"]["desktop_agent"] = {
+            "module_loaded": da_module,
+            "pyautogui_available": da_pyautogui,
+            "display_available": da_display,
+            "ydotool_available": da_ydotool,
+            "computer_use_linux_available": da_computer_use,
+        }
+        if da_module and not da_display:
+            report["blockers"].append("No DISPLAY or WAYLAND_DISPLAY set. Desktop agent requires a graphical session.")
+
+        # Camera
+        cam_module = _CAMERA is not None
+        cam_cv2 = False
+        cam_device = False
+        if cam_module:
+            cam_cv2, _ = _CAMERA.opencv_available()
+            cam_status = _CAMERA.status()
+            cam_device = cam_status.get("present", False) or cam_status.get("enabled", False)
+        report["subsystems"]["camera"] = {
+            "module_loaded": cam_module,
+            "opencv_available": cam_cv2,
+            "device_present": cam_device,
+        }
+
+        # Kusto / memory
+        cluster, database = _get_kusto_config()
+        kusto_configured = bool(cluster and database)
+        kusto_token = bool(_kusto_token_cache)
+        report["subsystems"]["kusto"] = {
+            "configured": kusto_configured,
+            "cluster": cluster[:30] + "..." if cluster and len(cluster) > 30 else cluster,
+            "database": database,
+            "token_valid": kusto_token,
+        }
+        if not kusto_configured:
+            report["blockers"].append("Kusto not configured. Set up in Settings > MCP tab.")
+        elif not kusto_token:
+            report["blockers"].append("Kusto token expired or unavailable. Re-authenticate.")
+
+        # Background loop
+        bg_running = bool(_bg_loop_thread and _bg_loop_thread.is_alive())
+        report["subsystems"]["background"] = {
+            "enabled": _bg_loop_enabled,
+            "running": bg_running,
+            "interval_seconds": _bg_loop_interval_seconds,
+            "last_tick": _bg_last_tick_iso,
+        }
+
+        # Cron
+        with _cron_lock:
+            cron_count = len(_cron_tasks)
+            cron_enabled = sum(1 for t in _cron_tasks if t.get("enabled", True))
+        report["subsystems"]["cron"] = {
+            "total_tasks": cron_count,
+            "enabled_tasks": cron_enabled,
+        }
+
+        # Cognition
+        report["subsystems"]["cognition"] = {
+            "enabled": _cognition_enabled,
+            "launch_id": _cognition_launch_id,
+        }
+
+        # System
+        node_version = None
+        try:
+            node_version = subprocess.check_output(["node", "--version"], stderr=subprocess.DEVNULL, timeout=5).decode().strip()
+        except Exception:
+            pass
+        report["subsystems"]["system"] = {
+            "python": sys.version.split()[0],
+            "node": node_version,
+            "platform": platform.platform(),
+            "arch": platform.machine(),
+        }
+
+        # Readiness summary
+        report["readiness"] = {
+            "can_chat": acp_ok,
+            "can_browse": ba_module and ba_playwright,
+            "can_desktop": da_module and da_display,
+            "can_see": cam_module and cam_cv2,
+            "can_remember": kusto_configured and kusto_token,
+            "can_schedule": bg_running,
+            "can_cron": cron_enabled > 0,
+        }
+
+        self._json_response(200, report)
+
+    # ------------------------------------------------------------------
+    # Cron CRUD endpoints
+    # ------------------------------------------------------------------
+    def _cron_list(self):
+        with _cron_lock:
+            tasks = list(_cron_tasks)
+        self._json_response(200, {"tasks": tasks, "count": len(tasks)})
+
+    def _cron_create(self):
+        if not _is_loopback_bind():
+            self._json_response(403, {"error": {"message": "cron mutations restricted to loopback"}})
+            return
+        data, err = self._read_json_body()
+        if err:
+            self._json_response(400, {"error": {"message": err}})
+            return
+        label = str((data or {}).get("label", "")).strip()
+        schedule = str((data or {}).get("schedule", "")).strip()
+        prompt = str((data or {}).get("prompt", "")).strip()
+        if not label or not schedule or not prompt:
+            self._json_response(400, {"error": {"message": "label, schedule (cron expr), and prompt are required"}})
+            return
+        parsed, parse_err = _parse_cron_expr(schedule)
+        if parse_err or parsed is None:
+            self._json_response(400, {"error": {"message": f"invalid cron expression: {parse_err}"}})
+            return
+        now_iso = datetime.datetime.now(datetime.timezone.utc).isoformat()
+        task = {
+            "id": "cron-" + uuid.uuid4().hex[:8],
+            "label": label[:120],
+            "schedule": schedule,
+            "prompt": prompt[:2000],
+            "enabled": bool((data or {}).get("enabled", True)),
+            "last_run": "",
+            "next_run": _cron_next_run(schedule) or "",
+            "created_at": now_iso,
+        }
+        with _cron_lock:
+            _cron_tasks.append(task)
+            _save_cron_tasks()
+        self._json_response(201, {"task": task})
+
+    def _cron_update(self, task_id):
+        if not _is_loopback_bind():
+            self._json_response(403, {"error": {"message": "cron mutations restricted to loopback"}})
+            return
+        data, err = self._read_json_body()
+        if err:
+            self._json_response(400, {"error": {"message": err}})
+            return
+        with _cron_lock:
+            task = next((t for t in _cron_tasks if t.get("id") == task_id), None)
+            if not task:
+                self._json_response(404, {"error": {"message": "cron task not found"}})
+                return
+            if "label" in (data or {}):
+                task["label"] = str(data["label"])[:120]
+            if "schedule" in (data or {}):
+                new_sched = str(data["schedule"]).strip()
+                parsed, parse_err = _parse_cron_expr(new_sched)
+                if parse_err or parsed is None:
+                    self._json_response(400, {"error": {"message": f"invalid cron expression: {parse_err}"}})
+                    return
+                task["schedule"] = new_sched
+                task["next_run"] = _cron_next_run(new_sched) or ""
+            if "prompt" in (data or {}):
+                task["prompt"] = str(data["prompt"])[:2000]
+            if "enabled" in (data or {}):
+                task["enabled"] = bool(data["enabled"])
+            _save_cron_tasks()
+        self._json_response(200, {"task": task})
+
+    def _cron_delete(self, task_id):
+        if not _is_loopback_bind():
+            self._json_response(403, {"error": {"message": "cron mutations restricted to loopback"}})
+            return
+        with _cron_lock:
+            before = len(_cron_tasks)
+            _cron_tasks[:] = [t for t in _cron_tasks if t.get("id") != task_id]
+            if len(_cron_tasks) == before:
+                self._json_response(404, {"error": {"message": "cron task not found"}})
+                return
+            _save_cron_tasks()
+        self._json_response(200, {"ok": True})
+
+    # ------------------------------------------------------------------
+    # Skills auto-learn — extract a skill from a successful interaction
+    # ------------------------------------------------------------------
+    def _skills_auto_learn(self):
+        """Given recent conversation context, ask the model to extract a reusable skill."""
+        if not _is_loopback_bind():
+            self._json_response(403, {"error": {"message": "auto-learn restricted to loopback"}})
+            return
+        data, err = self._read_json_body()
+        if err:
+            self._json_response(400, {"error": {"message": err}})
+            return
+        messages = (data or {}).get("messages", [])
+        task_summary = str((data or {}).get("task_summary", "")).strip()
+        if not messages and not task_summary:
+            self._json_response(400, {"error": {"message": "messages or task_summary required"}})
+            return
+
+        # Build a conversation digest for the model
+        digest_parts = []
+        if task_summary:
+            digest_parts.append(f"Task: {task_summary}")
+        for msg in messages[-20:]:
+            role = msg.get("role", "user")
+            content = str(msg.get("content", ""))[:500]
+            digest_parts.append(f"{role}: {content}")
+        digest = "\n".join(digest_parts)[:4000]
+
+        extract_prompt = (
+            "You are a skill extraction engine. Given the following successful interaction, "
+            "extract a reusable skill that Eva can apply to similar tasks in the future.\n\n"
+            "Return a JSON object with these fields:\n"
+            '- "Name": short skill name (2-5 words)\n'
+            '- "Description": one-sentence description of what this skill does\n'
+            '- "Instructions": step-by-step instructions Eva should follow (markdown)\n'
+            '- "Tools": comma-separated list of tools/capabilities used\n'
+            '- "Tags": comma-separated tags for categorization\n\n'
+            "Return ONLY the JSON object, no markdown fencing.\n\n"
+            f"Interaction:\n{digest}"
+        )
+
+        # Use ACP to generate the skill
+        if not acp_client or not acp_client.alive:
+            self._json_response(503, {"error": {"message": "ACP not available for skill extraction"}})
+            return
+
+        try:
+            result = acp_client.send_prompt([
+                {"role": "system", "content": "You extract reusable skills from successful interactions. Output only valid JSON."},
+                {"role": "user", "content": extract_prompt}
+            ])
+            # Parse the result as JSON
+            result_text = str(result or "").strip()
+            # Strip markdown fencing if present
+            if result_text.startswith("```"):
+                result_text = re.sub(r"^```(?:json)?\s*", "", result_text)
+                result_text = re.sub(r"\s*```$", "", result_text)
+            draft = json.loads(result_text)
+            draft["Source"] = "auto-learned"
+            draft["Status"] = "draft"
+            self._json_response(200, {"draft": draft})
+        except json.JSONDecodeError:
+            self._json_response(200, {"draft": None, "raw": result_text[:1000], "error": "model output was not valid JSON"})
+        except Exception as e:
+            self._json_response(502, {"error": {"message": f"skill extraction failed: {e}"}})
+
+    # ------------------------------------------------------------------
+    # Subagent parallelism
+    # ------------------------------------------------------------------
+    def _subagent_spawn(self):
+        """Spawn an isolated subagent that runs a prompt concurrently."""
+        if not _is_loopback_bind():
+            self._json_response(403, {"error": {"message": "subagent restricted to loopback"}})
+            return
+        data, err = self._read_json_body()
+        if err:
+            self._json_response(400, {"error": {"message": err}})
+            return
+        prompt = str((data or {}).get("prompt", "")).strip()
+        label = str((data or {}).get("label", "subagent task")).strip()[:120]
+        if not prompt:
+            self._json_response(400, {"error": {"message": "prompt is required"}})
+            return
+        with _subagent_lock:
+            running = sum(1 for t in _subagent_tasks.values() if t.get("status") == "running")
+            if running >= _SUBAGENT_MAX:
+                self._json_response(429, {"error": {"message": f"max {_SUBAGENT_MAX} concurrent subagents"}})
+                return
+        task_id = "sub-" + uuid.uuid4().hex[:8]
+        now_iso = datetime.datetime.now(datetime.timezone.utc).isoformat()
+        task = {
+            "id": task_id,
+            "label": label,
+            "prompt": prompt[:500],
+            "status": "running",
+            "result": None,
+            "started_at": now_iso,
+            "ended_at": None,
+        }
+        with _subagent_lock:
+            _subagent_tasks[task_id] = task
+        thread = threading.Thread(target=_subagent_worker, args=(task_id, prompt, label), name=f"subagent-{task_id}", daemon=True)
+        thread.start()
+        self._json_response(202, {"task": {k: v for k, v in task.items() if k != "thread"}})
+
+    def _subagent_status(self):
+        """Return status of all subagent tasks, or a specific one via ?id=..."""
+        params = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
+        task_id = (params.get("id", [""])[0] or "").strip()
+        with _subagent_lock:
+            if task_id:
+                task = _subagent_tasks.get(task_id)
+                if not task:
+                    self._json_response(404, {"error": {"message": "subagent task not found"}})
+                    return
+                self._json_response(200, {"task": {k: v for k, v in task.items() if k != "thread"}})
+            else:
+                tasks = [{k: v for k, v in t.items() if k != "thread"} for t in _subagent_tasks.values()]
+                running = sum(1 for t in tasks if t.get("status") == "running")
+                self._json_response(200, {"tasks": tasks[-20:], "running": running, "max": _SUBAGENT_MAX})
 
     def _models(self):
         models = {
@@ -7131,6 +7698,14 @@ def main():
     print(f"  POST /v1/browser/cancel     - Cancel a browser agent run")
     print(f"  GET  /v1/files/<name>       - Download a generated artifact")
     print(f"  POST /v1/files/purge        - Delete all artifacts")
+    print(f"  GET  /v1/doctor             - Structured readiness report")
+    print(f"  GET  /v1/cron               - List cron tasks")
+    print(f"  POST /v1/cron               - Create a cron task")
+    print(f"  PATCH /v1/cron/<id>         - Update a cron task")
+    print(f"  DELETE /v1/cron/<id>        - Delete a cron task")
+    print(f"  POST /v1/skills/auto-learn  - Extract skill from interaction")
+    print(f"  POST /v1/subagent/spawn     - Spawn a parallel subagent task")
+    print(f"  GET  /v1/subagent/status    - Poll subagent task status")
     print(f"  GET  /health                - Health check")
     print()
 

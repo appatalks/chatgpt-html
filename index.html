@@ -261,6 +261,7 @@
       <button class="settings-tab" data-stab="prompts" role="tab">Prompts</button>
       <button class="settings-tab" data-stab="goals" role="tab">Goals</button>
       <button class="settings-tab" data-stab="background" role="tab">Background</button>
+      <button class="settings-tab" data-stab="cron" role="tab">Cron</button>
       <button class="settings-tab" data-stab="mcp" role="tab">MCP</button>
     </div>
     <div class="settings-body">
@@ -319,6 +320,8 @@
           <span>Active goals: <span id="evaActiveGoalsCount">0</span></span><br>
           <span id="evaStandaloneVersion" style="display:none"></span>
         </div>
+        <button type="button" class="auth-toggle" id="doctorButton" style="margin-top:8px;width:100%;text-align:center" onclick="runDoctor()">Run diagnostics</button>
+        <div id="doctorReport" class="mcp-status" aria-live="polite" style="margin-top:8px;display:none;white-space:pre-wrap;font-family:monospace;font-size:11px;max-height:300px;overflow-y:auto"></div>
       </div>
 
       <!-- Models Tab -->
@@ -699,6 +702,34 @@
         <div id="backgroundActivity" class="background-list"></div>
       </div>
 
+      <!-- Cron Tab -->
+      <div class="settings-panel" data-stab="cron">
+        <p class="auth-note">Schedule recurring tasks with cron expressions. Eva runs each task's prompt through ACP at the scheduled time. Requires the background loop to be running.</p>
+
+        <div class="mcp-preset">
+          <div class="auth-field">
+            <label for="cronLabel">Task name</label>
+            <input type="text" id="cronLabel" maxlength="120" placeholder="e.g. Morning briefing">
+          </div>
+          <div class="auth-field">
+            <label for="cronSchedule">Schedule (cron expression)</label>
+            <input type="text" id="cronSchedule" maxlength="60" placeholder="0 8 * * 1-5" title="minute hour day-of-month month day-of-week">
+            <p class="prompt-hint" style="margin-top:2px">Format: minute hour dom month dow. Examples: <code>0 8 * * 1-5</code> (weekdays 8am), <code>*/30 * * * *</code> (every 30min), <code>0 0 * * 0</code> (Sunday midnight)</p>
+          </div>
+          <div class="auth-field">
+            <label for="cronPrompt">Prompt (what Eva should do)</label>
+            <textarea id="cronPrompt" rows="3" maxlength="2000" placeholder="Give me a morning briefing: weather, calendar, top news, and any alerts."></textarea>
+          </div>
+          <div class="background-actions">
+            <button type="button" class="auth-save" id="cronAddButton" onclick="cronAdd()">Add task</button>
+            <button type="button" class="auth-toggle" onclick="cronRefresh()">Refresh</button>
+          </div>
+        </div>
+
+        <div id="cronStatus" class="mcp-status" aria-live="polite"></div>
+        <div id="cronList" class="background-list"></div>
+      </div>
+
       <!-- MCP Tab -->
       <div class="settings-panel" data-stab="mcp">
         <p class="auth-note">MCP (Model Context Protocol) servers extend the AI with tools for Azure, GitHub, and more. Requires the ACP bridge (<code>tools/acp_bridge.py</code>).</p>
@@ -737,6 +768,15 @@
             <button type="button" id="mcpEnsureTablesButton" class="auth-toggle" style="margin-top:6px;width:100%;text-align:center" disabled>Create missing tables</button>
             <div id="mcpSeedStatus" class="mcp-status" aria-live="polite" style="margin-top:8px"></div>
           </div>
+        </div>
+
+        <div class="mcp-preset">
+          <label>
+            <input type="checkbox" id="mcpComputerUse"> <strong>Computer Use Linux (Desktop MCP)</strong>
+          </label>
+          <p class="prompt-hint">AT-SPI accessibility trees, screenshots, clicks, scrolls, keystrokes. Wayland-first, X11 fallback.<br>
+            Semantic selectors (role/name) instead of pixel coordinates. Replaces PyAutoGUI for desktop control.<br>
+            Install: <code>npm install -g @agent-sh/computer-use-linux</code> then <code>computer-use-linux setup</code></p>
         </div>
 
         <div id="mcpStatus" class="mcp-status"></div>

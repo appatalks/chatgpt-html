@@ -416,6 +416,8 @@ function populateMCPForm(cfg) {
   if (kustoCheckL && kustoConfig) {
     kustoConfig.style.display = kustoCheckL.checked ? 'block' : 'none';
   }
+  var cuCheck = document.getElementById('mcpComputerUse');
+  if (cuCheck) cuCheck.checked = !!cfg['computer-use-linux'];
 }
 
 // Re-apply the saved MCP config to a freshly started bridge.
@@ -525,6 +527,15 @@ async function applyMCPConfig() {
       command: 'python3',
       args: ['tools/kusto_mcp.py'],
       env: kustoEnv
+    };
+  }
+
+  // Computer Use Linux MCP (AT-SPI desktop control)
+  var cuCheck = document.getElementById('mcpComputerUse');
+  if (cuCheck && cuCheck.checked) {
+    mcpServers['computer-use-linux'] = {
+      command: 'computer-use-linux',
+      args: ['mcp']
     };
   }
 
