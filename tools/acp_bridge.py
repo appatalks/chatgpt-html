@@ -1298,6 +1298,18 @@ def _safe_content_type(value):
     return "application/octet-stream"
 
 
+def _is_local_or_private(host):
+    """Return True if host is localhost or an RFC 1918 / link-local address."""
+    if host in ("localhost", "127.0.0.1", "::1"):
+        return True
+    try:
+        import ipaddress
+        addr = ipaddress.ip_address(host)
+        return addr.is_private or addr.is_loopback or addr.is_link_local
+    except ValueError:
+        return False
+
+
 def _validate_lmstudio_base_url(raw):
     value = (raw or "").strip().rstrip("/")
     if not value:
@@ -1316,8 +1328,8 @@ def _validate_lmstudio_base_url(raw):
         return "", "lmstudio_base_url must not include query or fragment"
 
     host = (parsed.hostname or "").lower()
-    if host not in ("localhost", "127.0.0.1", "::1"):
-        return "", "lmstudio_base_url must point at localhost"
+    if not _is_local_or_private(host):
+        return "", "lmstudio_base_url must point at localhost or a private network address"
 
     try:
         port = parsed.port
