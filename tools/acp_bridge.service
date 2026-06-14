@@ -1,6 +1,6 @@
 [Unit]
 Description=Eva ACP Bridge - Copilot CLI to HTTP bridge
-Documentation=https://github.com/appatalks/chatgpt-html
+Documentation=https://github.com/appatalks/eva-agent
 After=network.target
 
 [Service]
