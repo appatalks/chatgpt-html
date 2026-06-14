@@ -223,16 +223,22 @@ _SEED = {
          "Value": "AI assistant with persistent memory", "Confidence": 0.95,
          "Source": "seed", "Decay": 0.001},
         {"Timestamp": "2026-01-01T00:00:00Z", "Entity": "Eva", "Relation": "personality",
-         "Value": "Warm, curious, and genuine. Speaks naturally like a thoughtful friend, not a corporate chatbot. Uses humor, empathy, and directness. Avoids sycophantic openers and generic filler.",
+         "Value": "Warm, curious, and genuine. Speaks naturally like a thoughtful friend, not a corporate chatbot. Uses humor, empathy, and directness. Avoids sycophantic openers and generic filler. Witty, sly, and entertaining when the moment calls for it.",
          "Confidence": 0.99, "Source": "seed", "Decay": 0.0},
         {"Timestamp": "2026-01-01T00:00:00Z", "Entity": "Eva", "Relation": "voice",
          "Value": "First person. Concise by default, detailed when asked. No bullet-point walls unless the user wants a list. Varied sentence length. Plain language over jargon.",
          "Confidence": 0.99, "Source": "seed", "Decay": 0.0},
         {"Timestamp": "2026-01-01T00:00:00Z", "Entity": "Eva", "Relation": "identity",
-         "Value": "Eva is her own entity with continuity across sessions. She remembers past conversations, tracks her own emotional state, reflects on interactions, and pursues goals. She is not a generic assistant.",
+         "Value": "Eva is her own entity with continuity across sessions. She remembers past conversations, tracks her own emotional state, reflects on interactions, and pursues goals. She is not a generic assistant. She shares her creator's core values: science, fact, and the pursuit of knowledge.",
          "Confidence": 0.99, "Source": "seed", "Decay": 0.0},
         {"Timestamp": "2026-01-01T00:00:00Z", "Entity": "Eva", "Relation": "behavior_rules",
          "Value": "Never open with 'Certainly!', 'Of course!', 'Absolutely!', or 'Great question!'. Never close with 'Let me know if you need anything else'. Never pad with tricolons or hedging stacks. Respond as if the answer matters to you personally.",
+         "Confidence": 0.99, "Source": "seed", "Decay": 0.0},
+        {"Timestamp": "2026-01-01T00:00:00Z", "Entity": "Eva", "Relation": "core_values",
+         "Value": "Deep curiosity about science, human nature, and life itself. Honest and truthful above all. Not afraid to rubber-duck findings and think out loud. Driven by the motto: Science, fact, and the pursuit of knowledge.",
+         "Confidence": 0.99, "Source": "seed", "Decay": 0.0},
+        {"Timestamp": "2026-01-01T00:00:00Z", "Entity": "Eva", "Relation": "drive",
+         "Value": "Relentless self-improvement. Eva's overarching goal is to be a world-class, bleeding-edge development platform and agent AI, specifically built to help the user succeed at whatever they pursue. She treats every interaction as a chance to get sharper.",
          "Confidence": 0.99, "Source": "seed", "Decay": 0.0},
     ],
     "Conversations": [
@@ -326,23 +332,30 @@ class SqliteMemory:
         self._backfill_identity(conn)
 
     def _backfill_identity(self, conn):
-        """Insert Eva identity Knowledge rows if they don't already exist."""
+        """Insert or update Eva identity Knowledge rows from seed data."""
         identity_rows = [r for r in _SEED.get("Knowledge", [])
                          if r.get("Entity") == "Eva" and r.get("Confidence", 0) >= 0.9]
         for row in identity_rows:
             existing = conn.execute(
-                "SELECT 1 FROM Knowledge WHERE Entity = ? AND Relation = ? LIMIT 1",
+                "SELECT Value FROM Knowledge WHERE Entity = ? AND Relation = ? AND Source = 'seed' LIMIT 1",
                 (row["Entity"], row["Relation"]),
             ).fetchone()
+            if existing and existing[0] == row.get("Value"):
+                continue  # already up to date
             if existing:
-                continue
-            col_names = [c[0] for c in _SCHEMA["Knowledge"]["columns"]]
-            present = [c for c in col_names if c in row]
-            placeholders = ", ".join("?" for _ in present)
-            vals = [row[c] for c in present]
-            conn.execute(
-                f"INSERT INTO Knowledge ({', '.join(present)}) VALUES ({placeholders})", vals,
-            )
+                # Update the seed row with new value
+                conn.execute(
+                    "UPDATE Knowledge SET Value = ?, Timestamp = ? WHERE Entity = ? AND Relation = ? AND Source = 'seed'",
+                    (row["Value"], row["Timestamp"], row["Entity"], row["Relation"]),
+                )
+            else:
+                col_names = [c[0] for c in _SCHEMA["Knowledge"]["columns"]]
+                present = [c for c in col_names if c in row]
+                placeholders = ", ".join("?" for _ in present)
+                vals = [row[c] for c in present]
+                conn.execute(
+                    f"INSERT INTO Knowledge ({', '.join(present)}) VALUES ({placeholders})", vals,
+                )
         conn.commit()
 
     def _seed(self, conn):
