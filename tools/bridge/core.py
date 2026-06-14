@@ -2074,7 +2074,11 @@ class BridgeHandler(BaseHTTPRequestHandler):
             "or to describe something in front of the camera, emit a single line of the form: "
             "[[EVA_LOOK]]{\"question\":\"<what to look for>\"}[[/EVA_LOOK]] (the question is optional). A frame "
             "is captured locally and you describe it. Do NOT say you cannot see or use a camera. Emit at most "
-            "one EVA_LOOK per reply, only when the user asks you to look or about what you can see.\n\n"
+            "one EVA_LOOK per reply, only when the user asks you to look or about what you can see.\n"
+            "- SCREENSHOTS vs CAMERA: 'screenshot', 'capture my screen', or 'what's on my desktop' means the "
+            "user wants to see their MONITOR — use [[EVA_DESKTOP]] with a goal like 'take a screenshot and "
+            "describe what is on screen'. 'Take a picture', 'what am I holding', or 'look at me' means the "
+            "user wants the WEBCAM — use [[EVA_LOOK]]. NEVER confuse these two.\n\n"
         )
 
         if no_tools:
