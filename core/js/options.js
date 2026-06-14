@@ -1865,6 +1865,23 @@ document.addEventListener('DOMContentLoaded', () => {
       // Keep cognition model selectors in sync with the live catalog.
       if (typeof cogInit === 'function') cogInit();
     });
+
+    // Auto-detect LM Studio: if the user has never explicitly picked a backend,
+    // probe the LM Studio endpoint and switch to it when reachable.
+    if (!savedAigBackend) {
+      var lmsUrl = (typeof getLmStudioBaseUrl === 'function') ? getLmStudioBaseUrl() : 'http://localhost:1234/v1';
+      fetch(lmsUrl + '/models', { signal: AbortSignal.timeout(2000) })
+        .then(function (r) { return r.ok ? r.json() : Promise.reject(); })
+        .then(function (data) {
+          if (data && data.data && data.data.length > 0) {
+            aigBackendSel.value = 'lmstudio';
+            localStorage.setItem('aigBackend', 'lmstudio');
+            aigBackendSel.dispatchEvent(new Event('change', { bubbles: true }));
+            console.log('[Eva] LM Studio detected, set as default backend');
+          }
+        })
+        .catch(function () { /* LM Studio not running, keep current default */ });
+    }
   }
 
   // Camera presence (auto-wake): toggle the local webcam sensor. Restore the
