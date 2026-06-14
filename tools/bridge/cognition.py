@@ -487,6 +487,16 @@ def _build_memory_context_sqlite(user_message):
     mem = _get_sqlite_mem()
     context_parts = []
 
+    # Eva's core identity (always injected first)
+    eva_identity = mem.query(
+        "SELECT Relation, Value FROM Knowledge "
+        "WHERE Entity = 'Eva' COLLATE NOCASE AND Confidence >= 0.9 "
+        "ORDER BY Confidence DESC LIMIT 10"
+    )
+    if eva_identity:
+        id_lines = [f"- {r.get('Relation','?')}: {r.get('Value','?')}" for r in eva_identity]
+        context_parts.append("[Identity — Who You Are]\n" + "\n".join(id_lines))
+
     # User profile
     user_profile = mem.query(
         "SELECT Relation, Value, Confidence FROM Knowledge "
