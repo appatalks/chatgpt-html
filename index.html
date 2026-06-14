@@ -793,7 +793,6 @@
         <div id="mcpStatus" class="mcp-status"></div>
 
         <button type="button" class="auth-save" onclick="applyMCPConfig()">Apply MCP Config</button>
-        <button type="button" id="standaloneFirstRunButton" class="auth-toggle" style="display:none;margin-top:8px;width:100%;text-align:center">Run first-time setup again</button>
         <button type="button" class="auth-toggle" onclick="refreshMCPStatus()" style="margin-top:8px;width:100%;text-align:center">Refresh Status</button>
 
         <div class="mcp-preset" style="margin-top:12px">
@@ -804,38 +803,6 @@
         </div>
       </div>
 
-    </div>
-  </div>
-
-  <div class="settingsMenu" id="firstRunModal" role="dialog" aria-modal="true" aria-labelledby="firstRunModalTitle" style="display:none;position:fixed;top:50%;left:50%;transform:translate(-50%, -50%);width:500px;max-width:95vw;max-height:85vh;background:#fff;border-radius:12px;box-shadow:0 8px 32px rgba(0,0,0,0.3);z-index:10000;overflow:hidden;flex-direction:column;color:#333;">
-    <div class="settings-header">
-      <h3 id="firstRunModalTitle">Set Up Eva Memory</h3>
-    </div>
-    <div class="settings-body">
-      <p class="auth-note">Choose where Eva stores persistent memory.</p>
-      <div class="auth-field">
-        <label for="firstRunMemoryBackend">Memory backend:</label>
-        <select id="firstRunMemoryBackend">
-          <option value="sqlite" selected>Local (SQLite) — no cloud, works offline</option>
-          <option value="kusto">Azure Data Explorer (Kusto) — cloud, cross-device</option>
-        </select>
-      </div>
-      <div id="firstRunKustoFields" style="display:none">
-        <div class="auth-field">
-          <label for="firstRunKustoCluster">Cluster URL:</label>
-          <input type="text" id="firstRunKustoCluster" placeholder="https://kvc-xxx.region.kusto.windows.net" autocomplete="off">
-        </div>
-        <div class="auth-field">
-          <label for="firstRunKustoDatabase">Database name:</label>
-          <input type="text" id="firstRunKustoDatabase" placeholder="eva-standalone" autocomplete="off">
-        </div>
-      </div>
-        <label for="firstRunKustoDatabase">Database name:</label>
-        <input type="text" id="firstRunKustoDatabase" placeholder="eva-standalone" autocomplete="off">
-      </div>
-      <div id="firstRunStatus" class="mcp-status" aria-live="polite"></div>
-      <button type="button" class="auth-save" id="firstRunSave" disabled>Save and continue</button>
-      <button type="button" class="auth-toggle" id="firstRunSkip" style="margin-top:8px;width:100%;text-align:center">Skip for now</button>
     </div>
   </div>
 

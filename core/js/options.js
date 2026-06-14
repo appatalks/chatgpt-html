@@ -1600,171 +1600,23 @@ function hasSavedStandaloneKustoConfig() {
   return !!(env.KUSTO_CLUSTER_URL && String(env.KUSTO_CLUSTER_URL).trim());
 }
 
-function setStandaloneFirstRunStatus(text) {
-  var status = document.getElementById('firstRunStatus');
-  if (status) status.textContent = text || '';
-}
-
-function updateStandaloneFirstRunSaveState() {
-  var backendSel = document.getElementById('firstRunMemoryBackend');
-  var cluster = document.getElementById('firstRunKustoCluster');
-  var database = document.getElementById('firstRunKustoDatabase');
-  var kustoFields = document.getElementById('firstRunKustoFields');
-  var saveButton = document.getElementById('firstRunSave');
-  if (!saveButton) return;
-
-  var backend = backendSel ? backendSel.value : 'sqlite';
-  if (kustoFields) kustoFields.style.display = (backend === 'kusto') ? 'block' : 'none';
-
-  if (backend === 'sqlite') {
-    saveButton.disabled = false;
-  } else {
-    saveButton.disabled = !(
-      cluster && cluster.value.trim() &&
-      database && database.value.trim()
-    );
-  }
-}
-
-function showStandaloneFirstRunModal() {
-  if (!(typeof isEvaStandalone === 'function' && isEvaStandalone())) return;
-  var modal = document.getElementById('firstRunModal');
-  if (!modal) return;
-  var overlay = document.getElementById('settingsOverlay');
-  var cluster = document.getElementById('firstRunKustoCluster');
-  var database = document.getElementById('firstRunKustoDatabase');
-  if (cluster) cluster.value = '';
-  if (database) database.value = '';
-  setStandaloneFirstRunStatus('');
-  if (overlay) overlay.classList.add('open');
-  modal.style.display = 'flex';
-  updateStandaloneFirstRunSaveState();
-  setTimeout(function() {
-    if (cluster) cluster.focus();
-  }, 0);
-}
-
-function hideStandaloneFirstRunModal() {
-  var modal = document.getElementById('firstRunModal');
-  if (modal) modal.style.display = 'none';
-  var settingsMenu = document.getElementById('settingsMenu');
-  var overlay = document.getElementById('settingsOverlay');
-  if (overlay && !(settingsMenu && settingsMenu.classList.contains('open'))) {
-    overlay.classList.remove('open');
-  }
-}
-
-function skipStandaloneFirstRun() {
-  localStorage.setItem('eva_standalone_first_run_done', '1');
-  hideStandaloneFirstRunModal();
-}
-
-async function saveStandaloneFirstRunConfig() {
-  if (!(typeof isEvaStandalone === 'function' && isEvaStandalone())) return;
-  var backendSel = document.getElementById('firstRunMemoryBackend');
-  var backend = backendSel ? backendSel.value : 'sqlite';
-
-  localStorage.setItem('eva_memory_backend', backend);
-  localStorage.setItem('eva_standalone_first_run_done', '1');
-
-  if (backend === 'sqlite') {
-    // SQLite path: tell the bridge, done
-    setStandaloneFirstRunStatus('Setting up local memory...');
-    var bridgeUrl = typeof getACPBridgeUrl === 'function' ? getACPBridgeUrl() : '';
-    if (bridgeUrl) {
-      try {
-        await fetch(bridgeUrl.replace(/\/+$/, '') + '/v1/memory/backend', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ backend: 'sqlite' }),
-          signal: AbortSignal.timeout(5000)
-        });
-      } catch (e) { /* bridge not yet ready, preference is saved in localStorage */ }
-    }
-    // Update the settings panel selector
-    var memSel = document.getElementById('memoryBackendSelect');
-    if (memSel) memSel.value = 'sqlite';
-    hideStandaloneFirstRunModal();
-    return;
-  }
-
-  // Kusto path (existing behavior)
-  var cluster = document.getElementById('firstRunKustoCluster');
-  var database = document.getElementById('firstRunKustoDatabase');
-  var clusterUrl = cluster ? cluster.value.trim() : '';
-  var databaseName = database ? database.value.trim() : '';
-  if (!clusterUrl || !databaseName) return;
-
-  var config = getSavedMCPConfig();
-  config['kusto-mcp-server'] = {
-    command: 'python3',
-    args: ['tools/kusto_mcp.py'],
-    env: {
-      KUSTO_CLUSTER_URL: clusterUrl,
-      KUSTO_DATABASE: databaseName,
-      KUSTO_DATABASE_LOCKED: '1'
-    }
-  };
-  localStorage.setItem('mcp_config', JSON.stringify(config));
-  localStorage.setItem('eva_standalone_first_run_done', '1');
-
-  var kustoCheck = document.getElementById('mcpKusto');
-  var kustoConfig = document.getElementById('mcpKustoConfig');
-  var clusterField = document.getElementById('mcpKustoCluster');
-  var databaseField = document.getElementById('mcpKustoDatabase');
-  if (kustoCheck) kustoCheck.checked = true;
-  if (kustoConfig) kustoConfig.style.display = 'block';
-  if (clusterField) clusterField.value = clusterUrl;
-  if (databaseField) databaseField.value = databaseName;
-  if (typeof updateKustoSeedButtonState === 'function') updateKustoSeedButtonState();
-
-  setStandaloneFirstRunStatus('Configuring Kusto MCP...');
-  var result = { ok: false };
-  if (typeof applyMCPConfig === 'function') {
-    result = await applyMCPConfig();
-  }
-  hideStandaloneFirstRunModal();
-
-  if (result && result.ok) {
-    var shouldSeed = confirm('Seed Eva schema into ' + databaseName + '?');
-    if (shouldSeed && typeof seedEvaSchema === 'function') {
-      await seedEvaSchema(clusterUrl, databaseName, true);
-    }
-  }
-}
-
 function initStandaloneFirstRun() {
   if (!(typeof isEvaStandalone === 'function' && isEvaStandalone())) return;
-  var rerunButton = document.getElementById('standaloneFirstRunButton');
-  if (rerunButton) {
-    rerunButton.style.display = 'block';
-    rerunButton.addEventListener('click', function() {
-      localStorage.removeItem('eva_standalone_first_run_done');
-      showStandaloneFirstRunModal();
-    });
-  }
-
-  var cluster = document.getElementById('firstRunKustoCluster');
-  var database = document.getElementById('firstRunKustoDatabase');
-  var backendSel = document.getElementById('firstRunMemoryBackend');
-  var saveButton = document.getElementById('firstRunSave');
-  var skipButton = document.getElementById('firstRunSkip');
-  if (backendSel) backendSel.addEventListener('change', updateStandaloneFirstRunSaveState);
-  if (cluster) cluster.addEventListener('input', updateStandaloneFirstRunSaveState);
-  if (database) database.addEventListener('input', updateStandaloneFirstRunSaveState);
-  if (saveButton) saveButton.addEventListener('click', saveStandaloneFirstRunConfig);
-  if (skipButton) {
-    skipButton.addEventListener('click', skipStandaloneFirstRun);
-  }
-  document.addEventListener('keydown', function(event) {
-    var modal = document.getElementById('firstRunModal');
-    if (event.key === 'Escape' && modal && modal.style.display !== 'none') {
-      skipStandaloneFirstRun();
+  // If no memory backend has been chosen yet, default to SQLite and seed
+  if (!localStorage.getItem('eva_memory_backend') && !hasSavedStandaloneKustoConfig()) {
+    localStorage.setItem('eva_memory_backend', 'sqlite');
+    localStorage.setItem('eva_standalone_first_run_done', '1');
+    var bridgeUrl = typeof getACPBridgeUrl === 'function' ? getACPBridgeUrl() : '';
+    if (bridgeUrl) {
+      fetch(bridgeUrl.replace(/\/+$/, '') + '/v1/memory/backend', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ backend: 'sqlite' }),
+        signal: AbortSignal.timeout(5000)
+      }).catch(function() {});
     }
-  });
-
-  if (!hasSavedStandaloneKustoConfig() && !localStorage.getItem('eva_memory_backend') && localStorage.getItem('eva_standalone_first_run_done') !== '1') {
-    showStandaloneFirstRunModal();
+    var memSel = document.getElementById('memoryBackendSelect');
+    if (memSel) memSel.value = 'sqlite';
   }
 }
 
