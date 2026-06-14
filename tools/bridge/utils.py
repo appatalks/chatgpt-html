@@ -1,5 +1,6 @@
 """Bridge domain: utils."""
 
+import copy
 import json
 import os
 import re
