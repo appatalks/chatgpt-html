@@ -138,7 +138,7 @@
     return {
       enabled: ls('cogEnabled', '1') === '1',
       evaModel:      ls('cogEvaModel', '')      || def,
-      reviewerModel: ls('cogReviewerModel', '') || 'claude-opus-4.8',
+      reviewerModel: ls('cogReviewerModel', '') || def,
       maxCycles: Math.max(0, parseInt(ls('cogMaxCycles', '1'), 10) || 0),
       evaPrompt:      ls('cogEvaPrompt', '')      || DEFAULT_PROMPTS.eva,
       reviewerPrompt: ls('cogReviewerPrompt', '') || DEFAULT_PROMPTS.reviewer,
