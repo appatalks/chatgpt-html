@@ -1606,14 +1606,24 @@ function setStandaloneFirstRunStatus(text) {
 }
 
 function updateStandaloneFirstRunSaveState() {
+  var backendSel = document.getElementById('firstRunMemoryBackend');
   var cluster = document.getElementById('firstRunKustoCluster');
   var database = document.getElementById('firstRunKustoDatabase');
+  var kustoFields = document.getElementById('firstRunKustoFields');
   var saveButton = document.getElementById('firstRunSave');
   if (!saveButton) return;
-  saveButton.disabled = !(
-    cluster && cluster.value.trim() &&
-    database && database.value.trim()
-  );
+
+  var backend = backendSel ? backendSel.value : 'sqlite';
+  if (kustoFields) kustoFields.style.display = (backend === 'kusto') ? 'block' : 'none';
+
+  if (backend === 'sqlite') {
+    saveButton.disabled = false;
+  } else {
+    saveButton.disabled = !(
+      cluster && cluster.value.trim() &&
+      database && database.value.trim()
+    );
+  }
 }
 
 function showStandaloneFirstRunModal() {
@@ -1651,6 +1661,34 @@ function skipStandaloneFirstRun() {
 
 async function saveStandaloneFirstRunConfig() {
   if (!(typeof isEvaStandalone === 'function' && isEvaStandalone())) return;
+  var backendSel = document.getElementById('firstRunMemoryBackend');
+  var backend = backendSel ? backendSel.value : 'sqlite';
+
+  localStorage.setItem('eva_memory_backend', backend);
+  localStorage.setItem('eva_standalone_first_run_done', '1');
+
+  if (backend === 'sqlite') {
+    // SQLite path: tell the bridge, done
+    setStandaloneFirstRunStatus('Setting up local memory...');
+    var bridgeUrl = typeof getACPBridgeUrl === 'function' ? getACPBridgeUrl() : '';
+    if (bridgeUrl) {
+      try {
+        await fetch(bridgeUrl.replace(/\/+$/, '') + '/v1/memory/backend', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ backend: 'sqlite' }),
+          signal: AbortSignal.timeout(5000)
+        });
+      } catch (e) { /* bridge not yet ready, preference is saved in localStorage */ }
+    }
+    // Update the settings panel selector
+    var memSel = document.getElementById('memoryBackendSelect');
+    if (memSel) memSel.value = 'sqlite';
+    hideStandaloneFirstRunModal();
+    return;
+  }
+
+  // Kusto path (existing behavior)
   var cluster = document.getElementById('firstRunKustoCluster');
   var database = document.getElementById('firstRunKustoDatabase');
   var clusterUrl = cluster ? cluster.value.trim() : '';
@@ -1708,8 +1746,10 @@ function initStandaloneFirstRun() {
 
   var cluster = document.getElementById('firstRunKustoCluster');
   var database = document.getElementById('firstRunKustoDatabase');
+  var backendSel = document.getElementById('firstRunMemoryBackend');
   var saveButton = document.getElementById('firstRunSave');
   var skipButton = document.getElementById('firstRunSkip');
+  if (backendSel) backendSel.addEventListener('change', updateStandaloneFirstRunSaveState);
   if (cluster) cluster.addEventListener('input', updateStandaloneFirstRunSaveState);
   if (database) database.addEventListener('input', updateStandaloneFirstRunSaveState);
   if (saveButton) saveButton.addEventListener('click', saveStandaloneFirstRunConfig);
@@ -1723,7 +1763,7 @@ function initStandaloneFirstRun() {
     }
   });
 
-  if (!hasSavedStandaloneKustoConfig() && localStorage.getItem('eva_standalone_first_run_done') !== '1') {
+  if (!hasSavedStandaloneKustoConfig() && !localStorage.getItem('eva_memory_backend') && localStorage.getItem('eva_standalone_first_run_done') !== '1') {
     showStandaloneFirstRunModal();
   }
 }

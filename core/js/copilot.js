@@ -783,7 +783,70 @@ document.addEventListener('DOMContentLoaded', function() {
   if (seedDatabase) seedDatabase.addEventListener('input', updateKustoSeedButtonState);
   updateKustoSeedButtonState();
 
+  // Memory backend selector
+  initMemoryBackendSelector();
+
   // Re-push saved MCP servers (Kusto cluster/db, Azure, GitHub) to the freshly
   // started bridge so they persist across restarts without manual reconfigure.
   autoApplySavedMCPConfig();
 });
+
+// ── Memory backend selector ─────────────────────────────────────────────
+function initMemoryBackendSelector() {
+  var sel = document.getElementById('memoryBackendSelect');
+  var statusEl = document.getElementById('memoryBackendStatus');
+  if (!sel) return;
+
+  // Load persisted preference
+  var saved = localStorage.getItem('eva_memory_backend');
+  if (saved && (saved === 'kusto' || saved === 'sqlite')) {
+    sel.value = saved;
+  }
+
+  // Fetch current state from bridge
+  var bridgeUrl = getACPBridgeUrl();
+  fetch(bridgeUrl.replace(/\/+$/, '') + '/v1/memory/backend', {
+    signal: AbortSignal.timeout(3000)
+  }).then(function(r) { return r.json(); }).then(function(data) {
+    if (data.backend) {
+      sel.value = data.backend;
+      localStorage.setItem('eva_memory_backend', data.backend);
+      if (statusEl) {
+        if (data.backend === 'sqlite') {
+          statusEl.textContent = 'Active: local SQLite' + (data.db_path ? ' (' + data.db_path + ')' : '');
+        } else {
+          statusEl.textContent = 'Active: Azure Data Explorer' + (data.cluster ? ' (' + data.database + ')' : '');
+        }
+      }
+    }
+  }).catch(function() {
+    // Bridge not available — use localStorage value
+    if (statusEl) statusEl.textContent = 'Bridge not reachable — using saved preference';
+  });
+
+  sel.addEventListener('change', function() {
+    var backend = sel.value;
+    localStorage.setItem('eva_memory_backend', backend);
+    if (statusEl) statusEl.textContent = 'Switching...';
+    fetch(bridgeUrl.replace(/\/+$/, '') + '/v1/memory/backend', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ backend: backend }),
+      signal: AbortSignal.timeout(5000)
+    }).then(function(r) { return r.json(); }).then(function(data) {
+      if (data.status === 'ok') {
+        if (statusEl) {
+          if (backend === 'sqlite') {
+            statusEl.textContent = 'Switched to local SQLite' + (data.db_path ? ' (' + data.db_path + ')' : '');
+          } else {
+            statusEl.textContent = 'Switched to Azure Data Explorer — configure Kusto MCP below';
+          }
+        }
+      } else {
+        if (statusEl) statusEl.textContent = 'Error: ' + JSON.stringify(data.error || data);
+      }
+    }).catch(function(e) {
+      if (statusEl) statusEl.textContent = 'Failed to switch: ' + e.message;
+    });
+  });
+}

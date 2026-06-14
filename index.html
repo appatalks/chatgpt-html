@@ -732,6 +732,17 @@
 
       <!-- MCP Tab -->
       <div class="settings-panel" data-stab="mcp">
+        <h4 class="settings-subhead">Memory Backend</h4>
+        <p class="auth-note">Choose where Eva stores persistent memory (knowledge, conversations, emotions, reflections).</p>
+        <div class="auth-field">
+          <select id="memoryBackendSelect" style="width:100%">
+            <option value="sqlite">Local (SQLite) — no cloud, zero setup</option>
+            <option value="kusto">Azure Data Explorer (Kusto) — cloud, cross-device</option>
+          </select>
+          <div id="memoryBackendStatus" class="mcp-status" aria-live="polite" style="margin-top:6px"></div>
+        </div>
+
+        <h4 class="settings-subhead" style="margin-top:18px">MCP Servers</h4>
         <p class="auth-note">MCP (Model Context Protocol) servers extend the AI with tools for Azure, GitHub, and more. Requires the ACP bridge (<code>tools/acp_bridge.py</code>).</p>
 
         <div class="mcp-preset">
@@ -801,12 +812,24 @@
       <h3 id="firstRunModalTitle">Set Up Eva Memory</h3>
     </div>
     <div class="settings-body">
-      <p class="auth-note">Choose the Azure Data Explorer database Eva should use for memory.</p>
+      <p class="auth-note">Choose where Eva stores persistent memory.</p>
       <div class="auth-field">
-        <label for="firstRunKustoCluster">Cluster URL:</label>
-        <input type="text" id="firstRunKustoCluster" placeholder="https://kvc-xxx.region.kusto.windows.net" autocomplete="off">
+        <label for="firstRunMemoryBackend">Memory backend:</label>
+        <select id="firstRunMemoryBackend">
+          <option value="sqlite" selected>Local (SQLite) — no cloud, works offline</option>
+          <option value="kusto">Azure Data Explorer (Kusto) — cloud, cross-device</option>
+        </select>
       </div>
-      <div class="auth-field">
+      <div id="firstRunKustoFields" style="display:none">
+        <div class="auth-field">
+          <label for="firstRunKustoCluster">Cluster URL:</label>
+          <input type="text" id="firstRunKustoCluster" placeholder="https://kvc-xxx.region.kusto.windows.net" autocomplete="off">
+        </div>
+        <div class="auth-field">
+          <label for="firstRunKustoDatabase">Database name:</label>
+          <input type="text" id="firstRunKustoDatabase" placeholder="eva-standalone" autocomplete="off">
+        </div>
+      </div>
         <label for="firstRunKustoDatabase">Database name:</label>
         <input type="text" id="firstRunKustoDatabase" placeholder="eva-standalone" autocomplete="off">
       </div>

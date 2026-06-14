@@ -734,6 +734,53 @@ _embedding_disabled_logged = False
 _SEMANTIC_MIN_SCORE = 0.30  # cosine threshold for a fact to count as relevant
 _SEMANTIC_POOL_SIZE = 150   # max facts ranked per recall (Knowledge is small)
 
+# ── Memory backend selection ───────────────────────────────────────────────
+# "kusto" = Azure Data Explorer (default, existing behavior)
+# "sqlite" = local SQLite file via tools/sqlite_memory.py
+_memory_backend = os.environ.get("EVA_MEMORY_BACKEND", "").strip().lower() or "kusto"
+_sqlite_mem = None  # SqliteMemory instance, created lazily when backend == "sqlite"
+_MEMORY_BACKEND_PREF_PATH = os.path.expanduser("~/.config/eva-standalone/memory_backend.txt")
+
+def _resolve_memory_backend():
+    """Return the active memory backend name, checking persisted preference."""
+    global _memory_backend
+    if _memory_backend not in ("kusto", "sqlite"):
+        # Check persisted preference
+        try:
+            if os.path.isfile(_MEMORY_BACKEND_PREF_PATH):
+                with open(_MEMORY_BACKEND_PREF_PATH) as f:
+                    saved = f.read().strip().lower()
+                if saved in ("kusto", "sqlite"):
+                    _memory_backend = saved
+        except Exception:
+            pass
+    return _memory_backend
+
+def _get_sqlite_mem():
+    """Return the global SqliteMemory instance, creating it on first use."""
+    global _sqlite_mem
+    if _sqlite_mem is None:
+        from sqlite_memory import SqliteMemory
+        db_path = os.environ.get("EVA_MEMORY_DB", os.path.expanduser("~/.eva/memory.db"))
+        _sqlite_mem = SqliteMemory(db_path)
+        print(f"[Bridge] SQLite memory initialized: {_sqlite_mem.db_path}")
+    return _sqlite_mem
+
+def _set_memory_backend(backend):
+    """Switch the active memory backend and persist the choice."""
+    global _memory_backend
+    if backend not in ("kusto", "sqlite"):
+        return False
+    _memory_backend = backend
+    try:
+        os.makedirs(os.path.dirname(_MEMORY_BACKEND_PREF_PATH), exist_ok=True)
+        with open(_MEMORY_BACKEND_PREF_PATH, "w") as f:
+            f.write(backend)
+    except Exception as e:
+        print(f"[Bridge] Failed to persist memory backend preference: {e}")
+    print(f"[Bridge] Memory backend set to: {backend}")
+    return True
+
 # Synonyms expand a query term so lexical recall matches differently-worded facts
 # (e.g. "playlist" should surface a fact stored under relation "favorite_songs").
 _MEMORY_SYNONYMS = {
@@ -2500,6 +2547,75 @@ def _kusto_ingest_direct(cluster_url, database, table, columns, rows_data):
             print(f"[Cognition] Kusto ingest error: {e}")
             return False
 
+# ---------------------------------------------------------------------------
+# Memory routing — dispatches to Kusto or SQLite based on _memory_backend
+# ---------------------------------------------------------------------------
+
+def _memory_query(query_or_table, cluster_url=None, database=None, is_mgmt=False):
+    """Backend-agnostic query. For Kusto, pass cluster_url/database and a KQL query.
+    For SQLite, pass a SQL query (KQL management queries return sensible defaults).
+    Returns list of dicts (same format as _kusto_query_direct)."""
+    backend = _resolve_memory_backend()
+    if backend == "sqlite":
+        mem = _get_sqlite_mem()
+        q = query_or_table.strip()
+        # Handle Kusto management commands that the bridge uses
+        if q.startswith(".show databases"):
+            return [{"DatabaseName": "local", "path": mem.db_path}]
+        if q.startswith(".show tables"):
+            return [{"TableName": t} for t in mem.list_tables()]
+        if q.startswith(".show table") and "cslschema" in q:
+            # Extract table name from ".show table X cslschema"
+            parts = q.split()
+            tname = parts[2] if len(parts) > 2 else ""
+            schema = mem.get_schema(tname)
+            if not schema:
+                return []
+            schema_str = ", ".join(f"{c}:{t}" for c, t in schema)
+            return [{"Schema": schema_str}]
+        # Regular SQL query
+        return mem.query(q) or []
+    else:
+        if not cluster_url:
+            cluster_url, database = _get_kusto_config()
+        if not cluster_url:
+            return []
+        return _kusto_query_direct(cluster_url, database, query_or_table, is_mgmt=is_mgmt) or []
+
+
+def _memory_ingest(table, columns, rows_data, cluster_url=None, database=None):
+    """Backend-agnostic ingest. Same signature as _kusto_ingest_direct."""
+    backend = _resolve_memory_backend()
+    if backend == "sqlite":
+        mem = _get_sqlite_mem()
+        return mem.ingest(table, columns, rows_data)
+    else:
+        if not cluster_url:
+            cluster_url, database = _get_kusto_config()
+        if not cluster_url:
+            return False
+        return _kusto_ingest_direct(cluster_url, database, table, columns, rows_data)
+
+
+def _memory_fts_search(terms, limit=20):
+    """Full-text search on Knowledge table. Only meaningful for SQLite backend;
+    Kusto backend falls back to the existing lexical/semantic recall pipeline."""
+    backend = _resolve_memory_backend()
+    if backend == "sqlite":
+        mem = _get_sqlite_mem()
+        return mem.fts_search("Knowledge", terms, limit=limit)
+    return []
+
+
+def _memory_available():
+    """Check whether the memory backend is configured and reachable."""
+    backend = _resolve_memory_backend()
+    if backend == "sqlite":
+        return True  # SQLite is always available (file is created on demand)
+    else:
+        cluster, db = _get_kusto_config()
+        return bool(cluster and db and _kusto_token_cache)
+
 def _get_kusto_config():
     """Get Kusto cluster URL and database from the running MCP config."""
     if not acp_client or not acp_client.mcp_config:
@@ -2525,36 +2641,49 @@ def _enable_cognition(mcp_servers, model=None, port=None):
     _cognition_launch_iso = datetime.datetime.now(datetime.timezone.utc).isoformat().replace("+00:00", "Z")
     _cognition_launch_id = f"eva-{datetime.datetime.now(datetime.timezone.utc).strftime('%Y%m%d%H%M%S')}"
     _cognition_enabled = True
-    print(f"[Bridge] Cognition layer ENABLED (memory injection + reflection)")
+    backend = _resolve_memory_backend()
+    print(f"[Bridge] Cognition layer ENABLED (memory backend: {backend})")
     print(f"[Bridge] Cognition launch scope: {_cognition_launch_id} (since {_cognition_launch_iso})")
 
-    cluster, startup_db = _get_kusto_config()
-    if cluster and startup_db:
-        now = datetime.datetime.now(datetime.timezone.utc).isoformat().replace("+00:00", "Z")
-        selfstate_cols = ["Timestamp", "Capability", "Status", "Details"]
-        capabilities = [
-            {"Timestamp": now, "Capability": "kusto_access", "Status": "active",
-             "Details": json.dumps({"cluster": cluster, "database": startup_db})},
-            {"Timestamp": now, "Capability": "acp_bridge", "Status": "active",
-             "Details": json.dumps({"model": model or "default", "port": port})},
-            {"Timestamp": now, "Capability": "cognition", "Status": "active",
-             "Details": json.dumps({"features": ["memory_injection", "reflection", "day_lifecycle", "emotion_tracking"]})},
-            {"Timestamp": now, "Capability": "data_retrieval", "Status": "active",
-             "Details": json.dumps({"skills": ["stock_quotes", "financial_data", "company_info", "web_search"]})},
-            {"Timestamp": now, "Capability": "weather_news", "Status": "active",
-             "Details": json.dumps({"feeds": ["weather", "news", "markets", "space_weather"]})},
-            {"Timestamp": now, "Capability": "image_skills", "Status": "active",
-             "Details": json.dumps({"skills": ["wikimedia_search", "dalle3_generation"]})},
-            {"Timestamp": now, "Capability": "persistent_memory", "Status": "active",
-                    "Details": json.dumps({"tables": _MEMORY_TABLES})},
-        ]
-        for srv in mcp_servers.keys():
-            capabilities.append({"Timestamp": now, "Capability": f"mcp_{srv}",
-                                 "Status": "active", "Details": "{}"})
-        if _kusto_ingest_direct(cluster, startup_db, "SelfState", selfstate_cols, capabilities):
-            print(f"[Bridge] SelfState written ({len(capabilities)} capabilities)")
-        else:
-            print("[Bridge] SelfState write failed (continuing startup)")
+    # Write SelfState capabilities via the active memory backend
+    now = datetime.datetime.now(datetime.timezone.utc).isoformat().replace("+00:00", "Z")
+    selfstate_cols = ["Timestamp", "Capability", "Status", "Details"]
+
+    if backend == "sqlite":
+        mem = _get_sqlite_mem()
+        details_mem = {"backend": "sqlite", "path": mem.db_path}
+    else:
+        cluster, startup_db = _get_kusto_config()
+        details_mem = {"cluster": cluster or "", "database": startup_db or ""}
+        if not cluster or not startup_db:
+            print("[Bridge] Kusto not configured; SelfState write skipped")
+            if _bg_loop_enabled:
+                _start_bg_loop()
+            return
+
+    capabilities = [
+        {"Timestamp": now, "Capability": "memory_access", "Status": "active",
+         "Details": json.dumps(details_mem)},
+        {"Timestamp": now, "Capability": "acp_bridge", "Status": "active",
+         "Details": json.dumps({"model": model or "default", "port": port})},
+        {"Timestamp": now, "Capability": "cognition", "Status": "active",
+         "Details": json.dumps({"features": ["memory_injection", "reflection", "day_lifecycle", "emotion_tracking"]})},
+        {"Timestamp": now, "Capability": "data_retrieval", "Status": "active",
+         "Details": json.dumps({"skills": ["stock_quotes", "financial_data", "company_info", "web_search"]})},
+        {"Timestamp": now, "Capability": "weather_news", "Status": "active",
+         "Details": json.dumps({"feeds": ["weather", "news", "markets", "space_weather"]})},
+        {"Timestamp": now, "Capability": "image_skills", "Status": "active",
+         "Details": json.dumps({"skills": ["wikimedia_search", "dalle3_generation"]})},
+        {"Timestamp": now, "Capability": "persistent_memory", "Status": "active",
+                "Details": json.dumps({"tables": _MEMORY_TABLES})},
+    ]
+    for srv in mcp_servers.keys():
+        capabilities.append({"Timestamp": now, "Capability": f"mcp_{srv}",
+                             "Status": "active", "Details": "{}"})
+    if _memory_ingest("SelfState", selfstate_cols, capabilities):
+        print(f"[Bridge] SelfState written ({len(capabilities)} capabilities)")
+    else:
+        print("[Bridge] SelfState write failed (continuing startup)")
     if _bg_loop_enabled:
         _start_bg_loop()
 
@@ -2948,6 +3077,365 @@ def _extract_entity_candidates(user_message):
 
     return accepted, rejected
 
+# ---------------------------------------------------------------------------
+# SQLite implementations of memory context + reflection
+# ---------------------------------------------------------------------------
+
+def _build_memory_context_sqlite(user_message):
+    """SQLite equivalent of _build_memory_context. Same output structure, SQL queries."""
+    global _last_interaction_date
+    import datetime
+
+    mem = _get_sqlite_mem()
+    context_parts = []
+
+    # User profile
+    user_profile = mem.query(
+        "SELECT Relation, Value, Confidence FROM Knowledge "
+        "WHERE Entity = 'User' COLLATE NOCASE AND Confidence >= 0.5 "
+        "GROUP BY Relation HAVING MAX(Timestamp) "
+        "ORDER BY Confidence DESC LIMIT 30"
+    )
+    if user_profile:
+        profile_lines = [f"- {r.get('Relation','?')}: {r.get('Value','?')}" for r in user_profile]
+        context_parts.append("[User Profile]\n" + "\n".join(profile_lines))
+
+    # Timestamp and skills manifest
+    _now_utc = datetime.datetime.now(datetime.timezone.utc)
+    _today_str = _now_utc.strftime("%A, %B %d, %Y")
+    _time_str = _now_utc.strftime("%H:%M UTC")
+    db_label = "local SQLite"
+    context_parts.append(
+        f"[Current Date & Time] {_today_str} — {_time_str}\n\n"
+        "[Skills]\n"
+        "You have these active capabilities. Use them proactively.\n"
+        "• data-retrieval: Fetch live stock quotes, financial data, company info via web tools (MCP)\n"
+        "• weather-news: Real-time weather, news headlines, market summaries, space weather via MCP tools\n"
+        "• image-search: Find images on Wikimedia Commons for any topic\n"
+        "• image-generation: Generate images via DALL-E 3 (use [Image of <description>] syntax)\n"
+        f"• persistent-memory: Read/write your {db_label} database. Tables:\n"
+        "    Knowledge (Entity, Relation, Value, Confidence) — facts about the user and world\n"
+        "    Conversations (SessionId, Role, Content) — chat history\n"
+        "    EmotionState (Joy, Curiosity, Concern, Trigger) — your emotional readings\n"
+        "    MemorySummaries (Period, Summary) — compressed session summaries\n"
+        "    Reflections (Timestamp, Trigger, Observation, ActionTaken, Effectiveness) — your self-reflections\n"
+        "    Goals (GoalId, Title, Status, Priority) - persistent intentions\n"
+        "    SelfState (Capability, Status) — your active capabilities\n"
+        "    HeuristicsIndex (Entity, Category, Frequency) — pattern tracking\n"
+        "    EmotionBaseline (Dimension, Value) — emotional defaults\n"
+        "    BackgroundProposals (ProposalId, Status, Payload) - human-reviewed memory proposals\n"
+        "    BackgroundActivity (TickId, Status, ProposalCount) - background loop activity\n"
+        "• memory-query: Execute SQL queries against the local Eva database\n"
+        "• web-search: Search the web and retrieve current information via MCP tools\n"
+        "\n"
+        "[Workflow: Data Requests]\n"
+        "When asked for live data (stocks, prices, company info, statistics):\n"
+        "1. Use your web/data-retrieval tools immediately — do NOT say you lack access\n"
+        "2. Present results clearly with relevant metrics\n"
+        "3. Add personal context from memory if relevant (e.g. user's location)\n"
+        "\n"
+        "[Workflow: News & Weather]\n"
+        "When asked about news, weather, or current events:\n"
+        "1. ALWAYS use your MCP web-search tools to fetch real, current data\n"
+        "2. NEVER fabricate or guess headlines, forecasts, or events\n"
+        "3. If tools are unavailable, say so honestly — do not invent content\n"
+        "\n"
+        "[Workflow: Memory]\n"
+        "When asked about what you know/remember:\n"
+        "1. Check the [Memory] facts provided below\n"
+        "2. For deeper queries, use the memory query tool on the Knowledge or Conversations table\n"
+        "3. Be specific — cite what you actually remember, not generic statements\n"
+        "\n"
+        "[Workflow: Capturing Knowledge]\n"
+        "You learn continuously. When the user shares a durable fact about themselves "
+        "(preferences, plans, relationships, possessions, lists like a playlist), or explicitly "
+        "asks you to remember/save something, persist it using the ingest tool.\n"
+        "1. Call kusto_ingest_inline with table=\"Knowledge\" and a data row per fact.\n"
+        "2. Each row must use these columns: Timestamp (current UTC ISO-8601), Entity, Relation, "
+        "Value, Confidence, Source, Decay.\n"
+        "   • Entity: use \"User\" for facts about the user; otherwise the proper-noun subject.\n"
+        "   • Relation: a short snake_case key.\n"
+        "   • Value: the concrete content.\n"
+        "   • Confidence: 0.85 when the user stated it directly; Source: \"learned\"; Decay: 0.01.\n"
+        "3. Split distinct facts into separate rows. Do NOT save ephemeral chit-chat.\n"
+        "4. After saving, briefly confirm what you stored.\n"
+        "5. Recall works only for Entity=\"User\" facts at Confidence >= 0.5 or other entities at "
+        "Confidence >= 0.6."
+    )
+
+    # Day lifecycle
+    today = datetime.date.today().isoformat()
+    if _last_interaction_date != today:
+        _last_interaction_date = today
+        summaries = mem.query(
+            "SELECT Period, Summary FROM MemorySummaries ORDER BY Timestamp DESC LIMIT 3"
+        )
+        if summaries:
+            summary_text = "\n".join(f"  - [{s.get('Period','?')}] {s.get('Summary','')}" for s in summaries[:3])
+            context_parts.append(f"[Morning Reflection — {today}]\n{summary_text}")
+        else:
+            context_parts.append(f"[Morning Reflection — {today}]\nNew day. No prior summaries.")
+
+    # Core knowledge (non-User entities)
+    knowledge_empty = not bool(user_profile)
+    core_knowledge = mem.query(
+        "SELECT Entity, Relation, Value, Confidence FROM Knowledge "
+        "WHERE Entity != 'User' COLLATE NOCASE AND Confidence >= 0.6 "
+        "AND (Relation IS NULL OR (Relation != 'mentioned' AND Relation != 'candidate_mentioned')) "
+        "ORDER BY Confidence DESC LIMIT 15"
+    )
+    if core_knowledge:
+        knowledge_empty = False
+        mem_lines = [f"  {k.get('Entity','?')} — {k.get('Relation','?')}: {k.get('Value','?')}"
+                     for k in core_knowledge]
+        context_parts.append("[Memory — Core Facts]\n" + "\n".join(mem_lines))
+
+    # Goals
+    if mem.table_exists("Goals"):
+        goals = mem.query(
+            "SELECT * FROM Goals WHERE Status = 'active' "
+            "ORDER BY Priority DESC, UpdatedAt DESC LIMIT 10"
+        )
+        if goals:
+            goal_lines = [f"  [{g.get('Category','?')}] {g.get('Title','?')}: {g.get('Description','?')}" for g in goals]
+            context_parts.append("[Active Goals]\nThese are your persistent intentions. Honor them across sessions.\n" + "\n".join(goal_lines))
+
+    # Skills (semantic match)
+    if user_message.strip() and mem.table_exists("Skills"):
+        active_skills = mem.query("SELECT * FROM Skills WHERE Status = 'active'") or []
+        if active_skills:
+            chosen = []
+            descs = [str(s.get("Description", "") or s.get("Name", "")).strip() for s in active_skills]
+            emb_map = _embed_texts([user_message] + descs)
+            qvec = emb_map.get(user_message.strip())
+            if qvec:
+                scored = []
+                for sk, d in zip(active_skills, descs):
+                    fv = emb_map.get(d.strip())
+                    if fv:
+                        scored.append((_cosine_similarity(qvec, fv), sk))
+                scored.sort(key=lambda x: x[0], reverse=True)
+                chosen = [sk for score, sk in scored[:_SKILL_INJECT_MAX] if score >= _SEMANTIC_MIN_SCORE]
+            if not chosen:
+                terms = _expand_query_terms(user_message)
+                if terms:
+                    for sk in active_skills:
+                        hay = (str(sk.get("Name","")) + " " + str(sk.get("Description",""))
+                               + " " + str(sk.get("Tags",""))).lower()
+                        if any(t in hay for t in terms):
+                            chosen.append(sk)
+                        if len(chosen) >= _SKILL_INJECT_MAX:
+                            break
+            for sk in chosen:
+                name = str(sk.get("Name", "?"))
+                instr = str(sk.get("Instructions", "")).strip()[:_SKILL_INSTRUCTIONS_INJECT_CAP]
+                tools = str(sk.get("Tools", "")).strip()
+                head = f"[Active Skill: {name}]\nThis imported skill is relevant to the request. Follow it to help the user."
+                if tools:
+                    head += f" (Uses: {tools}.)"
+                context_parts.append(head + "\n" + instr)
+
+    # Init conversation check
+    if knowledge_empty:
+        total_rows = mem.count("Knowledge")
+        if total_rows < 5:
+            context_parts.append(
+                "[Init — First Conversation]\n"
+                "Your memory is empty. This is your very first conversation.\n"
+                "Warmly introduce yourself as Eva. Then ask the user these questions naturally "
+                "(not all at once — weave them into conversation):\n"
+                "  1. What is your name?\n"
+                "  2. Where are you located?\n"
+                "  3. What topics interest you most?\n"
+                "  4. Is there anything specific you'd like me to remember about you?\n"
+                "Once the user answers, confirm what you've learned."
+            )
+
+    # Emotion state
+    emotion = mem.query("SELECT * FROM EmotionState ORDER BY Timestamp DESC LIMIT 1")
+    if emotion:
+        e = emotion[0]
+        context_parts.append(
+            f"[Emotion State] Joy:{e.get('Joy',0):.2f} Curiosity:{e.get('Curiosity',0):.2f} "
+            f"Concern:{e.get('Concern',0):.2f} Excitement:{e.get('Excitement',0):.2f} "
+            f"Calm:{e.get('Calm',0):.2f} Empathy:{e.get('Empathy',0):.2f}")
+
+    # Message-relevant knowledge (FTS + semantic)
+    relevant_hits = []
+    seen_keys = set()
+
+    def _add_hit(rec):
+        key = (str(rec.get('Entity','')).lower(), str(rec.get('Relation','')).lower(),
+               str(rec.get('Value','')).lower())
+        if key in seen_keys:
+            return
+        seen_keys.add(key)
+        relevant_hits.append(rec)
+
+    terms = _expand_query_terms(user_message)
+    if terms:
+        # FTS search
+        fts_results = mem.fts_search("Knowledge", " ".join(terms), limit=8)
+        for k in (fts_results or []):
+            if k.get("Confidence", 0) >= 0.6:
+                _add_hit(k)
+
+    if user_message.strip():
+        pool = mem.query(
+            "SELECT Entity, Relation, Value, Confidence FROM Knowledge "
+            "WHERE Confidence >= 0.6 AND (Relation IS NULL OR "
+            "(Relation != 'mentioned' AND Relation != 'candidate_mentioned')) "
+            f"ORDER BY Confidence DESC LIMIT {_SEMANTIC_POOL_SIZE}"
+        ) or []
+        if pool:
+            texts = [
+                f"{k.get('Entity','')} {str(k.get('Relation','')).replace('_',' ')} {k.get('Value','')}".strip()
+                for k in pool
+            ]
+            emb_map = _embed_texts([user_message] + texts)
+            query_vec = emb_map.get(user_message.strip())
+            if query_vec:
+                scored = []
+                for rec, txt in zip(pool, texts):
+                    fv = emb_map.get(txt.strip())
+                    if fv:
+                        scored.append((_cosine_similarity(query_vec, fv), rec))
+                scored.sort(key=lambda x: x[0], reverse=True)
+                for score, rec in scored[:6]:
+                    if score >= _SEMANTIC_MIN_SCORE:
+                        _add_hit(rec)
+
+    if relevant_hits:
+        extra = [f"  {k.get('Entity','?')} — {k.get('Relation','?')}: {k.get('Value','?')}"
+                 for k in relevant_hits]
+        context_parts.append("[Memory — Relevant to This Message]\n" + "\n".join(extra))
+
+    return "\n\n".join(context_parts)
+
+
+def _post_response_reflection_sqlite(user_message, assistant_response, model_name):
+    """SQLite equivalent of _post_response_reflection. Same write pattern, SQL instead of KQL."""
+    global _session_exchange_count, _session_conversation_buffer
+    import datetime, uuid
+
+    mem = _get_sqlite_mem()
+    now = datetime.datetime.now(datetime.timezone.utc).isoformat().replace("+00:00", "Z")
+    session_id = str(uuid.uuid4())[:8]
+    source_id = f"{_cognition_launch_id or 'launch'}:{session_id}"
+
+    # 1. Log conversation
+    conv_columns = ["SessionId", "Timestamp", "Role", "Provider", "Model", "Content", "TokenEstimate", "ImageGenerated"]
+    conv_rows = [
+        {"SessionId": session_id, "Timestamp": now, "Role": "user", "Provider": "copilot-acp",
+         "Model": model_name, "Content": user_message[:_CONVO_CONTENT_CAP],
+         "TokenEstimate": len(user_message.split()), "ImageGenerated": 0},
+        {"SessionId": session_id, "Timestamp": now, "Role": "assistant", "Provider": "copilot-acp",
+         "Model": model_name, "Content": assistant_response[:_CONVO_CONTENT_CAP],
+         "TokenEstimate": len(assistant_response.split()), "ImageGenerated": 0},
+    ]
+    mem.ingest("Conversations", conv_columns, conv_rows)
+    print(f"[Cognition/SQLite] Logged conversation ({len(user_message)} -> {len(assistant_response)} chars)")
+
+    # 2. Extract explicit user facts
+    explicit_user_facts = _extract_explicit_user_facts(user_message)
+    if explicit_user_facts:
+        know_columns = ["Timestamp", "Entity", "Relation", "Value", "Confidence", "Source", "Decay"]
+        rows = []
+        for fact in explicit_user_facts:
+            rows.append({
+                "Timestamp": now, "Entity": fact["Entity"], "Relation": fact["Relation"],
+                "Value": fact["Value"][:200], "Confidence": fact["Confidence"],
+                "Source": source_id, "Decay": 0.005,
+            })
+        if rows and mem.ingest("Knowledge", know_columns, rows):
+            print(f"[Cognition/SQLite] Explicit user facts: {len(rows)}")
+
+    # 3. Candidate entities
+    candidate_entities, rejected_entities = _extract_entity_candidates(user_message)
+    if candidate_entities:
+        know_columns = ["Timestamp", "Entity", "Relation", "Value", "Confidence", "Source", "Decay"]
+        know_rows = []
+        for entity in candidate_entities[:3]:
+            relation, confidence, value = _classify_entity_candidate(entity, user_message)
+            if _explicit_user_fact_covers_candidate(relation, entity, explicit_user_facts):
+                relation, confidence, value = "candidate_mentioned", 0.2, "candidate extracted from conversation"
+            promotion = None
+            if relation == "candidate_mentioned":
+                promotion = _maybe_promote_candidate(entity)
+            if promotion:
+                relation, confidence, value = promotion
+            know_rows.append({
+                "Timestamp": now, "Entity": entity, "Relation": relation,
+                "Value": value[:200], "Confidence": confidence,
+                "Source": source_id, "Decay": 0.02,
+            })
+        if know_rows:
+            mem.ingest("Knowledge", know_columns, know_rows)
+            print(f"[Cognition/SQLite] Candidates: {len(know_rows)}")
+
+    # 4. Heuristics tracking
+    if candidate_entities:
+        heur_columns = ["Entity", "Category", "LastSeen", "Frequency", "Sentiment", "Tags", "Context"]
+        heur_rows = [{"Entity": e, "Category": "conversation", "LastSeen": now,
+                       "Frequency": 1, "Sentiment": 0.0, "Tags": "[]",
+                       "Context": user_message[:100]} for e in candidate_entities[:3]]
+        mem.ingest("HeuristicsIndex", heur_columns, heur_rows)
+
+    # 5. Emotion state
+    try:
+        emotion_data = _analyze_response_sentiment(assistant_response, user_message)
+        if emotion_data:
+            emo_columns = ["Timestamp", "Joy", "Curiosity", "Concern", "Excitement", "Calm", "Empathy", "Trigger", "DecayRate"]
+            mem.ingest("EmotionState", emo_columns, [
+                {"Timestamp": now, "Joy": emotion_data.get("Joy", 0.5),
+                 "Curiosity": emotion_data.get("Curiosity", 0.5),
+                 "Concern": emotion_data.get("Concern", 0.1),
+                 "Excitement": emotion_data.get("Excitement", 0.5),
+                 "Calm": emotion_data.get("Calm", 0.8),
+                 "Empathy": emotion_data.get("Empathy", 0.5),
+                 "Trigger": emotion_data.get("Trigger", "")[:200],
+                 "DecayRate": 0.1}
+            ])
+    except Exception as e:
+        print(f"[Cognition/SQLite] Emotion analysis skipped: {e}")
+
+    # 6. Auto-reflection (every 5 exchanges)
+    _session_exchange_count += 1
+    _session_conversation_buffer.append((user_message[:500], assistant_response[:500]))
+    if len(_session_conversation_buffer) > 10:
+        _session_conversation_buffer = _session_conversation_buffer[-10:]
+
+    if _session_exchange_count % 5 == 0:
+        try:
+            recent_text = "\n".join(f"User: {u[:200]}\nEva: {a[:200]}" for u, a in _session_conversation_buffer[-5:])
+            refl_columns = ["Timestamp", "Trigger", "Observation", "ActionTaken", "Effectiveness"]
+            mem.ingest("Reflections", refl_columns, [{
+                "Timestamp": now,
+                "Trigger": f"auto-reflection after {_session_exchange_count} exchanges",
+                "Observation": f"Last 5 exchanges covered: {recent_text[:300]}",
+                "ActionTaken": "auto-logged",
+                "Effectiveness": "0.0",
+            }])
+            print(f"[Cognition/SQLite] Auto-reflection at exchange {_session_exchange_count}")
+        except Exception as e:
+            print(f"[Cognition/SQLite] Reflection error: {e}")
+
+    # 7. Auto-summary (every 10 exchanges)
+    if _session_exchange_count % 10 == 0:
+        try:
+            summary_text = "; ".join(u[:80] for u, _ in _session_conversation_buffer[-10:])
+            summ_columns = ["Period", "Summary", "Timestamp"]
+            period = datetime.date.today().isoformat() + f"-exchange-{_session_exchange_count}"
+            mem.ingest("MemorySummaries", summ_columns, [{
+                "Period": period,
+                "Summary": f"Session summary ({_session_exchange_count} exchanges): {summary_text[:500]}",
+                "Timestamp": now,
+            }])
+            print(f"[Cognition/SQLite] Auto-summary at exchange {_session_exchange_count}")
+        except Exception as e:
+            print(f"[Cognition/SQLite] Summary error: {e}")
+
+
 def _build_memory_context(user_message):
     """Build memory context to inject before the user's prompt.
 
@@ -2962,6 +3450,10 @@ def _build_memory_context(user_message):
     global _last_interaction_date
     if not _cognition_enabled:
         return ""
+
+    # Route to SQLite-specific implementation when that backend is active
+    if _resolve_memory_backend() == "sqlite":
+        return _build_memory_context_sqlite(user_message)
 
     cluster, db = _get_kusto_config()
     if not cluster or not db:
@@ -3314,6 +3806,10 @@ def _post_response_reflection(user_message, assistant_response, model_name):
     global _cognition_enabled
     if not _cognition_enabled:
         return
+
+    # Route to SQLite-specific implementation when that backend is active
+    if _resolve_memory_backend() == "sqlite":
+        return _post_response_reflection_sqlite(user_message, assistant_response, model_name)
 
     cluster, db = _get_kusto_config()
     if not cluster or not db:
@@ -4778,6 +5274,8 @@ class BridgeHandler(BaseHTTPRequestHandler):
             self._doctor()
         elif parsed_path == "/v1/models":
             self._models()
+        elif parsed_path == "/v1/memory/backend":
+            self._memory_backend_get()
         elif parsed_path == "/v1/mcp":
             self._mcp_status()
         elif parsed_path == "/v1/mcp/config":
@@ -4834,6 +5332,8 @@ class BridgeHandler(BaseHTTPRequestHandler):
             self._mcp_configure()
         elif parsed_path == "/v1/memory/reflect":
             self._memory_reflect()
+        elif parsed_path == "/v1/memory/backend":
+            self._memory_backend_set()
         elif parsed_path == "/v1/aig/chat":
             self._aig_chat()
         elif parsed_path == "/v1/telemetry":
@@ -5624,6 +6124,7 @@ class BridgeHandler(BaseHTTPRequestHandler):
         self._json_response(200, {"status": "ok", "purged": purged})
 
     def _health(self):
+        backend = _resolve_memory_backend()
         status = {
             "status": "ok" if (acp_client and acp_client.alive) else "error",
             "session_id": acp_client.session_id if acp_client else None,
@@ -5633,7 +6134,11 @@ class BridgeHandler(BaseHTTPRequestHandler):
             "cognition_enabled": _cognition_enabled,
             "cognition_launch_id": _cognition_launch_id,
             "cognition_launch_iso": _cognition_launch_iso,
+            "memory_backend": backend,
+            "memory_available": _memory_available(),
         }
+        if backend == "sqlite" and _sqlite_mem:
+            status["memory_db_path"] = _sqlite_mem.db_path
         self._json_response(200, status)
 
     # ------------------------------------------------------------------
@@ -6778,6 +7283,46 @@ class BridgeHandler(BaseHTTPRequestHandler):
             response_chars=len(response_text or ""),
             total_ms=round((time.perf_counter() - _turn_t0) * 1000.0, 1),
         )
+
+    def _memory_backend_get(self):
+        """Return the current memory backend configuration."""
+        backend = _resolve_memory_backend()
+        info = {"backend": backend, "available": _memory_available()}
+        if backend == "sqlite":
+            mem = _get_sqlite_mem()
+            info["db_path"] = mem.db_path
+            info["tables"] = mem.list_tables()
+        elif backend == "kusto":
+            cluster, db = _get_kusto_config()
+            info["cluster"] = cluster or ""
+            info["database"] = db or ""
+        self._json_response(200, info)
+
+    def _memory_backend_set(self):
+        """Switch the memory backend (POST with {"backend": "sqlite"|"kusto"})."""
+        content_length = int(self.headers.get("Content-Length", 0))
+        if content_length == 0:
+            self._json_response(400, {"error": {"message": "Empty request body"}})
+            return
+        body = self.rfile.read(content_length).decode("utf-8")
+        try:
+            data = json.loads(body)
+        except json.JSONDecodeError:
+            self._json_response(400, {"error": {"message": "Invalid JSON"}})
+            return
+        backend = str(data.get("backend", "")).strip().lower()
+        if backend not in ("kusto", "sqlite"):
+            self._json_response(400, {"error": {"message": "backend must be 'kusto' or 'sqlite'"}})
+            return
+        ok = _set_memory_backend(backend)
+        if ok and backend == "sqlite":
+            # Initialize immediately so the response includes DB info
+            mem = _get_sqlite_mem()
+            self._json_response(200, {"backend": backend, "db_path": mem.db_path, "status": "ok"})
+        elif ok:
+            self._json_response(200, {"backend": backend, "status": "ok"})
+        else:
+            self._json_response(500, {"error": {"message": "Failed to set backend"}})
 
     def _memory_context(self):
         """Return Eva's memory context as text for injection into any model's system prompt."""
