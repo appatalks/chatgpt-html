@@ -5248,6 +5248,8 @@ function _isGenerationRequest(text) {
  */
 function _isImageRequest(text) {
   if (!text) return false;
+  // Camera/vision requests are NOT image generation/search requests
+  if (/\b(take a (picture|photo)|look at|what do you see|what am i holding|what.s in my hand|use.* camera|webcam|look through)\b/i.test(text)) return false;
   return _isGenerationRequest(text) ||
          /\b(show|find|display|search|look up|get|fetch)\b.*\b(image|picture|photo|illustration)\b/i.test(text) ||
          /\b(image|picture|photo)\b.*\b(of|for|about)\b/i.test(text);
