@@ -4773,13 +4773,13 @@ function insertImage() {
 
   function interpretVisionResponse(data) {
     // Extract relevant information from the Vision API response
-    // and pass it to ChatGPT for interpretation
+    // and pass it to the model for interpretation
     var labels = data.responses[0].labelAnnotations;
     var textAnnotations = data.responses[0].textAnnotations;
     var localizedObjects = data.responses[0].localizedObjectAnnotations;
     var landmarkAnnotations = data.responses[0].landmarkAnnotations;
 
-    // Prepare the text message to be sent to ChatGPT
+    // Prepare the text message to be sent to the model
     var message = "I see the following labels in the image:\n";
     labels.forEach(label => {
       message += "- " + label.description + "\n";
