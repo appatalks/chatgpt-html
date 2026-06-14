@@ -75,9 +75,12 @@ This project is a simple web UI for interacting with OpenAI, Google Generative m
 - Update `README.md` Features list when adding models or user-visible features.
 
 ## Build
-- After every completed code iteration, rebuild the Electron AppImage: `cd standalone && npm run dist`.
-- This ensures the standalone build stays current for immediate testing.
+- After every completed code iteration, deploy and rebuild so changes are testable immediately:
+  1. Pull the latest into the installed copy: `cd ~/.eva && git pull origin main`.
+  2. Rebuild the Electron AppImage: `cd ~/.eva/standalone && npm run dist`.
+- The AppImage bundles its own copy of `tools/` at a temporary mount path. Changes to `~/.eva/tools/` are **not** picked up until the AppImage is rebuilt.
 - The build command is `npm run dist` inside `standalone/`.
+- Do not skip the pull+rebuild step. If the user is testing, they are testing the installed copy, not the git working tree.
 
 ## ACP Infrastructure Roadmap
 - Keep ACP deployment assumptions aligned with `README-2.md` under **ACP Infrastructure Roadmap (tracking)**.
