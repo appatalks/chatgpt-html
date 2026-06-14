@@ -16,6 +16,8 @@ from bridge.memory import (_memory_query, _memory_ingest,
     _get_sqlite_mem, _resolve_memory_backend)
 from bridge.cognition import _enable_cognition
 from bridge.cron import _load_cron_tasks, _cron_tick
+from bridge.alerts import (_load_alerts, _save_alerts, _alert_cooldown_elapsed,
+    _alert_build_prompt, _alert_salience, _alert_clip, _notify_enqueue)
 
 _BG_ACTIVITY_COLUMNS = _cfg.BG_ACTIVITY_COLUMNS
 _BG_JOB_ALERT_WATCH = _cfg.BG_JOB_ALERT_WATCH

@@ -6,6 +6,10 @@ import os
 import time
 from bridge import config as _cfg
 from bridge import state as _st
+from bridge.telemetry import _telemetry_emit
+
+_utc_now = _cfg.utc_now
+_to_utc_iso = _cfg.to_utc_iso
 
 _ALERTS_CONFIG_PATH = _cfg.ALERTS_CONFIG_PATH
 _ALERT_CHANNELS = _cfg.ALERT_CHANNELS

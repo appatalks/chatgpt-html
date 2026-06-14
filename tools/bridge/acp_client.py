@@ -9,6 +9,8 @@ import threading
 import time
 from bridge import config as _cfg
 from bridge import state as _st
+from bridge.kusto import _inject_kusto_token
+from bridge.telemetry import _telemetry_emit
 
 _ACP_POOL_MAX = _cfg.ACP_POOL_MAX
 _ARTIFACTS_DIR = _cfg.ARTIFACTS_DIR

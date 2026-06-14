@@ -225,7 +225,37 @@ from bridge.utils import (  # noqa: F401
     _save_client_prefs,
     _subagent_worker,
     _classify_request_type,
+    _MEMORY_CAPTURE_DIRECTIVE,
 )
+
+# Constants needed by BridgeHandler (imported from config)
+_LOG_RING_MAX = _cfg.LOG_RING_MAX
+_NOTIFY_RING_MAX = _cfg.NOTIFY_RING_MAX
+_ARTIFACTS_DIR = _cfg.ARTIFACTS_DIR
+_GOAL_CATEGORIES = _cfg.GOAL_CATEGORIES
+_GOAL_STATUSES = _cfg.GOAL_STATUSES
+_GOAL_COLUMNS = _cfg.GOAL_COLUMNS
+_GOALS_LATEST_QUERY = _cfg.GOALS_LATEST_QUERY
+_SKILL_STATUSES = _cfg.SKILL_STATUSES
+_SKILL_COLUMNS = _cfg.SKILL_COLUMNS
+_SKILLS_LATEST_QUERY = _cfg.SKILLS_LATEST_QUERY
+_BG_PROPOSAL_STATUSES = _cfg.BG_PROPOSAL_STATUSES
+_BG_APPLY_TABLES = _cfg.BG_APPLY_TABLES
+_ALERT_TYPES = _cfg.ALERT_TYPES
+_ALERT_CHANNELS = _cfg.ALERT_CHANNELS
+_TELEMETRY_RING_MAX = _cfg.TELEMETRY_RING_MAX
+_BG_PROPOSAL_COLUMNS = _cfg.BG_PROPOSAL_COLUMNS
+_SUBAGENT_MAX = 4
+_TELEMETRY_ENABLED = _st.telemetry_enabled
+_BG_PROPOSALS_LATEST_QUERY = (
+    "BackgroundProposals "
+    "| extend _SortAt = coalesce(ReviewedAt, CreatedAt) "
+    "| summarize arg_max(_SortAt, *) by ProposalId "
+    "| project-away _SortAt"
+)
+_BG_JOBS_ENABLED = {}  # populated at import from background
+_BG_JOBS = []  # populated at import from background
+
 
 # Vision browser agent (Playwright is imported lazily inside the module, so this
 # import never fails even when Playwright is not installed).

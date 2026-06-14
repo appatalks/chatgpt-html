@@ -9,6 +9,9 @@ import time
 from bridge import config as _cfg
 from bridge import state as _st
 
+_utc_now = _cfg.utc_now
+_to_utc_iso = _cfg.to_utc_iso
+
 _LOG_LINE_CAP = _cfg.LOG_LINE_CAP
 _LOG_RING_MAX = _cfg.LOG_RING_MAX
 _TELEMETRY_ENABLED = os.environ.get("EVA_TELEMETRY", "1") not in ("0", "false", "no")
@@ -16,13 +19,58 @@ _TELEMETRY_MAX_BYTES = _cfg.TELEMETRY_MAX_BYTES
 _TELEMETRY_PATH = _cfg.TELEMETRY_PATH
 _TELEMETRY_RING_MAX = _cfg.TELEMETRY_RING_MAX
 
+# Debug log file: captures all bridge stdout to a rotating file.
+# Path: ~/.config/eva-standalone/bridge_debug.log (gitignored via *.log)
+_DEBUG_LOG_PATH = os.path.join(_cfg.EVA_CONFIG_DIR, "bridge_debug.log")
+_DEBUG_LOG_MAX_BYTES = 10 * 1024 * 1024  # rotate at 10 MB
+_debug_log_file = None
+_debug_log_lock = threading.Lock()
+
+
+def _open_debug_log():
+    """Open (or rotate) the debug log file. Called once at startup."""
+    global _debug_log_file
+    try:
+        os.makedirs(os.path.dirname(_DEBUG_LOG_PATH), exist_ok=True)
+        # Rotate if too large
+        if os.path.isfile(_DEBUG_LOG_PATH):
+            try:
+                size = os.path.getsize(_DEBUG_LOG_PATH)
+                if size > _DEBUG_LOG_MAX_BYTES:
+                    backup = _DEBUG_LOG_PATH + ".1"
+                    if os.path.isfile(backup):
+                        os.remove(backup)
+                    os.rename(_DEBUG_LOG_PATH, backup)
+            except OSError:
+                pass
+        _debug_log_file = open(_DEBUG_LOG_PATH, "a", encoding="utf-8", buffering=1)
+        ts = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        _debug_log_file.write(f"\n{'='*60}\n[{ts}] Bridge debug log started\n{'='*60}\n")
+        _debug_log_file.flush()
+    except Exception as e:
+        print(f"[Bridge] Debug log unavailable: {e}")
+        _debug_log_file = None
+
+
+def _debug_log_write(line):
+    """Write a line to the debug log file (thread-safe)."""
+    if _debug_log_file is None:
+        return
+    try:
+        with _debug_log_lock:
+            ts = datetime.datetime.now().strftime("%H:%M:%S.%f")[:12]
+            _debug_log_file.write(f"[{ts}] {line}\n")
+    except Exception:
+        pass
+
 class _StdoutTee:
     """Wrap a stream so writes go to the original AND into the log ring.
     Buffers partial writes until a newline so ring entries are whole lines."""
 
-    def __init__(self, original):
+    def __init__(self, original, is_stderr=False):
         self._orig = original
         self._buf = ""
+        self._is_stderr = is_stderr
 
     def write(self, s):
         try:
@@ -33,7 +81,10 @@ class _StdoutTee:
             self._buf += s
             while "\n" in self._buf:
                 line, self._buf = self._buf.split("\n", 1)
-                _log_ring_add(line)
+                if self._is_stderr:
+                    _debug_log_write(f"[STDERR] {line}")
+                else:
+                    _log_ring_add(line)
         except Exception:
             pass
 
@@ -53,6 +104,7 @@ def _log_ring_add(line):
     line = (line or "").rstrip()
     if not line:
         return
+    _debug_log_write(line)
     if len(line) > _LOG_LINE_CAP:
         line = line[:_LOG_LINE_CAP] + "…"
     with _st.log_lock:
@@ -64,9 +116,12 @@ def _log_ring_add(line):
 
 
 def _install_log_tee():
-    """Route stdout through the tee once (idempotent)."""
+    """Route stdout/stderr through the tee once (idempotent). Also opens the debug log."""
+    _open_debug_log()
     if not isinstance(sys.stdout, _StdoutTee):
         sys.stdout = _StdoutTee(sys.stdout)
+    if not isinstance(sys.stderr, _StdoutTee):
+        sys.stderr = _StdoutTee(sys.stderr, is_stderr=True)
 
 
 

@@ -6,6 +6,7 @@ state (token caches, flags, buffers) remains in ``core.py`` until
 a future phase extracts it into ``state.py``.
 """
 
+import datetime
 import os
 import re
 
@@ -13,6 +14,22 @@ import re
 def env_truthy(name):
     """Return True when an environment flag uses the shared truthy form."""
     return os.environ.get(name, "").strip().lower() in ("1", "true", "yes")
+
+
+def utc_now():
+    """Current UTC datetime (timezone-aware)."""
+    return datetime.datetime.now(datetime.timezone.utc)
+
+
+def to_utc_iso(value):
+    """Convert a datetime (or None) to a UTC ISO-8601 string."""
+    if isinstance(value, datetime.datetime):
+        active_value = value
+    else:
+        active_value = utc_now()
+    if active_value.tzinfo is None:
+        active_value = active_value.replace(tzinfo=datetime.timezone.utc)
+    return active_value.astimezone(datetime.timezone.utc).isoformat(timespec="seconds").replace("+00:00", "Z")
 
 
 # ── Filesystem paths ────────────────────────────────────────────────
